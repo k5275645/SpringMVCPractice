@@ -8,5 +8,8 @@
 </head>
 <body>
 	<h1>result1</h1>
+	<h3>data1 : ${applicationScope.data1 }</h3>
+	<h3>bean1.data1 : ${applicationScope.bean1.data1 }</h3>
+	<h3>bean1.data2 : ${applicationScope.bean1.data2 }</h3>
 </body>
 </html>
