@@ -1,0 +1,11 @@
+package kr.co.softcampus.beans;
+
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.annotation.SessionScope;
+
+@Component
+@SessionScope
+public class DataBean3 {
+	private String data5;
+	private String data6;
+}

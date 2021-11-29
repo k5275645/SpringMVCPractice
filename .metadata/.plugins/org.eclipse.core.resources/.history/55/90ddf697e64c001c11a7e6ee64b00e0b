@@ -1,0 +1,19 @@
+package kr.co.softcampus.controller;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+
+import kr.co.softcampus.beans.DataBean;
+
+@Controller
+public class TestController {
+	
+	@PostMapping("/test1")
+	public String test1(@ModelAttribute DataBean bean) {
+		System.out.printf("data1", bean.getData1());
+		System.out.printf("data2", bean.getData2());
+		return "test1";
+	}
+
+}

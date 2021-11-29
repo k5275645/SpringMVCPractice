@@ -1,0 +1,22 @@
+package kr.co.softcampus.config;
+
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
+
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.web.WebApplicationInitializer;
+import org.springframework.web.servlet.DispatcherServlet;
+
+public class SpringConfigClass implements WebApplicationInitializer{
+
+	@Override
+	public void onStartup(ServletContext servletContext) throws ServletException {
+		// Spring MVC 프로젝트 설정을 위해 작성하는 클래스의 객체를 생성한다.
+		AnnotationConfigApplicationContext servletAppContext = new AnnotationConfigApplicationContext();
+		servletAppContext.register(ServletAppContext.class);
+		
+		// 요청 발생시 요청을 처리하는 서블릿을 DispacherServlet으로 설정한다.
+		DispatcherServlet dispatcherServlet = new DispatcherServlet(servletAppContext);
+	}
+
+}

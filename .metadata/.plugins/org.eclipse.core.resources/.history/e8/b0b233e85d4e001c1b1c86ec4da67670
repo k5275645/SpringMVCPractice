@@ -1,0 +1,33 @@
+package kr.co.softcampus.controller;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@Controller
+public class TestController {
+	
+	@GetMapping("/test1")
+	public String test1(HttpServletRequest request) {
+		
+		request.setAttribute("data1", "문자열1");
+		
+		return "forward:/result1";
+	}
+	
+	@GetMapping("/result1")
+	public String result1(HttpServletRequest request) {
+		
+		String data1 = (String)request.getAttribute("data1");
+		System.out.printf("data1 : %s\n", data1);
+		return "result1";
+	}
+	
+	@GetMapping("/test2")
+	public String test2(Model model) {
+		model.addAttribute("data2", "문자열2");
+		return "forward:/result2";
+	}
+}
