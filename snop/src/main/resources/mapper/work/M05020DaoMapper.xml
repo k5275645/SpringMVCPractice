@@ -1,0 +1,495 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M05020 : 선도관리 현황
+ * 작성일자 :: 2021.8.04
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M05020DaoMapper">
+	
+	<!-- 가변날짜조회 -->
+	<select id="searchYearMonthGrid" parameterType="map" resultType="map">
+		SELECT  /* com.hitejinro.snop.work.dao.M05020DaoMapper.searchYearMonthGrid */
+		       SUBSTR(PRODUCTION_DATE,1,6) AS DINAMIC_YYYYMM
+		     , 'M'||ROW_NUMBER() OVER (ORDER BY SUBSTR(PRODUCTION_DATE,1,6)) AS COL_ID
+		     <!-- , REPLACE(REPLACE(TO_CHAR(TO_DATE(SUBSTR(PRODUCTION_DATE,1,6), 'YYYYMM'), 'YY-MM_'),'-', '년'), '_', '월') COL_NAME -->
+             , CASE WHEN SUBSTR(PRODUCTION_DATE,5,1) = '0' THEN SUBSTR(PRODUCTION_DATE, 3, 2)||'년 '||SUBSTR(PRODUCTION_DATE, 6, 1)||'월'
+                    ELSE SUBSTR(PRODUCTION_DATE, 3, 2)||'년 '||SUBSTR(PRODUCTION_DATE, 6, 2)||'월'
+               END AS  COL_NAME
+		  FROM (SELECT ORGANIZATION_CODE
+             , ORGANIZATION_NAME
+             , ITEM_CODE
+             , ITEM_NAME
+             , TO_CHAR(INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+             , STOCK_QUANTITY
+             , TO_CHAR(PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+             , QUANTITY
+             , TO_CHAR(IN_DATE, 'YYYYMMDD') AS IN_DATE
+             , PRODUCTION_MFG
+             , PRODUCTION_LOG
+          FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+         WHERE PRODUCTION_DATE IS NOT NULL
+           AND TO_CHAR(INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR(TO_DATE(YYYYMMDD,'YYYYMMDD')-7,'YYYYMMDD')
+                                                     FROM SCMU.W_SOP_VW_CALENDAR_M
+                                                    WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR})
+           AND QUANTITY != 0  ) T1
+		     , (SELECT WT1.*
+		             , WT2.SEQ AS ITEM_SEQ
+		          FROM EDW.W_CM_TB_FG_ITEM_M WT1 INNER JOIN 
+		               SCMU.W_SOP_TB_COM_CODE_M WT2 ON WT1.BRAND_CODE = WT2.SEGMENT1
+		                                           AND WT1.USAGE_CODE = WT2.SEGMENT2
+		                                           AND WT1.VESSEL_CODE = WT2.SEGMENT3
+		                                           AND WT1.VOLUME_VALUE = WT2.SEGMENT4
+		                                           AND WT2.GROUP_CODE = 'SKU_CODE'
+		           <if test="skuGbCode != null and skuGbCode != '!ALL'">
+		                                           AND CODE = #{skuGbCode, jdbcType=VARCHAR}
+		           </if>
+		         WHERE 1=1
+		           AND WT1.ITEM_TYPE = 'FG'
+		           AND WT1.ITEM_STATUS = 'Active'
+		           AND WT1.LIQUOR_CODE IN ('10','20')) T2
+		     , (SELECT BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		             , SUM(DECODE(GRADE_GB_CODE, 'G100', ELPS_ST_DCNT)) AS OPTIMAL_ELPS_ST_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G100', ELPS_CLS_DCNT)) AS OPTIMAL_ELPS_CLS_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G200', ELPS_ST_DCNT)) AS CONCERN_ELPS_ST_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G200', ELPS_CLS_DCNT)) AS CONCERN_ELPS_CLS_DCNT            
+		          FROM SCMU.W_SOP_TB_FRESHNESS_ITEM_M
+		         WHERE USE_YN = 'Y'
+		         GROUP BY BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE) T3
+		     , (SELECT ORG_CODE
+		             , ORG_DESC
+		             , '센터' AS ORG_GB
+		          FROM SCMU.W_SOP_TB_ORG_CENTER_MAP_M
+		         WHERE 1=1
+		           AND ORG_CODE NOT IN ('C54', 'C87', 'C38', 'C39', 'C21', 'C91')
+		         UNION ALL
+		        SELECT ORG_CODE
+		             , ORG_NAME
+		             , '공장' AS ORG_GB
+		          FROM EDW.W_CM_TB_ORGANIZATION_M T1
+		         WHERE 1 = 1
+		           AND T1.ORG_CODE NOT IN ('MJ3', 'MH2', 'MJ1', 'MJ4', 'MJ2', 'S01')
+		           AND T1.ORG_TYPE = 'MFG') T4
+		 WHERE T1.ITEM_CODE = T2.ITEM_CODE
+		   AND T2.BRAND_CODE = T3.BRAND_CODE
+		   AND T2.USAGE_CODE = T3.USAGE_CODE
+		   AND T2.VESSEL_CODE = T3.VESSEL_CODE
+		   AND T2.VOLUME_VALUE = T3.VOLUME_VALUE
+		   AND T1.ORGANIZATION_CODE = T4.ORG_CODE
+		   <if test="centerCode != null and centerCode != '!ALL'">
+		   AND ORG_CODE = #{centerCode, jdbcType=VARCHAR}
+		   </if>
+		 GROUP BY SUBSTR(PRODUCTION_DATE,1,6)
+		        , CASE WHEN SUBSTR(PRODUCTION_DATE, 5, 1) = '0' THEN SUBSTR(PRODUCTION_DATE, 3, 2)||'년 '||SUBSTR(PRODUCTION_DATE, 6, 1)||'월'
+	                   ELSE SUBSTR(PRODUCTION_DATE, 3, 2)||'년 '||SUBSTR(PRODUCTION_DATE, 6, 2)||'월'
+	              END
+		 HAVING SUM(QUANTITY) != 0
+		 ORDER BY 1
+	</select>
+
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH TBL_DAILY_QUANTITY AS ( /* com.hitejinro.snop.work.dao.M05020DaoMapper.search */
+		SELECT T1.ITEM_CODE
+		     , T2.DESCRIPTION
+		     , T2.ITEM_SEQ
+		     , T2.VESSEL_CODE
+		     , T2.VESSEL_SORT
+		     , T2.VESSEL_SORT_ORDER
+		     , T2.BRAND_SORT_ORDER
+		     , T1.ORGANIZATION_CODE
+		     , T1.INPUT_DATE
+		     , T1.PRODUCTION_DATE
+		     , T1.QUANTITY
+		     , T4.ORG_CODE
+		     , T4.ORG_DESC
+		     , T4.ORG_GB
+		     , T4.ORG_SORT
+		     , CASE WHEN (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN T3.OPTIMAL_ELPS_ST_DCNT AND T3.OPTIMAL_ELPS_CLS_DCNT THEN '적정'
+		            WHEN (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN T3.CONCERN_ELPS_ST_DCNT AND T3.CONCERN_ELPS_CLS_DCNT THEN '관심'
+		            WHEN (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) > T3.CONCERN_ELPS_CLS_DCNT THEN '초과'
+		       END AS ITEM_GRADE
+		  FROM (SELECT ORGANIZATION_CODE
+		             , ORGANIZATION_NAME
+		             , ITEM_CODE
+		             , ITEM_NAME
+		             , TO_CHAR(INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+		             , STOCK_QUANTITY
+		             , TO_CHAR(PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+		             , QUANTITY
+		             , TO_CHAR(IN_DATE, 'YYYYMMDD') AS IN_DATE
+		             , PRODUCTION_MFG
+		             , PRODUCTION_LOG
+		          FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+		         WHERE TO_CHAR(INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR(TO_DATE(YYYYMMDD,'YYYYMMDD')-7,'YYYYMMDD')
+		                                                     FROM SCMU.W_SOP_VW_CALENDAR_M
+		                                                    WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR})
+		           AND QUANTITY != 0 ) T1
+		     , (SELECT WT1.*
+		             , WT2.SEQ AS ITEM_SEQ
+		          FROM EDW.W_CM_TB_FG_ITEM_M WT1 INNER JOIN 
+		               SCMU.W_SOP_TB_COM_CODE_M WT2 ON WT1.BRAND_CODE = WT2.SEGMENT1
+		                                           AND WT1.USAGE_CODE = WT2.SEGMENT2
+		                                           AND WT1.VESSEL_CODE = WT2.SEGMENT3
+		                                           AND WT1.VOLUME_VALUE = WT2.SEGMENT4
+		                                           AND WT2.GROUP_CODE = 'SKU_CODE'
+		           <if test="skuGbCode != null and skuGbCode != '!ALL'">
+		                                           AND CODE = #{skuGbCode, jdbcType=VARCHAR}
+		           </if>
+		         WHERE 1=1
+		           AND WT1.ITEM_TYPE = 'FG'
+		           AND WT1.ITEM_STATUS = 'Active'
+		           AND WT1.LIQUOR_CODE IN ('10','20')) T2
+		     , (SELECT BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		             , SUM(DECODE(GRADE_GB_CODE, 'G100', ELPS_ST_DCNT)) AS OPTIMAL_ELPS_ST_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G100', ELPS_CLS_DCNT)) AS OPTIMAL_ELPS_CLS_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G200', ELPS_ST_DCNT)) AS CONCERN_ELPS_ST_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G200', ELPS_CLS_DCNT)) AS CONCERN_ELPS_CLS_DCNT            
+		          FROM SCMU.W_SOP_TB_FRESHNESS_ITEM_M
+		         WHERE USE_YN = 'Y'
+		         GROUP BY BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE) T3
+		     , (SELECT DISTINCT
+		               ORG_CODE
+		             , ORG_DESC
+		             , '센터' AS ORG_GB
+		             , '2' AS ORG_SORT
+		          FROM SCMU.W_SOP_TB_ORG_CENTER_MAP_M
+		         WHERE 1=1
+		           AND ORG_CODE NOT IN ('C54', 'C87', 'C38', 'C39', 'C21', 'C91')
+		         UNION ALL
+		        SELECT ORG_CODE
+		             , ORG_NAME
+		             , '공장' AS ORG_GB
+		             , '1' AS ORG_SORT
+		          FROM EDW.W_CM_TB_ORGANIZATION_M T1
+		         WHERE 1 = 1
+		           AND T1.ORG_CODE NOT IN ('MJ3', 'MH2', 'MJ1', 'MJ4', 'MJ2', 'S01')
+		           AND T1.ORG_TYPE = 'MFG') T4
+		 WHERE T1.ITEM_CODE = T2.ITEM_CODE
+		   AND T2.BRAND_CODE = T3.BRAND_CODE
+		   AND T2.USAGE_CODE = T3.USAGE_CODE
+		   AND T2.VESSEL_CODE = T3.VESSEL_CODE
+		   AND T2.VOLUME_VALUE = T3.VOLUME_VALUE
+		   AND T1.ORGANIZATION_CODE = T4.ORG_CODE
+		   <if test="centerCode != null and centerCode != '!ALL'">
+		   AND T1.ORGANIZATION_CODE = #{centerCode, jdbcType=VARCHAR}
+		   </if>
+		)
+		, TBL_CALENDER AS (
+		SELECT *
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD')
+		)
+		SELECT M1.VESSEL_SORT
+		     , M1.ITEM_CODE
+		     , M1.DESCRIPTION
+		     , DECODE(GROUPING(M1.ORG_GB), 1, '계', M1.ORG_GB) AS ORG_GB
+		     , NVL(M2.ACTUAL_20D_SALE_AVG_QTY,0) ACTUAL_20D_SALE_AVG_QTY
+		     , NVL(M2.ACTUAL_5D_SALE_AVG_QTY,0) ACTUAL_5D_SALE_AVG_QTY
+		     , DECODE(NVL(M2.ACTUAL_20D_SALE_AVG_QTY,0), 0, 0, ROUND(SUM(M4.ACTUAL_20D_STOCK_AVG_QTY) / M2.ACTUAL_20D_SALE_AVG_QTY,2)) AS ACT_20D_STOCK_DAY
+		     , DECODE(NVL(M2.ACTUAL_5D_SALE_AVG_QTY,0), 0, 0, ROUND(SUM(M3.ACTUAL_5D_STOCK_AVG_QTY) / M2.ACTUAL_5D_SALE_AVG_QTY,2)) AS ACT_5D_STOCK_DAY
+		     , SUM(M1.TOTAL_QUANTITY) AS TOTAL_QUANTITY
+		     , SUM(FRESH_QUANTITY) AS FRESH_QUANTITY
+		     , SUM(OPTIMAL_QUANTITY) AS OPTIMAL_QUANTITY
+		     , SUM(CONCERN_QUANTITY) AS CONCERN_QUANTITY
+		     , SUM(NOT_FRESH_QUANTITY) AS NOT_FRESH_QUANTITY
+		     ${dynamicQueryStr}
+		  FROM (SELECT T1.VESSEL_SORT
+		             , T1.VESSEL_CODE
+		             , T1.VESSEL_SORT_ORDER
+		             , T1.BRAND_SORT_ORDER
+		             , T1.ITEM_CODE
+		             , T1.DESCRIPTION
+		             , T1.ORG_GB
+		             , T1.ORG_SORT
+		             , T1.ITEM_SEQ
+		             , SUM(T1.QUANTITY) AS TOTAL_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE IN ('적정', '관심') THEN T1.QUANTITY ELSE 0 END) AS FRESH_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE = '적정' THEN T1.QUANTITY ELSE 0 END) AS OPTIMAL_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE = '관심' THEN T1.QUANTITY ELSE 0 END) AS CONCERN_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE = '초과' THEN T1.QUANTITY ELSE 0 END) AS NOT_FRESH_QUANTITY
+		             ${dynamicQuerySumStr}
+		          FROM TBL_DAILY_QUANTITY T1
+		         WHERE 1=1
+		         GROUP BY T1.VESSEL_SORT
+		                , T1.VESSEL_CODE
+		                , T1.VESSEL_SORT_ORDER
+		                , T1.BRAND_SORT_ORDER
+		                , T1.ITEM_CODE
+		                , T1.DESCRIPTION
+		                , T1.ORG_GB
+		                , T1.ORG_SORT
+		                , T1.ITEM_SEQ) M1
+		     , (SELECT ITEM_CODE
+		             , ACTUAL_5D_SALE_AVG_QTY
+		             , ACTUAL_20D_SALE_AVG_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_SALE_F M1
+		             , TBL_CALENDER M2
+		         WHERE PERIOD_YYYYMMDD = M2.YYYYMMDD) M2
+		     , (SELECT T1.ITEM_CODE
+		             , DECODE(T1.ORG_TYPE, 'MFG', '공장', 'LOGISTICS', '센터') AS ORG_GB
+		             , SUM(T1.STOCK_QTY) / 5 AS ACTUAL_5D_STOCK_AVG_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F T1
+		             , TBL_CALENDER T2
+		         WHERE T1.PERIOD_YYYYMMDD BETWEEN (T2.BF_5D_YYYYMMDD) AND (T2.YYYYMMDD)
+		         GROUP BY T1.ITEM_CODE, T1.ORG_TYPE) M3
+		     , (SELECT T1.ITEM_CODE
+		             , DECODE(T1.ORG_TYPE, 'MFG', '공장', 'LOGISTICS', '센터') AS ORG_GB
+		             , SUM(T1.STOCK_QTY) / 20 AS ACTUAL_20D_STOCK_AVG_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F T1
+		             , TBL_CALENDER T2
+		         WHERE T1.PERIOD_YYYYMMDD BETWEEN (T2.BF_20D_YYYYMMDD) AND (T2.YYYYMMDD)
+		         GROUP BY T1.ITEM_CODE, T1.ORG_TYPE) M4
+		 WHERE M1.ITEM_CODE = M2.ITEM_CODE(+)
+		   AND M1.ITEM_CODE = M3.ITEM_CODE(+)
+		   AND M1.ORG_GB = M3.ORG_GB(+)
+		   AND M1.ITEM_CODE = M4.ITEM_CODE(+)
+		   AND M1.ORG_GB = M4.ORG_GB(+)
+		 GROUP BY 
+		 GROUPING SETS ( (M1.VESSEL_SORT
+		                , M1.VESSEL_CODE
+		                , M1.VESSEL_SORT_ORDER
+		                , M1.BRAND_SORT_ORDER
+		                , M1.ITEM_CODE
+		                , M1.DESCRIPTION
+		                , M1.ITEM_SEQ
+		                , M1.ORG_GB
+		                , M1.ORG_SORT
+		                , M2.ACTUAL_5D_SALE_AVG_QTY
+		                , M2.ACTUAL_20D_SALE_AVG_QTY)
+		               , (M1.VESSEL_SORT
+		                , M1.VESSEL_CODE
+		                , M1.VESSEL_SORT_ORDER
+		                , M1.BRAND_SORT_ORDER
+		                , M1.ITEM_CODE
+		                , M1.DESCRIPTION
+		                , M1.ITEM_SEQ
+		                , M2.ACTUAL_5D_SALE_AVG_QTY
+		                , M2.ACTUAL_20D_SALE_AVG_QTY) )
+		 ORDER BY M1.ITEM_SEQ, M1.VESSEL_SORT_ORDER, M1.BRAND_SORT_ORDER, M1.ITEM_CODE, DECODE(GROUPING(M1.ORG_GB), 1, 0, M1.ORG_SORT)
+	</select>
+	
+	<!-- 차수 Combo List 조회 -->
+	<select id="yyyywwCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M05020DaoMapper.yyyywwCombo */
+			   DISTINCT YYYYWW AS CODE
+		     , CASE WHEN SUBSTR(YYYYWW,5,1) = '0' THEN SUBSTR(YYYYWW,6,1)
+                    ELSE SUBSTR(YYYYWW,5,2)
+               END ||'주차' AS NAME
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMM = #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 조직(센터/공장) Combo List 조회 -->
+	<select id="centerCodeCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M05020DaoMapper.centerCodeCombo */
+			   DISTINCT 
+			   ORG_CODE AS CODE
+             , ORG_DESC AS NAME
+          FROM SCMU.W_SOP_TB_ORG_CENTER_MAP_M
+         WHERE 1=1
+           AND ORG_CODE NOT IN ('C54', 'C87', 'C38', 'C39', 'C21', 'C91')
+         UNION ALL
+        SELECT ORG_CODE
+             , ORG_NAME
+          FROM EDW.W_CM_TB_ORGANIZATION_M T1
+         WHERE 1 = 1
+           AND T1.ORG_CODE NOT IN ('MJ3', 'MH2', 'MJ1', 'MJ4', 'MJ2', 'S01')
+           AND T1.ORG_TYPE = 'MFG'
+	</select>
+	
+	<!-- 팝업조회 -->
+	<select id="searchPop" parameterType="map" resultType="map">
+		WITH TBL_ORG AS (
+        SELECT ORG_CODE
+             , ORG_DESC
+             , '센터' AS ORG_GB
+             , '2' AS ORG_SORT
+          FROM EDW.W_CM_TB_CENTER_M
+         WHERE 1=1
+           AND ORG_CODE NOT IN ('C54', 'C87', 'C38', 'C39', 'C21', 'C91')
+         UNION ALL
+        SELECT ORG_CODE
+             , ORG_NAME
+             , '공장' AS ORG_GB
+             , '1' AS ORG_SORT
+          FROM EDW.W_CM_TB_ORGANIZATION_M T1
+         WHERE 1 = 1
+           AND T1.ORG_CODE NOT IN ('MJ3', 'MH2', 'MJ1', 'MJ4', 'MJ2', 'S01')
+           AND T1.ORG_TYPE = 'MFG'
+		)
+		, TBL_DAILY_QUANTITY AS (
+		SELECT T1.ITEM_CODE
+		     , T2.DESCRIPTION
+		     , T2.VESSEL_CODE
+		     , T2.VESSEL_SORT
+		     , T2.VESSEL_SORT_ORDER
+		     , T2.BRAND_SORT_ORDER
+		     , T1.ORGANIZATION_CODE
+		     , T1.INPUT_DATE
+		     , T1.PRODUCTION_DATE
+		     , T1.QUANTITY
+		     , T1.IN_DATE
+             , (SELECT ORG_DESC FROM TBL_ORG WHERE ORG_CODE = T1.PRODUCTION_MFG) AS PRODUCTION_MFG
+             , (SELECT ORG_DESC FROM TBL_ORG WHERE ORG_CODE = T1.PRODUCTION_LOG) AS PRODUCTION_LOG
+		     , T4.ORG_CODE
+		     , T4.ORG_DESC
+		     , T4.ORG_GB
+		     , T4.ORG_SORT
+		     , (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) AS DAY_CNT
+		     , CASE WHEN (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN T3.OPTIMAL_ELPS_ST_DCNT AND T3.OPTIMAL_ELPS_CLS_DCNT THEN '적정'
+		            WHEN (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN T3.CONCERN_ELPS_ST_DCNT AND T3.CONCERN_ELPS_CLS_DCNT THEN '관심'
+		            WHEN (TO_DATE(T1.INPUT_DATE, 'YYYYMMDD') - TO_DATE(T1.PRODUCTION_DATE, 'YYYYMMDD')) > T3.CONCERN_ELPS_CLS_DCNT THEN '초과'
+		       END AS ITEM_GRADE
+		  FROM (SELECT ORGANIZATION_CODE
+		             , ORGANIZATION_NAME
+		             , ITEM_CODE
+		             , ITEM_NAME
+		             , TO_CHAR(INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+		             , STOCK_QUANTITY
+		             , TO_CHAR(PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+		             , QUANTITY
+		             , TO_CHAR(IN_DATE, 'YYYYMMDD') AS IN_DATE
+		             , PRODUCTION_MFG
+		             , PRODUCTION_LOG
+		          FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+		         WHERE TO_CHAR(INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR(TO_DATE(YYYYMMDD,'YYYYMMDD')-7,'YYYYMMDD')
+		                                                     FROM SCMU.W_SOP_VW_CALENDAR_M
+		                                                    WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR})
+		           AND ITEM_CODE = #{itemCode, jdbcType=VARCHAR}
+                   AND NVL(QUANTITY,0) != 0 ) T1
+		     , (SELECT *
+		          FROM EDW.W_CM_TB_FG_ITEM_M WT1
+		         WHERE 1=1
+		           AND WT1.ITEM_TYPE = 'FG'
+		           AND WT1.ITEM_STATUS = 'Active'
+		           AND WT1.LIQUOR_CODE IN ('10','20')) T2
+		     , (SELECT BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		             , SUM(DECODE(GRADE_GB_CODE, 'G100', ELPS_ST_DCNT)) AS OPTIMAL_ELPS_ST_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G100', ELPS_CLS_DCNT)) AS OPTIMAL_ELPS_CLS_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G200', ELPS_ST_DCNT)) AS CONCERN_ELPS_ST_DCNT
+		             , SUM(DECODE(GRADE_GB_CODE, 'G200', ELPS_CLS_DCNT)) AS CONCERN_ELPS_CLS_DCNT            
+		          FROM SCMU.W_SOP_TB_FRESHNESS_ITEM_M
+		         WHERE USE_YN = 'Y'
+		         GROUP BY BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE) T3
+		     , TBL_ORG T4
+		 WHERE T1.ITEM_CODE = T2.ITEM_CODE
+		   AND T2.BRAND_CODE = T3.BRAND_CODE
+		   AND T2.USAGE_CODE = T3.USAGE_CODE
+		   AND T2.VESSEL_CODE = T3.VESSEL_CODE
+		   AND T2.VOLUME_VALUE = T3.VOLUME_VALUE
+		   AND T1.ORGANIZATION_CODE = T4.ORG_CODE
+		   <if test="centerCode != null and centerCode != '!ALL'">
+		   AND T1.ORGANIZATION_CODE = #{centerCode, jdbcType=VARCHAR}
+		   </if>
+		)
+		, TBL_CALENDER AS (
+		SELECT *
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD')
+		)
+		SELECT DECODE(GROUPING(M1.ORG_GB), 1, '전사', DECODE(GROUPING(M1.ORG_DESC), 1, M1.ORG_GB||'계', DECODE(GROUPING(M1.PRODUCTION_DATE), 1, M1.ORG_DESC, '    '||TO_CHAR(TO_DATE(M1.PRODUCTION_DATE,'YYYYMMDD'), 'YYYY-MM-DD')))) AS ORG_DESC
+		     , SUM(M1.TOTAL_QUANTITY) AS TOTAL_QUANTITY
+		     , SUM(OPTIMAL_QUANTITY) AS OPTIMAL_QUANTITY
+		     , SUM(CONCERN_QUANTITY) AS CONCERN_QUANTITY
+		     , SUM(NOT_FRESH_QUANTITY) AS NOT_FRESH_QUANTITY
+		     , NVL(M2.ACTUAL_20D_SALE_AVG_QTY,0) ACTUAL_20D_SALE_AVG_QTY
+		     , NVL(M2.ACTUAL_5D_SALE_AVG_QTY,0) ACTUAL_5D_SALE_AVG_QTY
+		     , DECODE(NVL(M2.ACTUAL_20D_SALE_AVG_QTY,0), 0, 0, ROUND(SUM(M4.ACTUAL_20D_STOCK_AVG_QTY) / M2.ACTUAL_20D_SALE_AVG_QTY,2)) AS ACT_20D_STOCK_DAY
+		     , DECODE(NVL(M2.ACTUAL_5D_SALE_AVG_QTY,0), 0, 0, ROUND(SUM(M3.ACTUAL_5D_STOCK_AVG_QTY) / M2.ACTUAL_5D_SALE_AVG_QTY,2)) AS ACT_5D_STOCK_DAY
+		     , DECODE(GROUPING(M1.PRODUCTION_DATE), 1, TO_CHAR(TO_DATE(MIN(M1.PRODUCTION_DATE),'YYYYMMDD'), 'YYYY-MM-DD')||' ~ '||TO_CHAR(TO_DATE(MAX(M1.PRODUCTION_DATE),'YYYYMMDD'), 'YYYY-MM-DD'), TO_CHAR(TO_DATE(M1.PRODUCTION_DATE,'YYYYMMDD'), 'YYYY-MM-DD')) PRODUCTION_DATE
+		     , DECODE(GROUPING(M1.IN_DATE), 1, TO_CHAR(TO_DATE(MIN(M1.IN_DATE),'YYYYMMDD'), 'YYYY-MM-DD')||' ~ '||TO_CHAR(TO_DATE(MAX(M1.IN_DATE),'YYYYMMDD'), 'YYYY-MM-DD'), TO_CHAR(TO_DATE(M1.IN_DATE,'YYYYMMDD'), 'YYYY-MM-DD')) IN_DATE
+		     , DECODE(GROUPING(M1.DAY_CNT), 1, MIN(M1.DAY_CNT)||' ~ '||MAX(M1.DAY_CNT), M1.DAY_CNT) DAY_CNT
+		     , DECODE(GROUPING(M1.PRODUCTION_MFG), 1, '', M1.PRODUCTION_MFG) PRODUCTION_MFG
+		     , DECODE(GROUPING(M1.PRODUCTION_LOG), 1, '', M1.PRODUCTION_LOG) PRODUCTION_LOG
+		     , DECODE(GROUPING(M1.PRODUCTION_DATE), 1, '0', '1') AS LEAF_FLAG
+		  FROM (SELECT T1.VESSEL_SORT
+		             , T1.VESSEL_CODE
+		             , T1.VESSEL_SORT_ORDER
+		             , T1.BRAND_SORT_ORDER
+		             , T1.ITEM_CODE
+		             , T1.DESCRIPTION
+		             , T1.ORG_CODE
+		             , T1.ORG_DESC
+		             , T1.ORG_GB
+		             , T1.ORG_SORT
+		             , T1.PRODUCTION_DATE
+		             , T1.IN_DATE
+		             , T1.DAY_CNT
+		             , T1.PRODUCTION_MFG
+		             , T1.PRODUCTION_LOG
+		             , SUM(T1.QUANTITY) AS TOTAL_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE IN ('적정', '관심') THEN T1.QUANTITY ELSE 0 END) AS FRESH_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE = '적정' THEN T1.QUANTITY ELSE 0 END) AS OPTIMAL_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE = '관심' THEN T1.QUANTITY ELSE 0 END) AS CONCERN_QUANTITY
+		             , SUM(CASE WHEN ITEM_GRADE = '초과' THEN T1.QUANTITY ELSE 0 END) AS NOT_FRESH_QUANTITY
+		             , SUM(T1.QUANTITY) AS QUANTITY
+		          FROM TBL_DAILY_QUANTITY T1
+		         WHERE 1=1
+		         <if test="gradeCode != null and gradeCode != '!ALL'">
+		           AND ITEM_GRADE = #{gradeCode, jdbcType=VARCHAR}
+		         </if>
+		         GROUP BY T1.VESSEL_SORT
+		                , T1.VESSEL_CODE
+		                , T1.VESSEL_SORT_ORDER
+		                , T1.BRAND_SORT_ORDER
+		                , T1.ITEM_CODE
+		                , T1.DESCRIPTION
+		                , T1.ORG_CODE
+		                , T1.ORG_DESC
+		                , T1.ORG_GB
+		                , T1.ORG_SORT
+		                , T1.PRODUCTION_DATE
+		                , T1.IN_DATE
+		                , T1.DAY_CNT
+		                , T1.PRODUCTION_MFG
+		                , T1.PRODUCTION_LOG) M1
+		     , (SELECT ITEM_CODE
+		             , ACTUAL_5D_SALE_AVG_QTY
+		             , ACTUAL_20D_SALE_AVG_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_SALE_F M1
+		             , TBL_CALENDER M2
+		         WHERE PERIOD_YYYYMMDD = M2.BF_YYYYMMDD) M2
+		     , (SELECT T1.ITEM_CODE
+		             , SUM(T1.STOCK_QTY) / 5 AS ACTUAL_5D_STOCK_AVG_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F T1
+		             , TBL_CALENDER T2
+		         WHERE T1.PERIOD_YYYYMMDD BETWEEN (T2.BF_5D_YYYYMMDD) AND (T2.BF_YYYYMMDD)
+		         GROUP BY T1.ITEM_CODE) M3
+		     , (SELECT T1.ITEM_CODE
+		             , SUM(T1.STOCK_QTY) / 20 AS ACTUAL_20D_STOCK_AVG_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F T1
+		             , TBL_CALENDER T2
+		         WHERE T1.PERIOD_YYYYMMDD BETWEEN (T2.BF_20D_YYYYMMDD) AND (T2.BF_YYYYMMDD)
+		         GROUP BY T1.ITEM_CODE) M4
+		 WHERE M1.ITEM_CODE = M2.ITEM_CODE(+)
+		   AND M1.ITEM_CODE = M3.ITEM_CODE(+)
+		   AND M1.ITEM_CODE = M4.ITEM_CODE(+)
+		 GROUP BY 
+		 GROUPING SETS ( (M1.ORG_GB
+		                , M1.ORG_SORT
+		                , M1.ORG_CODE
+		                , M1.ORG_DESC
+		                , M2.ACTUAL_5D_SALE_AVG_QTY
+		                , M2.ACTUAL_20D_SALE_AVG_QTY
+		                , M1.PRODUCTION_DATE
+		                , M1.IN_DATE
+		                , M1.DAY_CNT
+		                , M1.PRODUCTION_MFG
+		                , M1.PRODUCTION_LOG)
+		               , (M1.ORG_GB
+		                , M1.ORG_SORT
+		                , M1.ORG_CODE
+		                , M1.ORG_DESC
+		                , M2.ACTUAL_5D_SALE_AVG_QTY
+		                , M2.ACTUAL_20D_SALE_AVG_QTY)
+		               , (M1.ORG_GB
+		                , M1.ORG_SORT
+		                , M2.ACTUAL_5D_SALE_AVG_QTY
+		                , M2.ACTUAL_20D_SALE_AVG_QTY)
+		               , (M2.ACTUAL_5D_SALE_AVG_QTY
+		                , M2.ACTUAL_20D_SALE_AVG_QTY) )
+		 ORDER BY DECODE(GROUPING(M1.ORG_GB), 1, '!ALL', DECODE(GROUPING(M1.ORG_DESC), 1, '!B'||M1.ORG_SORT, DECODE(GROUPING(M1.PRODUCTION_DATE), 1, M1.ORG_CODE, M1.ORG_CODE||NVL(PRODUCTION_DATE,'9999-99-99'))))
+	</select>
+</mapper>

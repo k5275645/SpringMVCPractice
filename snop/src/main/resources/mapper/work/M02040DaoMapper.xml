@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제품수급 > 계획대비 실적 차이 분석 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M02040DaoMapper">
+    
+    <!-- 데이터 조회 : 그리드 헤더 조회(기간 데이터) -->
+    <select id="searchHeader" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02040DaoMapper.searchHeader */
+           A.PERIOD_YYYYMM, A.PERIOD_MMWW
+         , A.FR_YYYYMMDD, A.TO_YYYYMMDD
+         , SUBSTR(A.PERIOD_YYYYMM, 1, 4) || '-' || SUBSTR(A.PERIOD_YYYYMM, 5, 2)    AS PERIOD_YYYYMM_DESC
+         , CASE WHEN A.PERIOD_MMWW = '00' THEN '월계'
+                ELSE                           TO_NUMBER(A.PERIOD_MMWW) || '주'
+           END                                                                      AS PERIOD_MMWW_DESC
+         , 'YMW' || A.PERIOD_YYYYMM || A.PERIOD_MMWW                                AS COL_ID                       -- COL_ID : 그리드의 바디에서 사용할 Column ID. "YMW" + YYYYMM + 월주차(00 ~ 05). ex) YMW20210100, YMW20210101, ...
+         , CASE WHEN A.PERIOD_MMWW = '00' THEN COUNT(1) OVER (PARTITION BY A.PERIOD_YYYYMM)
+                ELSE                           1
+           END                                                                      AS HEADER_COL_SPAN              -- 월의 전체 개수(월계+주차 개수) : 헤더의 첫번째 행을 Column Merge하기 위해서
+    
+         , (
+                SELECT MAX(TO_CHAR(B.CREATION_DATE, 'YYYY-MM-DD HH24:MI:SS')) AS MAX_MAKE_DT_DESC
+                  FROM SCMU.M_SOP_TB_ITEM_SALE_F B
+                 WHERE 1 = 1
+                   AND B.PERIOD_YYYYMMDD = A.TO_YYYYMMDD
+                   AND ROWNUM = 1 -- 동일 일자의 작업일시는 동일
+           )                                                                        AS MAX_SALE_MAKE_DT_DESC        -- 판매 마트 최종 갱신 일시
+    
+         , (
+                SELECT MAX(TO_CHAR(B.CREATION_DATE, 'YYYY-MM-DD HH24:MI:SS')) AS MAX_MAKE_DT_DESC
+                  FROM SCMU.W_SOP_TB_ESPN_SALE_F B
+                 WHERE 1 = 1
+                   AND B.PERIOD_YYYYMM = A.PERIOD_YYYYMM
+                   AND B.PERIOD_MMWW   = A.PERIOD_MMWW
+                   AND ROWNUM = 1 -- 동일 일자의 작업일시는 동일
+           )                                                                        AS MAX_SALE_ESPN_MAKE_DT_DESC   -- 판매예상량 최종 갱신 일시
+    
+         , (
+                SELECT MAX(TO_CHAR(B.CREATION_DATE, 'YYYY-MM-DD HH24:MI:SS')) AS MAX_MAKE_DT_DESC
+                  FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F B
+                 WHERE 1 = 1
+                   AND B.PERIOD_YYYYMMDD = A.TO_YYYYMMDD
+                   AND ROWNUM = 1 -- 동일 일자의 작업일시는 동일
+           )                                                                        AS MAX_STOCK_PRDT_MAKE_DT_DESC  -- 재고/생산 마트 최종 갱신 일시
+    
+         , C.MAX_ACTUAL_SALE_QTY_DT                                                 AS MAX_ACTUAL_SALE_QTY_DT       -- 판매 마트의 (조회기간 중)최종 실적일자
+    
+         , CASE WHEN A.PERIOD_MMWW != 0 AND C.MAX_ACTUAL_SALE_QTY_DT BETWEEN A.FR_YYYYMMDD AND A.TO_YYYYMMDD THEN 'Y'
+                ELSE 'N'
+           END                                                                      AS MAX_ACTUAL_SALE_QTY_YYYYWW_YN    -- 판매 마트의 (조회기간 중)최종 실적일자가 포함된 주차여부
+
+      FROM (
+                SELECT YYYYMM                       AS PERIOD_YYYYMM
+                     , '00'                         AS PERIOD_MMWW  -- 월주차
+                     , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+                     , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+                  FROM SCMU.W_SOP_VW_CALENDAR_M
+                 WHERE 1 = 1
+                   AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+                 GROUP BY YYYYMM
+                 UNION ALL
+                SELECT YYYYMM                       AS PERIOD_YYYYMM
+                     , SUBSTR(SCM_YYYYMMWW, 7, 2)   AS PERIOD_MMWW  -- 월주차
+                     , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+                     , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+                  FROM SCMU.W_SOP_VW_CALENDAR_M
+                 WHERE 1 = 1
+                   AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+                 GROUP BY YYYYMM, SCM_YYYYMMWW
+           ) A
+ LEFT JOIN (    -- C. 기간 중 판매실적이 존재하는 최대일자
+                SELECT MAX(C.PERIOD_YYYYMMDD) AS MAX_ACTUAL_SALE_QTY_DT
+                  FROM SCMU.M_SOP_TB_ITEM_SALE_F C
+                 WHERE 1 = 1
+                   AND C.ACTUAL_SALE_QTY != 0
+                   AND C.PERIOD_YYYYMMDD BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} || '00' AND #{toYYYYMM, jdbcType=VARCHAR} || '99'
+           ) C
+        ON 1 = 1
+     WHERE 1 = 1
+     ORDER BY A.PERIOD_YYYYMM, A.PERIOD_MMWW
+    </select>
+    
+    <!-- 데이터 조회 : 그리드 바디 조회 -->
+    <select id="searchBody" parameterType="map" resultType="map">
+WITH PERIOD_TBL AS (
+    -- 기간의 월주차 리스트 : 월계(00), 1주(01) ~ 5주(05) : 속도향상을 위해서, WITH절로 처리
+    SELECT YYYYMM                       AS PERIOD_YYYYMM
+         , '00'                         AS PERIOD_MMWW  -- 월주차
+         , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+         , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+      FROM SCMU.W_SOP_VW_CALENDAR_M
+     WHERE 1 = 1
+       AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+     GROUP BY YYYYMM
+     UNION ALL
+    SELECT YYYYMM                       AS PERIOD_YYYYMM
+         , SUBSTR(SCM_YYYYMMWW, 7, 2)   AS PERIOD_MMWW  -- 월주차
+         , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+         , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+      FROM SCMU.W_SOP_VW_CALENDAR_M
+     WHERE 1 = 1
+       AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+     GROUP BY YYYYMM, SCM_YYYYMMWW
+)
+, STOCK_PRDT_TBL AS (
+    -- F, G. 생산/재고 데이터 조회 : 속도향상을 위해서
+    SELECT GA.PERIOD_YYYYMMDD, GA.PERIOD_YYYYMM, GA.PERIOD_SCM_YYYYMMWW, GA.LIQUOR_CODE
+         , SUM(GA.PRDT_PLAN_WW_FST_QTY * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', GA.UOM_CONVERSION_VALUE, 1))            AS PRDT_PLAN_WW_FST_QTY
+         , SUM(GA.PRDT_PLAN_WW_QTY * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', GA.UOM_CONVERSION_VALUE, 1))                AS PRDT_PLAN_WW_QTY
+         , SUM(GA.PRDT_ACTUAL_QTY * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', GA.UOM_CONVERSION_VALUE, 1))                 AS PRDT_ACTUAL_QTY
+         , SUM((GA.STOCK_QTY - GA.STOCK_QC_QTY) * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', GA.UOM_CONVERSION_VALUE, 1))   AS STOCK_QTY -- QC를 제외한 재고수량(FGI, FGI-STAGE)
+      FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F GA
+      JOIN EDW.W_CM_TB_FG_ITEM_M           GB
+        ON GB.ITEM_CODE = GA.ITEM_CODE
+     WHERE 1 = 1
+       AND GA.PERIOD_YYYYMMDD BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} || '00' AND #{toYYYYMM, jdbcType=VARCHAR} || '99'
+       AND GA.ITEM_TYPE     = 'FG'
+       AND GB.DOM_EXP_CODE  = '1' -- 내수만 조회
+       AND (GA.PRDT_PLAN_WW_FST_QTY != 0 OR GA.PRDT_PLAN_WW_QTY != 0 OR GA.PRDT_ACTUAL_QTY != 0 OR GA.STOCK_QTY != 0 OR GA.STOCK_QC_QTY != 0) -- 속도향상용
+       -- 제품의 속성 조건절 : 용도, 용기, 용량
+       AND ( (#{usageCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{usageCode, jdbcType=VARCHAR} = GB.USAGE_CODE) )
+       AND ( (#{vesselCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{vesselCode, jdbcType=VARCHAR} = GB.VESSEL_CODE) )
+       AND ( (#{volumeValue, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{volumeValue, jdbcType=VARCHAR} = GB.VOLUME_VALUE) )
+     GROUP BY GA.PERIOD_YYYYMMDD, GA.PERIOD_YYYYMM, GA.PERIOD_SCM_YYYYMMWW, GA.LIQUOR_CODE
+)
+SELECT /* com.hitejinro.snop.work.dao.M02040DaoMapper.searchBody */
+       LIQUOR_CODE, LIQUOR_DESC, LIQUOR_SEQ
+     , GUBUN1_CODE, GUBUN1_NAME -- 구분의 첫번째 컬럼
+     , GUBUN2_CODE, GUBUN2_NAME -- 구분의 두번째 컬럼
+     , GUBUN3_CODE, GUBUN3_NAME -- 구분의 세번째 컬럼
+     , COL_MERGE_TYPE, GUBUN_SEQ, ESPN_SALE_INP_DGR, ACCT_TYPE
+        <![CDATA[
+     , CASE WHEN GUBUN2_CODE = 'PRDT_PLAN_WW_FST_QTY' THEN 'N' -- 생산초안
+            WHEN GUBUN2_CODE LIKE 'ESPN_SALE_QTY%' AND ESPN_SALE_INP_DGR < MAX(ESPN_SALE_INP_DGR) OVER (PARTITION BY LIQUOR_CODE)
+                                                      THEN 'N' -- 판매예상의 마지막 차수 제외
+            ELSE                                           'Y'
+       END AS SUMMARY_YN -- 요약 여부 : Y(요약시 표기), N(요약시 숨김)
+        ]]>
+     , ACCT_TYPE    AS "Def"    -- 그리드의 행별 속성 설정 : QTY, TXT
+     
+     /* From ~ To 기간 리스트 : 월의 합계(00), 01주(01) ~ 05주(05)
+     
+     , CASE WHEN ACCT_TYPE = 'QTY' THEN TO_CHAR( MAX(CASE WHEN PERIOD_YYYYMM = '202101' AND PERIOD_MMWW = '00' THEN GUBUN_VALUE ELSE '' END) )
+            WHEN ACCT_TYPE = 'TXT' THEN TO_CHAR( MAX(CASE WHEN PERIOD_YYYYMM = '202101' AND PERIOD_MMWW = '00' THEN GUBUN_VALUE ELSE '' END) )
+       END AS YMW20210100
+     , CASE WHEN ACCT_TYPE = 'QTY' THEN TO_CHAR( MAX(CASE WHEN PERIOD_YYYYMM = '202101' AND PERIOD_MMWW = '01' THEN GUBUN_VALUE ELSE '' END) )
+            WHEN ACCT_TYPE = 'TXT' THEN TO_CHAR( MAX(CASE WHEN PERIOD_YYYYMM = '202101' AND PERIOD_MMWW = '01' THEN GUBUN_VALUE ELSE '' END) )
+       END AS YMW20210101
+     */
+        <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+     , CASE WHEN ACCT_TYPE = 'QTY' THEN TO_CHAR( MAX(CASE WHEN PERIOD_YYYYMM = #{item.PERIOD_YYYYMM, jdbcType=VARCHAR} AND PERIOD_MMWW = #{item.PERIOD_MMWW, jdbcType=VARCHAR} THEN GUBUN_VALUE ELSE '' END) )
+            WHEN ACCT_TYPE = 'TXT' THEN TO_CHAR( MAX(CASE WHEN PERIOD_YYYYMM = #{item.PERIOD_YYYYMM, jdbcType=VARCHAR} AND PERIOD_MMWW = #{item.PERIOD_MMWW, jdbcType=VARCHAR} THEN GUBUN_VALUE ELSE '' END) )
+       END AS ${item.COL_ID}
+        </foreach>
+
+  FROM (
+            SELECT A.LIQUOR_CODE, A.LIQUOR_DESC, A.SORT_NUMBER AS LIQUOR_SEQ
+                 , B.GUBUN1_CODE, B.GUBUN1_NAME -- 구분의 첫번째 컬럼
+                 , B.GUBUN2_CODE, B.GUBUN2_NAME -- 구분의 두번째 컬럼
+                 , B.GUBUN3_CODE, B.GUBUN3_NAME -- 구분의 세번째 컬럼
+                 , B.COL_MERGE_TYPE, B.GUBUN_SEQ, B.ESPN_SALE_INP_DGR, B.ACCT_TYPE
+                 , C.PERIOD_YYYYMM, C.PERIOD_MMWW, C.FR_YYYYMMDD, C.TO_YYYYMMDD
+                 -- 구분의 값은 텍스트와 숫자가 섞여있어서, 일단 문자형식으로 변환
+                 , CASE WHEN B.GUBUN1_CODE = 'SALE'     AND B.GUBUN2_CODE = 'YYYY_TRG_SALE_QTY'                                             THEN TRIM(TO_CHAR( NVL(D.YYYY_TRG_SALE_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'SALE'     AND B.GUBUN2_CODE = 'ESPN_SALE_QTY' || '-' || B.ESPN_SALE_INP_DGR                   THEN TRIM(TO_CHAR( NVL(E.ESPN_SALE_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'SALE'     AND B.GUBUN2_CODE = 'ACTUAL_SALE_QTY'                                               THEN TRIM(TO_CHAR( NVL(D.ACTUAL_SALE_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'SALE'     AND B.GUBUN2_CODE = 'ANL_DIFF'              AND B.GUBUN3_CODE = 'ACTUAL_TRG'        THEN TRIM(TO_CHAR( NVL(D.ACTUAL_SALE_QTY, 0) - NVL(D.YYYY_TRG_SALE_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'SALE'     AND B.GUBUN2_CODE = 'ANL_DIFF'              AND B.GUBUN3_CODE = 'ACTUAL_ESPN'       THEN TRIM(TO_CHAR( NVL(D.ACTUAL_SALE_QTY, 0) - NVL(D.ESPN_SALE_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'SALE'     AND B.GUBUN2_CODE = 'ANL_DIFF'              AND B.GUBUN3_CODE = 'SALE_RSN'          THEN TO_CHAR( H.SALE_RSN )
+                        
+                        WHEN B.GUBUN1_CODE = 'PRDT'     AND B.GUBUN2_CODE = 'PRDT_PLAN_WW_FST_QTY'                                          THEN TRIM(TO_CHAR( NVL(F.PRDT_PLAN_WW_FST_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'PRDT'     AND B.GUBUN2_CODE = 'PRDT_PLAN_WW_QTY'                                              THEN TRIM(TO_CHAR( NVL(F.PRDT_PLAN_WW_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'PRDT'     AND B.GUBUN2_CODE = 'PRDT_ACTUAL_QTY'                                               THEN TRIM(TO_CHAR( NVL(F.PRDT_ACTUAL_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'PRDT'     AND B.GUBUN2_CODE = 'ANL_DIFF'              AND B.GUBUN3_CODE = 'ACTUAL_FST_PLAN'   THEN TRIM(TO_CHAR( NVL(F.PRDT_ACTUAL_QTY, 0) - NVL(F.PRDT_PLAN_WW_FST_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'PRDT'     AND B.GUBUN2_CODE = 'ANL_DIFF'              AND B.GUBUN3_CODE = 'ACTUAL_PLAN'       THEN TRIM(TO_CHAR( NVL(F.PRDT_ACTUAL_QTY, 0) - NVL(F.PRDT_PLAN_WW_QTY, 0), '9999999999999990.9999' ))
+                        WHEN B.GUBUN1_CODE = 'PRDT'     AND B.GUBUN2_CODE = 'ANL_DIFF'              AND B.GUBUN3_CODE = 'PRDT_RSN'          THEN TO_CHAR( H.PRDT_RSN )
+                        
+                        WHEN B.GUBUN1_CODE = 'STOCK'                                                                                        THEN TRIM(TO_CHAR( NVL(G.STOCK_QTY, 0), '9999999999999990.9999' ))
+                        
+                   END              AS GUBUN_VALUE
+
+              FROM EDW.W_CM_TB_LIQUOR_M         A   -- A. 사업부문
+        CROSS JOIN (                                -- B. 구분 리스트
+                        -- B.1.1. 판매-경영목표
+                        SELECT 'SALE' AS GUBUN1_CODE, '판매' AS GUBUN1_NAME
+                             , 'YYYY_TRG_SALE_QTY' AS GUBUN2_CODE, '경영목표' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '2:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 1100                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+        <![CDATA[
+                        -- B.1.2. 판매-판매예상량 : 기간내에 입력된 최대 차수만큼 리스트 생성
+                        SELECT 'SALE' AS GUBUN1_CODE, '판매' AS GUBUN1_NAME
+                             , 'ESPN_SALE_QTY' || '-' || LEVEL AS GUBUN2_CODE, '판매예상 ' || LEVEL || '차' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '2:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 1200 + LEVEL         AS GUBUN_SEQ            -- 구분의 순번
+                             , LEVEL                AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                    CROSS JOIN (    -- 기간내의 판매예상량의 최대 차수 리스트
+                                    SELECT NVL(INP_DGR, 1) AS MAX_INP_DGR
+                                      FROM DUAL
+                                 LEFT JOIN (    -- 기간에 해당하는 판매예상량의 최대 차수
+                                                SELECT MAX(INP_DGR) AS INP_DGR
+                                                  FROM SCMU.W_SOP_TB_ESPN_SALE_F
+                                                 WHERE 1 = 1
+                                                   AND PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+                                           )
+                                        ON 1 = 1
+                                     WHERE 1 = 1
+                               ) BB
+                           WHERE 1 = 1
+                         CONNECT BY LEVEL <= BB.MAX_INP_DGR
+        ]]>
+                         UNION ALL
+                        -- B.1.3. 판매-판매실적
+                        SELECT 'SALE' AS GUBUN1_CODE, '판매' AS GUBUN1_NAME
+                             , 'ACTUAL_SALE_QTY' AS GUBUN2_CODE, '판매실적' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '2:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 1300                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.1.4.1. 판매-차이분석(실적-경영목표)
+                        SELECT 'SALE' AS GUBUN1_CODE, '판매' AS GUBUN1_NAME
+                             , 'ANL_DIFF' AS GUBUN2_CODE, '차이분석' AS GUBUN2_NAME
+                             , 'ACTUAL_TRG' AS GUBUN3_CODE, '실적-경영목표' AS GUBUN3_NAME
+                             , ''                   AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 1410                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.1.4.2. 판매-차이분석(실적-예상)
+                        SELECT 'SALE' AS GUBUN1_CODE, '판매' AS GUBUN1_NAME
+                             , 'ANL_DIFF' AS GUBUN2_CODE, '차이분석' AS GUBUN2_NAME
+                             , 'ACTUAL_ESPN' AS GUBUN3_CODE, '실적-예상' AS GUBUN3_NAME
+                             , ''                   AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 1420                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.1.4.3. 판매-차이분석(사유)
+                        SELECT 'SALE' AS GUBUN1_CODE, '판매' AS GUBUN1_NAME
+                             , 'ANL_DIFF' AS GUBUN2_CODE, '차이분석' AS GUBUN2_NAME
+                             , 'SALE_RSN' AS GUBUN3_CODE, '사유' AS GUBUN3_NAME
+                             , ''                   AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 1430                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'TXT'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+
+                         UNION ALL
+                        -- B.2.1. 생산-생산초안 : 업로드 주간생산계획의 초안
+                        SELECT 'PRDT' AS GUBUN1_CODE, '생산' AS GUBUN1_NAME
+                             , 'PRDT_PLAN_WW_FST_QTY' AS GUBUN2_CODE, '생산초안' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '2:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 2100                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.2.2. 생산-생산조정 : 업로드 주간생산계획의 마지막 값
+                        SELECT 'PRDT' AS GUBUN1_CODE, '생산' AS GUBUN1_NAME
+                             , 'PRDT_PLAN_WW_QTY' AS GUBUN2_CODE, '생산조정' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '2:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 2200                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.2.3. 생산-생산실적
+                        SELECT 'PRDT' AS GUBUN1_CODE, '생산' AS GUBUN1_NAME
+                             , 'PRDT_ACTUAL_QTY' AS GUBUN2_CODE, '생산실적' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '2:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 2300                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.2.4.1. 생산-차이분석(실적-초안)
+                        SELECT 'PRDT' AS GUBUN1_CODE, '생산' AS GUBUN1_NAME
+                             , 'ANL_DIFF' AS GUBUN2_CODE, '차이분석' AS GUBUN2_NAME
+                             , 'ACTUAL_FST_PLAN' AS GUBUN3_CODE, '실적-초안' AS GUBUN3_NAME
+                             , ''                   AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 2410                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.2.4.2. 생산-차이분석(실적-조정)
+                        SELECT 'PRDT' AS GUBUN1_CODE, '생산' AS GUBUN1_NAME
+                             , 'ANL_DIFF' AS GUBUN2_CODE, '차이분석' AS GUBUN2_NAME
+                             , 'ACTUAL_PLAN' AS GUBUN3_CODE, '실적-조정' AS GUBUN3_NAME
+                             , ''                   AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 2420                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.2.4.3. 생산-차이분석(사유)
+                        SELECT 'PRDT' AS GUBUN1_CODE, '생산' AS GUBUN1_NAME
+                             , 'ANL_DIFF' AS GUBUN2_CODE, '차이분석' AS GUBUN2_NAME
+                             , 'PRDT_RSN' AS GUBUN3_CODE, '사유' AS GUBUN3_NAME
+                             , ''                   AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 2430                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'TXT'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                         UNION ALL
+                        -- B.3.1. 마감재고
+                        SELECT 'STOCK' AS GUBUN1_CODE, '마감재고' AS GUBUN1_NAME
+                             , '' AS GUBUN2_CODE, '' AS GUBUN2_NAME
+                             , '' AS GUBUN3_CODE, '' AS GUBUN3_NAME
+                             , '1:3'                AS COL_MERGE_TYPE       -- 컬럼 병합 처리 : '2:3'(2~3번째 컬럼), ''(병합 없음), '1:3'(1~3번째 컬럼)
+                             , 3000                 AS GUBUN_SEQ            -- 구분의 순번
+                             , TO_NUMBER(NULL)      AS ESPN_SALE_INP_DGR    -- 판매예상량의 입력차수 : 관계없으면 NULL 처리
+                             , 'QTY'                AS ACCT_TYPE            -- 계정유형 : QTY(수량), TXT(텍스트)
+                          FROM DUAL
+                   
+                   )                            B
+        CROSS JOIN PERIOD_TBL                   C   -- C. 기간의 월주차 리스트 : 월계(00), 1주(01) ~ 5주(05)
+
+         LEFT JOIN (    -- D. 제품 판매 마트 : 속도 향상을 위해서, 미리 합산. 00(월계) 강제 생성. 내수만(실적/경영계획은 제품의 속성이 아닌, 판매속성으로 구분 : MARKET_TYPE = 'D', 영업예상량은 제품의 속성으로 구분 : DOM_EXP_CODE = '1' )
+                        SELECT DA.PERIOD_YYYYMM
+                             , CASE WHEN DB.GUBUN = 'M' THEN DA.PERIOD_YYYYMM || '00'
+                                    ELSE                     DA.PERIOD_SCM_YYYYMMWW
+                               END                                                                                                              AS PERIOD_SCM_YYYYMMWW
+                             , DA.LIQUOR_CODE
+                             -- 연간목표(경영계획)은 단순c/s와 환산c/s로 컬럼이 다르게 구성되어있음 : 서로 환산시 차이가 발생해서, 별도로 존재
+                             , SUM(DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', DA.YYYY_TRG_SALE_CONV_QTY, DA.YYYY_TRG_SALE_QTY))   AS YYYY_TRG_SALE_QTY
+                             -- 영업예상량은 원래 환산c/s로 등록되어있어서, 역산처리. 영업예상량은 판매속성이 없어서, 제품의 속성으로 내수/수출 구분
+                             , SUM(CASE WHEN DC.DOM_EXP_CODE = '1' THEN DA.ESPN_SALE_QTY * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', 1, DECODE(DA.UOM_CONVERSION_VALUE, 0, NULL, 1 / DA.UOM_CONVERSION_VALUE)) ELSE 0 END
+                                  )                                                                                                             AS ESPN_SALE_QTY
+                             , SUM(DA.ACTUAL_SALE_QTY * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', DA.UOM_CONVERSION_VALUE, 1))     AS ACTUAL_SALE_QTY
+                             --, MAX(TO_CHAR(DA.CREATION_DATE, 'YYYY-MM-DD HH24:MI:SS'))                                                          AS MAKE_DT_DESC
+                          FROM SCMU.M_SOP_TB_ITEM_SALE_F DA
+                    CROSS JOIN (
+                                    SELECT 'M' AS GUBUN FROM DUAL UNION ALL
+                                    SELECT 'W' AS GUBUN FROM DUAL
+                               )                         DB
+                          JOIN EDW.W_CM_TB_FG_ITEM_M     DC
+                            ON DC.ITEM_CODE = DA.ITEM_CODE
+                         WHERE 1 = 1
+                           AND DA.PERIOD_YYYYMMDD BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} || '00' AND #{toYYYYMM, jdbcType=VARCHAR} || '99'
+                           AND DA.ITEM_TYPE     IN ('FG', 'PH') -- 본단위 환불이 존재해서, PH(팬텀)도 추가 : 단순c/s는 무의미한 숫자가 나옴
+                           AND DA.LIQUOR_CODE   IN ('10', '20')
+                           AND DA.MARKET_TYPE   = 'D' -- 내수만 조회
+                           AND (DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', DA.YYYY_TRG_SALE_CONV_QTY, DA.YYYY_TRG_SALE_QTY) != 0 OR DA.ESPN_SALE_QTY != 0 OR  DA.ACTUAL_SALE_QTY != 0) -- 속도향상용
+                           -- 제품의 속성 조건절 : 용도, 용기, 용량
+                           AND ( (#{usageCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{usageCode, jdbcType=VARCHAR} = DC.USAGE_CODE) )
+                           AND ( (#{vesselCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{vesselCode, jdbcType=VARCHAR} = DC.VESSEL_CODE) )
+                           AND ( (#{volumeValue, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{volumeValue, jdbcType=VARCHAR} = DC.VOLUME_VALUE) )
+                         GROUP BY DA.PERIOD_YYYYMM, DA.LIQUOR_CODE, CASE WHEN DB.GUBUN = 'M' THEN DA.PERIOD_YYYYMM || '00' ELSE DA.PERIOD_SCM_YYYYMMWW END
+                   )                            D
+                ON D.PERIOD_YYYYMM       = C.PERIOD_YYYYMM
+               AND D.PERIOD_SCM_YYYYMMWW = C.PERIOD_YYYYMM || C.PERIOD_MMWW
+               AND D.LIQUOR_CODE         = A.LIQUOR_CODE
+               AND B.GUBUN1_CODE = 'SALE' -- 판매에 해당하는 것만 조회
+
+         LEFT JOIN (    -- E. 영업예상 : 속도 향상을 위해서, 미리 합산. 00(월계)가 들어있음. 내수만(제품의 속성으로 구분 : DOM_EXP_CODE = '1')
+                        SELECT EA.PERIOD_YYYYMM, EA.INP_DGR, EA.PERIOD_MMWW, EB.LIQUOR_CODE
+                             -- 영업예상량은 원래 환산c/s로 등록되어있어서, 역산처리
+                             , SUM(EA.ESPN_SALE_QTY * DECODE(#{acctCd, jdbcType=VARCHAR}, 'ACCT_UOM_CS_QTY', 1, DECODE(EB.UOM_CONVERSION_VALUE, 0, NULL, 1 / EB.UOM_CONVERSION_VALUE)))   AS ESPN_SALE_QTY
+                             --, MAX(TO_CHAR(EA.LAST_UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS'))                               AS MAKE_DT_DESC
+                          FROM SCMU.W_SOP_TB_ESPN_SALE_F EA
+                          JOIN EDW.W_CM_TB_FG_ITEM_M     EB
+                            ON EB.ITEM_CODE = EA.ITEM_CODE
+                         WHERE 1 = 1
+                           AND EA.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+                           AND EB.ITEM_TYPE     = 'FG'
+                           AND EB.DOM_EXP_CODE  = '1' -- 내수만 조회
+                           -- 제품의 속성 조건절 : 용도, 용기, 용량
+                           AND ( (#{usageCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{usageCode, jdbcType=VARCHAR} = EB.USAGE_CODE) )
+                           AND ( (#{vesselCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{vesselCode, jdbcType=VARCHAR} = EB.VESSEL_CODE) )
+                           AND ( (#{volumeValue, jdbcType=VARCHAR} = '!ALL' AND 1 = 1) OR (#{volumeValue, jdbcType=VARCHAR} = EB.VOLUME_VALUE) )
+                         GROUP BY EA.PERIOD_YYYYMM, EA.INP_DGR, EA.PERIOD_MMWW, EB.LIQUOR_CODE
+                   )                            E
+                ON E.PERIOD_YYYYMM = C.PERIOD_YYYYMM
+               AND E.INP_DGR       = B.ESPN_SALE_INP_DGR
+               AND E.PERIOD_MMWW   = C.PERIOD_MMWW
+               AND E.LIQUOR_CODE   = A.LIQUOR_CODE
+               AND B.GUBUN1_CODE = 'SALE' -- 판매에 해당하는 것만 조회
+
+         LEFT JOIN (    -- F. 제품 생산 마트 중 생산 정보만 : 속도 향상을 위해서, 미리 합산. 00(월계) 강제 생성. 내수만(제품의 속성으로 구분 : DOM_EXP_CODE = '1')
+                        SELECT FA.PERIOD_YYYYMM
+                             , CASE WHEN FB.GUBUN = 'M' THEN FA.PERIOD_YYYYMM || '00'
+                                    ELSE                     FA.PERIOD_SCM_YYYYMMWW
+                               END                                  AS PERIOD_SCM_YYYYMMWW
+                             , FA.LIQUOR_CODE
+                             , SUM(FA.PRDT_PLAN_WW_FST_QTY)         AS PRDT_PLAN_WW_FST_QTY
+                             , SUM(FA.PRDT_PLAN_WW_QTY)             AS PRDT_PLAN_WW_QTY
+                             , SUM(FA.PRDT_ACTUAL_QTY)              AS PRDT_ACTUAL_QTY
+                          FROM STOCK_PRDT_TBL                  FA
+                    CROSS JOIN (
+                                    SELECT 'M' AS GUBUN FROM DUAL UNION ALL
+                                    SELECT 'W' AS GUBUN FROM DUAL
+                               )                               FB
+                         WHERE 1 = 1
+                         GROUP BY FA.PERIOD_YYYYMM, FA.LIQUOR_CODE, CASE WHEN FB.GUBUN = 'M' THEN FA.PERIOD_YYYYMM || '00' ELSE FA.PERIOD_SCM_YYYYMMWW END
+                   )                            F
+                ON F.PERIOD_YYYYMM       = C.PERIOD_YYYYMM
+               AND F.PERIOD_SCM_YYYYMMWW = C.PERIOD_YYYYMM || C.PERIOD_MMWW
+               AND F.LIQUOR_CODE         = A.LIQUOR_CODE
+               AND B.GUBUN1_CODE = 'PRDT' -- 생산에 해당하는 것만 조회
+                        -- G. 제품 재고 마트 중 재고 정보만 : 속도 향상을 위해서, 미리 합산. 내수만(제품의 속성으로 구분 : DOM_EXP_CODE = '1')
+         LEFT JOIN STOCK_PRDT_TBL                   G
+                ON G.PERIOD_YYYYMMDD = LEAST(C.TO_YYYYMMDD, TO_CHAR(SYSDATE-1, 'YYYYMMDD')) -- 재고는 해당 기간의 마지막 일자만 필요함. 단, 어제를 초과하는 건 어제로 고정
+               AND G.LIQUOR_CODE     = A.LIQUOR_CODE
+               AND B.GUBUN1_CODE = 'STOCK' -- 재고에 해당하는 것만 조회
+
+         LEFT JOIN SCMU.W_SOP_TB_ANL_DIFF_ACTUAL_F  H   -- H. 실적차이분석 사유
+                ON H.PERIOD_YYYYMM = C.PERIOD_YYYYMM
+               AND H.PERIOD_MMWW   = C.PERIOD_MMWW
+               AND H.LIQUOR_CODE   = A.LIQUOR_CODE
+               AND B.GUBUN3_CODE IN ('SALE_RSN', 'PRDT_RSN') -- 판매사유/생산사유에 해당하는 것만 조회
+
+             WHERE 1 = 1
+               AND A.LIQUOR_CODE IN ('10', '20') -- 사업부문 : 10(맥주), 20(소주)
+               AND (
+                        (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                        OR
+                        (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+                   )
+             --ORDER BY A.SORT_NUMBER, B.GUBUN_SEQ, C.PERIOD_YYYYMM, C.PERIOD_MMWW
+       )
+ WHERE 1 = 1
+ GROUP BY LIQUOR_CODE, LIQUOR_DESC, LIQUOR_SEQ, GUBUN1_CODE, GUBUN1_NAME, GUBUN2_CODE, GUBUN2_NAME, GUBUN3_CODE, GUBUN3_NAME, COL_MERGE_TYPE, GUBUN_SEQ, ESPN_SALE_INP_DGR, ACCT_TYPE
+ ORDER BY LIQUOR_SEQ, LIQUOR_CODE, GUBUN_SEQ
+    </select>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+MERGE INTO /* com.hitejinro.snop.work.dao.M02040DaoMapper.update */
+           SCMU.W_SOP_TB_ANL_DIFF_ACTUAL_F T
+     USING (
+    -- CHANGE_SALE_YN(영업 사유 변경시, Y), CHANGE_PRDT_YN(생산 사유 변경시, Y)
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    SELECT #{list.PERIOD_YYYYMM, jdbcType=VARCHAR}  AS PERIOD_YYYYMM
+         , #{list.PERIOD_MMWW, jdbcType=VARCHAR}    AS PERIOD_MMWW
+         , #{list.LIQUOR_CODE, jdbcType=VARCHAR}    AS LIQUOR_CODE
+         , #{list.SALE_RSN, jdbcType=VARCHAR}       AS SALE_RSN
+         , #{list.PRDT_RSN, jdbcType=VARCHAR}       AS PRDT_RSN
+         , #{list.CHANGE_SALE_YN, jdbcType=VARCHAR} AS CHANGE_SALE_YN
+         , #{list.CHANGE_PRDT_YN, jdbcType=VARCHAR} AS CHANGE_PRDT_YN
+      FROM DUAL
+        </foreach>
+           ) S
+        ON (T.PERIOD_YYYYMM = S.PERIOD_YYYYMM AND T.PERIOD_MMWW = S.PERIOD_MMWW AND T.LIQUOR_CODE = S.LIQUOR_CODE)
+        
+      WHEN MATCHED THEN
+        UPDATE SET T.SALE_RSN           = CASE WHEN S.CHANGE_SALE_YN = 'Y' THEN S.SALE_RSN ELSE T.SALE_RSN END
+                 , T.PRDT_RSN           = CASE WHEN S.CHANGE_PRDT_YN = 'Y' THEN S.PRDT_RSN ELSE T.PRDT_RSN END
+                 , T.LAST_UPDATED_BY    = #{userId, jdbcType=VARCHAR}
+                 , T.LAST_UPDATE_DATE   = SYSDATE
+
+      WHEN NOT MATCHED THEN
+        INSERT (T.PERIOD_YYYYMM, T.PERIOD_MMWW, T.LIQUOR_CODE, T.SALE_RSN, T.PRDT_RSN, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+        VALUES (S.PERIOD_YYYYMM, S.PERIOD_MMWW, S.LIQUOR_CODE, S.SALE_RSN, S.PRDT_RSN, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+    
+</mapper>

@@ -1,0 +1,696 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 용기 공급계획 수립 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03070DaoMapper">
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03070DaoMapper.search */
+		      A.VER_CD
+		    , TO_CHAR(TO_DATE(SUBSTR(A.STD_YYYYMMDD, 0, 6), 'YYYYMM'), 'YYYY-MM') 	AS STD_YYYYMM
+		    , TO_CHAR(TO_DATE(A.STD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')            AS STD_YYYYMMDD
+		    , A.BRAND_CODE, A.VER_NM, A.VER_DESC, A.USE_YN
+		    
+		    , TO_CHAR(TO_DATE(A.VER_FR_DT, 'YYYYMMDD'), 'YYYY-MM')	AS VER_FR_MM
+		    , TO_CHAR(TO_DATE(A.VER_TO_DT, 'YYYYMMDD'), 'YYYY-MM')	AS VER_TO_MM
+		    , B.VER_CD												AS DALY_SCM_SIMUL_VER_CD
+		    , B.VER_NM AS DALY_SCM_SIMUL_VER_NM
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M A
+		
+		LEFT JOIN SCMU.W_SOP_TB_DALY_SCM_SIMUL_M B ON B.VER_CD = A.DALY_SCM_SIMUL_VER_CD
+		
+		WHERE 1 = 1
+		    AND SUBSTR(A.STD_YYYYMMDD, 0, 6) = #{YYYYMM, jdbcType=VARCHAR}
+		    AND A.BRAND_CODE                 = DECODE(#{brandCode, jdbcType=VARCHAR}, '!ALL', A.BRAND_CODE, #{brandCode, jdbcType=VARCHAR})
+		    AND A.USE_YN                     = DECODE(#{useYN, jdbcType=VARCHAR}, '!ALL', A.USE_YN, #{useYN, jdbcType=VARCHAR})
+		ORDER BY A.VER_CD
+	</select>
+
+	<!-- 삭제 -->
+	<delete id="delete" parameterType="map">
+		DELETE
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M A
+		WHERE 1 = 1
+			AND A.VER_CD IN
+	   		<foreach collection="deleteList" item="list" separator="," index="i" open="(" close=")">
+	   			#{list.VER_CD, jdbcType=VARCHAR}
+	   		</foreach>
+	</delete>
+	
+	<!-- 기준정보 전체 삭제 -->
+	<delete id="deleteAllStd" parameterType="map">
+		DELETE
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_STD_M A
+		WHERE 1 = 1
+			AND A.VER_CD IN
+	   		<foreach collection="deleteList" item="list" separator="," index="i" open="(" close=")">
+	   			#{list.VER_CD, jdbcType=VARCHAR}
+	   		</foreach>
+	</delete>
+	
+	<!-- 제병사 생산계획 전체 삭제 -->
+	<delete id="deleteAllPrdt" parameterType="map">
+		DELETE
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_BOTL_MANURS_PRDT_F A
+		WHERE 1 = 1
+			AND A.VER_CD IN
+	   		<foreach collection="deleteList" item="list" separator="," index="i" open="(" close=")">
+	   			#{list.VER_CD, jdbcType=VARCHAR}
+	   		</foreach>
+	</delete>
+	
+	<!-- 시뮬레이션 결과 삭제 -->
+	<delete id="deleteAllResult" parameterType="map">
+		DELETE
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_RESULT_F A
+		WHERE 1 = 1
+			AND A.VER_CD IN
+	   		<foreach collection="deleteList" item="list" separator="," index="i" open="(" close=")">
+	   			#{list.VER_CD, jdbcType=VARCHAR}
+	   		</foreach>
+	</delete>
+	
+	<!-- 저장 -->
+	<update id="update" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_VESSEL_SIMUL_M T /* /* com.hitejinro.snop.work.dao.M03070DaoMapper.update */
+		USING
+		(
+			SELECT (CASE WHEN S1.VER_CD IS NOT NULL THEN S1.VER_CD 
+						 ELSE SUBSTR(S3.MAX_VER_CD, 0, INSTR(S3.MAX_VER_CD, '-'))
+						      || LPAD(TO_NUMBER(SUBSTR(S3.MAX_VER_CD, INSTR(S3.MAX_VER_CD, '-') + 1)) + ROW_NUMBER() OVER (ORDER BY 1), 3, '0')
+						 END) AS VER_CD
+				, S1.VER_NM, S1.VER_DESC
+				, REPLACE(S1.STD_YYYYMMDD, '-', '') AS STD_YYYYMMDD
+				, S1.BRAND_CODE, S2.SEGMENT2 AS LIQUOR_CODE, S1.USE_YN
+				, TO_CHAR(TO_DATE(REPLACE(S1.VER_FR_MM, '-', ''), 'YYYYMM'), 'YYYYMMDD') 			AS VER_FR_DT
+				, TO_CHAR(LAST_DAY(TO_DATE(REPLACE(S1.VER_TO_MM, '-', ''), 'YYYYMM')), 'YYYYMMDD')	AS VER_TO_DT
+				, #{userId, jdbcType=VARCHAR} AS LAST_UPDATED_BY
+    		FROM
+    		(
+				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.VER_CD, jdbcType=VARCHAR}	 		AS VER_CD
+						, #{list.VER_NM, jdbcType=VARCHAR}         	AS VER_NM
+						, #{list.VER_DESC, jdbcType=VARCHAR}       	AS VER_DESC
+						, #{list.STD_YYYYMMDD, jdbcType=VARCHAR}	AS STD_YYYYMMDD
+						, #{list.BRAND_CODE, jdbcType=VARCHAR}      AS BRAND_CODE
+						, #{list.USE_YN, jdbcType=VARCHAR}       	AS USE_YN
+						, #{list.VER_FR_MM, jdbcType=VARCHAR}  		AS VER_FR_MM
+						, #{list.VER_TO_MM, jdbcType=VARCHAR}       AS VER_TO_MM
+					FROM DUAL
+				</foreach>
+			) S1
+			
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M S2 ON S2.GROUP_CODE = 'BOTL_BRAND_LIST'
+												 AND S2.USE_YN	   = 'Y'
+												 AND S2.CODE	   = S1.BRAND_CODE
+												 
+            LEFT JOIN
+            (
+                SELECT NVL(MAX(A.VER_CD), #{YYYYMM, jdbcType=VARCHAR} || '-000') AS MAX_VER_CD
+                FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M A
+                WHERE 1 = 1
+                    AND SUBSTR(A.STD_YYYYMMDD, 0, 6) = #{YYYYMM, jdbcType=VARCHAR}
+            ) S3 ON 1 = 1
+		) S ON (T.VER_CD = S.VER_CD)
+		WHEN MATCHED THEN
+		UPDATE SET
+			  T.VER_NM 				= S.VER_NM
+			, T.VER_DESC 			= S.VER_DESC
+			, T.STD_YYYYMMDD 		= S.STD_YYYYMMDD
+			, T.BRAND_CODE 			= S.BRAND_CODE
+			, T.LIQUOR_CODE			= S.LIQUOR_CODE
+			, T.USE_YN 				= S.USE_YN
+			, T.VER_FR_DT 			= S.VER_FR_DT
+			, T.VER_TO_DT 			= S.VER_TO_DT
+			, T.LAST_UPDATED_BY		= S.LAST_UPDATED_BY
+			, T.LAST_UPDATE_DATE 	= SYSDATE
+		WHEN NOT MATCHED THEN
+        INSERT
+        (
+              T.VER_CD, T.VER_NM, T.VER_DESC
+            , T.STD_YYYYMMDD, T.BRAND_CODE, T.LIQUOR_CODE
+            , T.VER_FR_DT, T.VER_TO_DT, T.USE_YN
+            , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+        )
+        VALUES
+        (
+              S.VER_CD, S.VER_NM, S.VER_DESC
+            , S.STD_YYYYMMDD, S.BRAND_CODE, S.LIQUOR_CODE
+            , S.VER_FR_DT, S.VER_TO_DT, S.USE_YN
+            , S.LAST_UPDATED_BY, SYSDATE, S.LAST_UPDATED_BY, SYSDATE
+        )
+	</update>
+	
+	<!-- 버전 정보 조회 -->
+	<select id="getVerInfo" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M03070DaoMapper.searchVerInfo */
+              A.VER_CD, A.VER_NM
+            , A.STD_YYYYMMDD, A.VER_FR_DT, A.VER_TO_DT, A.BRAND_CODE
+            
+            -- 버전 정보 DESC
+            , A.VER_CD
+              || '(기준일자 : '  || TO_CHAR(TO_DATE(A.STD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+              || ', 대상기간 : ' || TO_CHAR(TO_DATE(A.VER_FR_DT, 'YYYYMMDD'), 'YYYY-MM')
+              || ' ~ ' || TO_CHAR(TO_DATE(A.VER_TO_DT, 'YYYYMMDD'), 'YYYY-MM')
+              || ')'
+              AS VER_DESC
+            
+            , B.VER_CD AS DALY_SCM_SIMUL_VER_CD
+            , (CASE WHEN B.VER_CD IS NULL THEN '선택된 제품수급 시뮬레이션 버전이 없습니다.'
+                    ELSE B.VER_CD
+              			|| '(기준일자 : '  || TO_CHAR(TO_DATE(B.STD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+              			|| ', 대상기간 : ' || TO_CHAR(TO_DATE(B.VER_FR_DT, 'YYYYMMDD'), 'YYYY-MM')
+              			|| ' ~ ' || TO_CHAR(TO_DATE(B.VER_TO_DT, 'YYYYMMDD'), 'YYYY-MM')
+              			|| ')'
+              		END) AS DALY_SCM_SIMUL_VER_DESC
+            , TO_CHAR(TO_DATE(B.STD_YYYYMMDD, 'YYYYMMDD'), 'YYYY') 	AS DALY_SCM_SIMUL_YYYY
+            , TO_CHAR(TO_DATE(B.STD_YYYYMMDD, 'YYYYMMDD'), 'MM') 	AS DALY_SCM_SIMUL_MM
+        FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M A
+        
+        LEFT JOIN SCMU.W_SOP_TB_DALY_SCM_SIMUL_M B ON B.VER_CD = A.DALY_SCM_SIMUL_VER_CD
+        WHERE 1 = 1
+            AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 일일 제품수급 시뮬레이션 조회 -->
+	<select id="searchDalyScmSimulVerCd" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03070DaoMapper.searchDalyScmSimulVerCd */
+		      A.VER_CD AS CODE
+		    , A.VER_CD
+		      || '(기준일자 : '  || TO_CHAR(TO_DATE(A.STD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+		      || ', 대상기간 : ' || TO_CHAR(TO_DATE(A.VER_FR_DT, 'YYYYMMDD'), 'YYYY-MM')
+		      || ' ~ ' || TO_CHAR(TO_DATE(A.VER_TO_DT, 'YYYYMMDD'), 'YYYY-MM')
+		      || ')'
+		      AS NAME
+		    , DECODE(B.VER_CD, NULL, 'N', 'Y') AS SELECTED
+		FROM SCMU.W_SOP_TB_DALY_SCM_SIMUL_M A
+		
+		LEFT JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_M B ON B.VER_CD				= #{verCd, jdbcType=VARCHAR}
+												AND B.DALY_SCM_SIMUL_VER_CD = A.VER_CD
+		
+		WHERE 1 = 1
+		    AND SUBSTR(A.STD_YYYYMMDD, 0, 6) = #{YYYYMM, jdbcType=VARCHAR}
+		    AND A.USE_YN                     = 'Y'
+		ORDER BY A.VER_CD
+	</select>
+	
+	<!-- 일일 제품수급 시뮬레이션 저장 -->
+	<update id="updateDalyScmSimulVerCd" parameterType="map">
+		UPDATE SCMU.W_SOP_TB_VESSEL_SIMUL_M /* com.hitejinro.snop.work.dao.M03070DaoMapper.updateDalyScmSimulVerCd */
+		SET
+			  DALY_SCM_SIMUL_VER_CD = #{dalyScmSimulVerCd, jdbcType=VARCHAR}
+			, LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+			, LAST_UPDATE_DATE		= SYSDATE
+		WHERE 1 = 1
+			AND VER_CD = #{verCd, jdbcType=VARCHAR}
+	</update>
+	
+	<!-- 용기 시뮬레이션 기준정보 조회 -->
+	<select id="searchStd" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M03070DaoMapper.searchStd */
+              T1.VER_CD, T1.VESSEL_SIMUL_STD_CODE, T1.SEQNO
+            , T1.APL_FR_DT, T1.APL_TO_DT
+            , T1.VESSEL_SIMUL_STD_VAL_CRT_TYPE, T1.MNL_VAL
+            , T1.ACTUAL_CALC_TYPE, T1.ACTUAL_RFLT_TYPE
+            
+            -- 구분 수정여부
+            , (CASE WHEN T1.VESSEL_SIMUL_STD_CODE IN ('OLD_BOTL_MIN_STOCK_DCNT', 'NEW_BOTL_MIN_STOCK_DCNT') THEN 'INEDITABLE'
+            		ELSE NULL
+            		END) AS "VESSEL_SIMUL_STD_VAL_CRT_TYPECellDef"
+                    
+            -- 직접입력 수정여부
+            , (CASE WHEN T1.VESSEL_SIMUL_STD_VAL_CRT_TYPE = 'ACTUAL_CALC_TYPE' 								THEN 'INEDITABLE' 
+                    WHEN T1.VESSEL_SIMUL_STD_CODE IN ('SUB_OUT_RATE', 'FAULTY_LOSS_RATE', 'NEW_BOTL_RATE') 	THEN 'RATE'
+                    WHEN T1.VESSEL_SIMUL_STD_CODE IN ('OLD_BOTL_MIN_STOCK_DCNT', 'NEW_BOTL_MIN_STOCK_DCNT') THEN 'DCNT'
+                    ELSE 'QTY'
+                    END) AS "MNL_VALCellDef"
+                    
+			-- 실적기준 계산방법 수정여부
+            , (CASE WHEN T1.VESSEL_SIMUL_STD_VAL_CRT_TYPE = 'MNL_VAL' THEN 'INEDITABLE' 
+                    ELSE NULL
+                    END) AS "ACTUAL_CALC_TYPECellDef"
+            
+            -- 이송입고량 요일배분 수정여부
+            , (CASE WHEN T1.VESSEL_SIMUL_STD_CODE != 'TRANS_INPUT_QTY' THEN 'INEDITABLE'
+                    ELSE NULL
+                    END) AS "ACTUAL_RFLT_TYPECellDef"
+        FROM
+        (
+            SELECT
+                  B.VER_CD
+                , NVL(C.VESSEL_SIMUL_STD_CODE, A.VESSEL_SIMUL_STD_CODE)                     AS VESSEL_SIMUL_STD_CODE
+                , NVL(C.SEQNO, 1)                                                           AS SEQNO
+                , TO_CHAR(TO_DATE(NVL(C.APL_FR_DT, B.VER_FR_DT), 'YYYYMMDD'), 'YYYY-MM-DD') AS APL_FR_DT
+                , TO_CHAR(TO_DATE(NVL(C.APL_TO_DT, B.VER_TO_DT), 'YYYYMMDD'), 'YYYY-MM-DD') AS APL_TO_DT
+                , NVL(C.VESSEL_SIMUL_STD_VAL_CRT_TYPE, A.VESSEL_SIMUL_STD_VAL_CRT_TYPE)     AS VESSEL_SIMUL_STD_VAL_CRT_TYPE
+                , NVL(C.MNL_VAL, 0)                                                         AS MNL_VAL
+                , NVL(C.ACTUAL_CALC_TYPE, A.ACTUAL_CALC_TYPE)                               AS ACTUAL_CALC_TYPE
+                , NVL(C.ACTUAL_RFLT_TYPE, A.ACTUAL_RFLT_TYPE)                               AS ACTUAL_RFLT_TYPE
+            FROM
+            (
+                -- 기본값
+                SELECT
+                      AA.CODE   AS VESSEL_SIMUL_STD_CODE
+                    , AB.CODE   AS VESSEL_SIMUL_STD_VAL_CRT_TYPE
+                    , AC.CODE   AS ACTUAL_CALC_TYPE
+                    , DECODE(AA.CODE, 'TRANS_INPUT_QTY', AD.CODE, 'NA') AS ACTUAL_RFLT_TYPE
+                FROM SCMU.W_SOP_TB_COM_CODE_M AA
+                    
+                LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AB ON AB.GROUP_CODE = 'VESSEL_SIMUL_STD_VAL_CRT_TYPE'
+                                                     AND AB.CODE       = 'MNL_VAL'
+                                                     AND AB.USE_YN     = 'Y'
+                    
+                LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AC ON AC.GROUP_CODE = 'ACTUAL_CALC_TYPE'
+                                                     AND AC.CODE       = 'NA'
+                                                     AND AC.USE_YN     = 'Y'                          
+                
+                LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AD ON AD.GROUP_CODE = 'ACTUAL_RFLT_TYPE_LIST'
+                                                     AND AD.CODE       = 'DIST_EQUAL'
+                                                     AND AD.USE_YN     = 'Y'
+                    
+                WHERE 1 = 1
+                    AND AA.GROUP_CODE = 'VESSEL_SIMUL_STD_LIST'
+                    AND AA.USE_YN     = 'Y'
+            ) A
+            
+            INNER JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_M B ON B.USE_YN = 'Y'
+                                                     AND B.VER_CD = #{verCd, jdbcType=VARCHAR}
+            
+            LEFT JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_STD_M C ON C.VER_CD                = B.VER_CD
+                                                        AND C.VESSEL_SIMUL_STD_CODE = A.VESSEL_SIMUL_STD_CODE
+            
+        ) T1
+        
+        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'VESSEL_SIMUL_STD_LIST'
+                                             AND T2.USE_YN     = 'Y'
+                                             AND T2.CODE       = T1.VESSEL_SIMUL_STD_CODE
+                                             
+        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T3 ON T3.GROUP_CODE = 'VESSEL_SIMUL_STD_VAL_CRT_TYPE'
+                                             AND T3.USE_YN     = 'Y'
+                                             AND T3.CODE       = T1.VESSEL_SIMUL_STD_VAL_CRT_TYPE
+                                             
+        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T4 ON T4.GROUP_CODE = 'ACTUAL_CALC_TYPE'
+                                             AND T4.USE_YN     = 'Y'
+                                             AND T4.CODE       = T1.ACTUAL_CALC_TYPE
+                                             
+        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T5 ON T5.GROUP_CODE = 'ACTUAL_RFLT_TYPE_LIST'
+                                             AND T5.USE_YN     = 'Y'
+                                             AND T5.CODE       = T1.ACTUAL_CALC_TYPE
+        
+        ORDER BY T2.SEQ, T3.SEQ, T4.SEQ, T5.SEQ, T1.APL_FR_DT
+	</select>
+	
+	<!-- 기준정보 삭제 -->
+	<delete id="deleteStd" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M03070DaoMapper.deleteStd */
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_STD_M
+		WHERE 1 = 1
+			AND (VER_CD, VESSEL_SIMUL_STD_CODE, SEQNO)
+			IN
+		<foreach collection="deleteList" item="list" index="i" open="(" close=")" separator=",">
+			(#{list.VER_CD, jdbcType=VARCHAR}, #{list.VESSEL_SIMUL_STD_CODE, jdbcType=VARCHAR}, #{list.SEQNO, jdbcType=VARCHAR})
+		</foreach>
+	</delete>
+	
+	<!-- 기준정보 저장 -->
+	<update id="updateStd" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_VESSEL_SIMUL_STD_M T /* com.hitejinro.snop.work.dao.M03070DaoMapper.updateStd */
+		USING
+    	(   
+    		SELECT
+				  S1.VER_CD, S1.VESSEL_SIMUL_STD_CODE
+				, (CASE WHEN S1.SEQNO IS NOT NULL THEN S1.SEQNO
+						ELSE TO_CHAR(NVL(MAX_SEQNO, 0) + ROW_NUMBER() OVER (PARTITION BY S1.VER_CD, S1.VESSEL_SIMUL_STD_CODE ORDER BY S1.VER_CD, S1.VESSEL_SIMUL_STD_CODE, S1.SEQNO))
+						END) SEQNO
+				, REPLACE(S1.APL_FR_DT, '-', '') 	AS APL_FR_DT
+				, REPLACE(S1.APL_TO_DT, '-', '') 	AS APL_TO_DT
+				, S1.VESSEL_SIMUL_STD_VAL_CRT_TYPE
+                , NVL((CASE WHEN S1.VESSEL_SIMUL_STD_CODE = 'TRANS_INPUT_QTY' THEN ROUND(S1.MNL_VAL, 0)
+                            WHEN S1.VESSEL_SIMUL_STD_CODE IN ('SUB_OUT_RATE', 'FAULTY_LOSS_RATE', 'NEW_BOTL_RATE') THEN ROUND(S1.MNL_VAL, 3)
+                            ELSE ROUND(S1.MNL_VAL, 1)
+                            END), 0)    AS MNL_VAL
+				, S1.ACTUAL_CALC_TYPE, S1.ACTUAL_RFLT_TYPE
+    		FROM
+    		(	
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				SELECT
+					-- 복사 붙여넣기시 row에 VER_CD 정보가 없으므로, 요청 parameter의 verCd 사용
+					  #{verCd, jdbcType=VARCHAR}                				AS VER_CD
+					, #{list.VESSEL_SIMUL_STD_CODE, jdbcType=VARCHAR}     		AS VESSEL_SIMUL_STD_CODE
+					, #{list.SEQNO, jdbcType=VARCHAR}							AS SEQNO
+					, #{list.APL_FR_DT, jdbcType=VARCHAR}     					AS APL_FR_DT
+					, #{list.APL_TO_DT, jdbcType=VARCHAR}     					AS APL_TO_DT
+					, #{list.VESSEL_SIMUL_STD_VAL_CRT_TYPE, jdbcType=VARCHAR}   AS VESSEL_SIMUL_STD_VAL_CRT_TYPE
+					, TO_NUMBER(#{list.MNL_VAL, jdbcType=VARCHAR})     			AS MNL_VAL
+					, #{list.ACTUAL_CALC_TYPE, jdbcType=VARCHAR}     			AS ACTUAL_CALC_TYPE
+					, #{list.ACTUAL_RFLT_TYPE, jdbcType=VARCHAR}     			AS ACTUAL_RFLT_TYPE
+				FROM DUAL
+    		</foreach>
+    		) S1
+    		
+    		LEFT JOIN
+    		(
+    			SELECT VER_CD, VESSEL_SIMUL_STD_CODE
+    				, MAX(SEQNO) AS MAX_SEQNO
+    			FROM SCMU.W_SOP_TB_VESSEL_SIMUL_STD_M
+    			WHERE 1 = 1
+    				AND VER_CD = #{verCd, jdbcType=VARCHAR}
+				GROUP BY VER_CD, VESSEL_SIMUL_STD_CODE
+    		) S2 ON S2.VER_CD 					= S1.VER_CD
+    			AND S2.VESSEL_SIMUL_STD_CODE 	= S1.VESSEL_SIMUL_STD_CODE
+    		
+    	) S ON (
+    				    T.VER_CD 				= S.VER_CD
+    				AND T.VESSEL_SIMUL_STD_CODE = S.VESSEL_SIMUL_STD_CODE
+    				AND T.SEQNO			        = S.SEQNO
+				)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.APL_FR_DT						= S.APL_FR_DT
+				, T.APL_TO_DT						= S.APL_TO_DT
+				, T.VESSEL_SIMUL_STD_VAL_CRT_TYPE	= S.VESSEL_SIMUL_STD_VAL_CRT_TYPE
+				, T.MNL_VAL							= S.MNL_VAL
+				, T.ACTUAL_CALC_TYPE				= S.ACTUAL_CALC_TYPE
+				, T.ACTUAL_RFLT_TYPE				= S.ACTUAL_RFLT_TYPE
+				, T.LAST_UPDATED_BY					= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE				= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.VER_CD, T.VESSEL_SIMUL_STD_CODE, T.SEQNO
+			, T.APL_FR_DT, T.APL_TO_DT, T.VESSEL_SIMUL_STD_VAL_CRT_TYPE, T.MNL_VAL
+			, T.ACTUAL_CALC_TYPE, T.ACTUAL_RFLT_TYPE
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.VER_CD, S.VESSEL_SIMUL_STD_CODE, S.SEQNO
+			, S.APL_FR_DT, S.APL_TO_DT, S.VESSEL_SIMUL_STD_VAL_CRT_TYPE, S.MNL_VAL
+			, S.ACTUAL_CALC_TYPE, S.ACTUAL_RFLT_TYPE
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+	
+	<!-- 제병사 생산계획 조회 -->
+	<select id="searchPrdt" parameterType="map" resultType="map">
+		WITH DATE_TBL AS
+		(
+		    SELECT
+		          AA.VER_CD, AA.BRAND_CODE
+		        , AB.YYYYMMDD AS PERIOD_YYYYMMDD
+		        , AA.STD_YYYYMMDD
+		        , AA.VER_FR_DT, AA.VER_TO_DT
+		    FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M AA
+		
+		    INNER JOIN SCMU.W_SOP_VW_CALENDAR_M AB ON AB.YYYYMMDD BETWEEN AA.VER_FR_DT AND AA.VER_TO_DT 
+		
+		    WHERE 1 = 1
+		        AND AA.VER_CD = #{verCd, jdbcType=VARCHAR}
+		)
+		
+		SELECT 
+		      T1.VER_CD
+		    , MAX(T2.NAME)  AS BRAND_DESC  
+		    , T1.PERIOD_YYYYMMDD
+		    , (CASE WHEN T1.DEF = 'TOTAL' THEN '기초재고('
+		                                       || TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+		                                       || '일 기준)'
+		            ELSE TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+		            END) AS PERIOD_YYYYMMDD_DESC
+		    , T1.DEF AS "Def"
+		    , SUM(T1.QTY)	AS TOTAL_MANURS_QTY
+		<foreach collection="header" item="list" index="i">
+		    , SUM(CASE WHEN T1.BOTL_MANURS_CODE = #{list.CODE, jdbcType=VARCHAR} THEN T1.QTY
+		               ELSE 0
+		               END) AS "${list.CODE}"
+		</foreach>
+		FROM
+		(
+		    SELECT
+		          A.VER_CD, A.BRAND_CODE
+		        , MAX(A.STD_YYYYMMDD) AS PERIOD_YYYYMMDD
+		        , C.BOTL_MANURS_CODE
+		        , 'TOTAL' AS DEF
+		        , SUM(NVL(C.QTY, 0)) AS QTY
+		    FROM DATE_TBL A
+		
+		    INNER JOIN
+		    (
+		        SELECT BA.BRAND_CODE, BA.ITEM_CODE
+		        FROM SCMU.W_SOP_TB_VESSEL_M BA
+		        
+		        INNER JOIN SCMU.W_SOP_TB_COM_CODE_M BB ON BB.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                              AND BB.USE_YN     = 'Y'
+		                                              AND BB.CODE       = BA.BRAND_CODE
+		        WHERE 1 = 1
+		            AND BA.LIQUOR_CODE  = '20'
+		            AND BA.VESSEL_CODE  = '1'
+		            AND BA.BOTL_TYPE    = 'NEW'
+		            AND BA.COMPANY_TYPE = 'OWNER'
+		            AND BA.USE_YN       = 'Y'
+		    ) B ON B.BRAND_CODE = A.BRAND_CODE
+		
+		    LEFT JOIN SCMU.W_SOP_TB_BOTL_MANURS_PRDT_F C ON (
+		                                                        (C.BOTL_PACKING_TYPE = 'PBOX' AND C.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY')
+		                                                        OR
+		                                                        (C.BOTL_PACKING_TYPE = 'BULK' AND C.BOTL_MANURS_ACCT_CODE = 'CONV_BULK_TO_P_QTY')
+		                                                    )
+		                                                AND C.PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+		                                                AND C.ITEM_CODE       = B.ITEM_CODE
+		    WHERE 1 = 1
+		        AND A.PERIOD_YYYYMMDD BETWEEN A.VER_FR_DT AND A.STD_YYYYMMDD
+		    GROUP BY A.VER_CD, A.BRAND_CODE, C.BOTL_MANURS_CODE
+		
+		    -- 입력구간
+		    UNION ALL
+		    SELECT A.VER_CD, A.BRAND_CODE, A.PERIOD_YYYYMMDD, B.BOTL_MANURS_CODE, NULL AS DEF
+		         , NVL(B.QTY, 0) AS QTY
+		    FROM DATE_TBL A
+		
+		    LEFT JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_BOTL_MANURS_PRDT_F B ON B.VER_CD           = A.VER_CD
+		                                                             AND B.PERIOD_YYYYMMDD  = A.PERIOD_YYYYMMDD
+		    WHERE 1 = 1
+		        AND A.PERIOD_YYYYMMDD > A.STD_YYYYMMDD AND A.VER_TO_DT >= A.PERIOD_YYYYMMDD
+		) T1
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                     AND T2.USE_YN     = 'Y'
+		                                     AND T2.CODE       = T1.BRAND_CODE
+		                                     
+		GROUP BY T1.VER_CD, T1.PERIOD_YYYYMMDD, T1.DEF
+		ORDER BY T1.VER_CD, T1.PERIOD_YYYYMMDD, T1.DEF
+	</select>
+	
+	<!-- 제병사 생산계획 저장 -->
+	<update id="updatePrdt" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_VESSEL_SIMUL_BOTL_MANURS_PRDT_F T /* com.hitejinro.snop.work.dao.M03070DaoMapper.updatePrdt */
+		USING
+    	(   
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				SELECT
+					  #{list.VER_CD, jdbcType=VARCHAR}          					AS VER_CD
+					, #{list.PERIOD_YYYYMMDD, jdbcType=VARCHAR}						AS PERIOD_YYYYMMDD
+					, #{list.BOTL_MANURS_CODE, jdbcType=VARCHAR}					AS BOTL_MANURS_CODE
+					, ROUND(NVL(TO_NUMBER(#{list.QTY, jdbcType=VARCHAR}), 0), 0)	AS QTY
+				FROM DUAL
+    		</foreach>
+    		
+    	) S ON (
+    				    T.VER_CD 			= S.VER_CD
+    				AND T.PERIOD_YYYYMMDD	= S.PERIOD_YYYYMMDD
+    				AND T.BOTL_MANURS_CODE	= S.BOTL_MANURS_CODE
+				)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.QTY					= S.QTY
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.VER_CD, T.PERIOD_YYYYMMDD, T.BOTL_MANURS_CODE, T.QTY
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.VER_CD, S.PERIOD_YYYYMMDD, S.BOTL_MANURS_CODE, S.QTY
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+	
+	<!-- 용기 시뮬레이션 결과 조회 -->
+	<select id="searchResult" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03070DaoMapper.searchSimulResult */
+			  AD.NAME							AS BRAND_DESC
+			, AA.VER_CD
+			, AB.YYYYMMDD 						AS PERIOD_YYYYMMDD
+			, NVL(AB.BUSINESS_DAY_FLAG, 'N') 	AS BUSINESS_DAY_FLAG
+			
+			, TO_CHAR(TO_DATE(AB.YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+			|| '(' 
+			|| AB.DAY_OF_WEEK_DESC
+			|| ')' AS PERIOD_YYYYMMDD_DESC
+			, (CASE WHEN AA.STD_YYYYMMDD >= AB.YYYYMMDD 		THEN 'RESULT'		-- 실적 구간
+					WHEN NVL(AB.BUSINESS_DAY_FLAG, 'N') = 'N' 	THEN 'INEDITABLE'	-- 계획 구간(휴일인 경우 수정불가)
+					WHEN AC.VER_CD IS NULL						THEN 'INEDITABLE'	-- 시뮬레이션 실행한적이 없는 경우 수정불가
+				  	ELSE NULL
+				  	END) AS "Def"
+			, (CASE WHEN AA.STD_YYYYMMDD >= AB.YYYYMMDD THEN '실적'
+				  	ELSE '계획'
+				  	END) AS TYPE_DESC
+				  	
+			, NVL(AC.ITEM_PRDT_QTY, 0)				  AS ITEM_PRDT_QTY 					-- 생산량
+			, NVL(AC.ITEM_AVG_PRDT_QTY, 0) 			  AS ITEM_AVG_PRDT_QTY 				-- 일평균생산량
+			
+			-- 기준정보
+			, NVL(AC.TRANS_INPUT_QTY, 0)              AS TRANS_INPUT_QTY              	-- 이송입고량
+			, NVL(AC.SUB_OUT_RATE, 0)                 AS SUB_OUT_RATE                 	-- 대체출고율
+			, NVL(AC.FAULTY_LOSS_RATE, 0)             AS FAULTY_LOSS_RATE             	-- 불파병율
+			, NVL(AC.NEW_BOTL_RATE, 0)                AS NEW_BOTL_RATE                	-- 신병사용율
+			, NVL(AC.OLD_BOTL_MIN_STOCK_DCNT, 0)      AS OLD_BOTL_MIN_STOCK_DCNT      	-- 고병 최소재고일수
+			, NVL(AC.OLD_BOTL_MIN_STOCK_QTY, 0)       AS OLD_BOTL_MIN_STOCK_QTY       	-- 고병 최소재고수량
+			, NVL(AC.NEW_BOTL_MIN_STOCK_DCNT, 0)      AS NEW_BOTL_MIN_STOCK_DCNT      	-- 신병 최소재고일수
+			, NVL(AC.NEW_BOTL_MIN_STOCK_QTY, 0)       AS NEW_BOTL_MIN_STOCK_QTY       	-- 신병 최소재고수량
+			
+			-- 고병
+			, NVL(AC.OLD_START_TERM_STOCK_QTY, 0)     AS OLD_START_TERM_STOCK_QTY     	-- 기초재고
+			, NVL(AC.OLD_TRANS_INPUT_QTY, 0)          AS OLD_TRANS_INPUT_QTY          	-- 이송입고량
+			, NVL(AC.OLD_AVG_TRANS_INPUT_QTY, 0)      AS OLD_AVG_TRANS_INPUT_QTY      	-- 일평균 이송입고량
+			, NVL(AC.OLD_NEW_BOTL_REQ_QTY, 0)         AS OLD_NEW_BOTL_REQ_QTY         	-- 고병 신병필요량(최초)
+			, NVL(AC.OLD_INPUT_REQ_QTY, 0)            AS OLD_INPUT_REQ_QTY            	-- 고병 투입필요량
+			, NVL(AC.OLD_INPUT_TOTAL_QTY, 0)          AS OLD_INPUT_TOTAL_QTY          	-- 고병 총 투입량
+			, NVL(AC.OLD_SUB_OUT_QTY, 0)              AS OLD_SUB_OUT_QTY              	-- 고병 대체출고량
+			, NVL(AC.OLD_FAULTY_LOSS_QTY, 0)          AS OLD_FAULTY_LOSS_QTY          	-- 고병 불파병량
+			, NVL(AC.OLD_REAL_QTY, 0)                 AS OLD_REAL_QTY                 	-- 고병 실사용량
+			, NVL(AC.OLD_NEW_BOTL_ADD_REQ_QTY, 0)     AS OLD_NEW_BOTL_ADD_REQ_QTY     	-- 고병 추가필요량
+			, NVL(AC.OLD_NEW_BOTL_TOTAL_REQ_QTY, 0)   AS OLD_NEW_BOTL_TOTAL_REQ_QTY   	-- 고병 신병필요량
+			, NVL(AC.OLD_STOCK_QTY, 0)                AS OLD_STOCK_QTY                	-- 고병 기말재고
+			, NVL(AC.OLD_STOCK_DCNT, 0)               AS OLD_STOCK_DCNT               	-- 고병 재고일수
+			
+			-- 신병
+			, NVL(AC.NEW_START_TERM_STOCK_QTY, 0)     AS NEW_START_TERM_STOCK_QTY     	-- 신병 기초재고
+			, NVL(AC.NEW_PURCHASE_QTY, 0)             AS NEW_PURCHASE_QTY             	-- 신병 구매입고
+			, NVL(AC.NEW_PRDT_OUT_QTY, 0)             AS NEW_PRDT_OUT_QTY             	-- 신병 생산출고
+			, NVL(AC.NEW_NEW_BOTL_RATE, 0)            AS NEW_NEW_BOTL_RATE            	-- 신병 사용률
+			, NVL(AC.NEW_STOCK_QTY, 0)                AS NEW_STOCK_QTY                	-- 신병 기말재고
+			, NVL(AC.NEW_STOCK_DCNT, 0)               AS NEW_STOCK_DCNT               	-- 신병 재고일수
+			
+			-- 공장 공병
+			, NVL(AC.MFG_STOCK_DCNT, 0)               AS MFG_STOCK_DCNT               	-- 공장 기말재고
+			, NVL(AC.MFG_STOCK_QTY, 0)                AS MFG_STOCK_QTY                	-- 공장 재고일수
+			
+			-- 제병사(벌크신병 미포함)
+			, NVL(AC.MANURS_START_TERM_STOCK_QTY, 0)  AS MANURS_START_TERM_STOCK_QTY  	-- 제병사 기초재고
+			, NVL(AC.MANURS_PRDT_QTY, 0)              AS MANURS_PRDT_QTY              	-- 제병사 생산량
+			, NVL(AC.MANURS_OUT_QTY, 0)               AS MANURS_OUT_QTY               	-- 제병사 출고량
+			, NVL(AC.MANURS_STOCK_QTY, 0)             AS MANURS_STOCK_QTY             	-- 제병사 기말재고
+			
+			-- 당사 + 제병사 기말재고
+			, NVL(AC.TOTAL_STOCK_QTY, 0)              AS TOTAL_STOCK_QTY              	-- 당사 + 제병사 기말재고
+			, NVL(AC.MODIFY_YN, 'N')				  AS MODIFY_YN		    			-- 수정여부
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M AA
+		
+		LEFT JOIN SCMU.W_SOP_VW_CALENDAR_M AB ON AB.YYYYMMDD BETWEEN AA.VER_FR_DT AND AA.VER_TO_DT
+		
+		LEFT JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_RESULT_F AC ON AC.VER_CD          = AA.VER_CD
+												  		AND AC.PERIOD_YYYYMMDD = AB.YYYYMMDD
+												  
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AD ON AD.GROUP_CODE = 'BOTL_BRAND_LIST'
+									   		 AND AD.USE_YN     = 'Y'
+									   		 AND AD.CODE       = AA.BRAND_CODE
+		WHERE 1 = 1
+			AND AA.VER_CD = #{verCd, jdbcType=VARCHAR}
+		ORDER BY AA.BRAND_CODE, AA.VER_CD, AB.YYYYMMDD
+	</select>
+	
+    <!-- 용기 시뮬레이션 프로시저 호출 -->
+    <update id="simulate" parameterType="map" statementType="CALLABLE">
+        {  CALL /* com.hitejinro.snop.work.dao.M03070DaoMapper.simulate */
+                SCMU.SP_VESSEL_SIMUL
+                (
+                      P_VER_CD     => #{verCd           , mode=IN,jdbcType=VARCHAR}
+                    , P_USERID     => #{userId          , mode=IN,jdbcType=VARCHAR}
+                )
+        }
+    </update>
+    
+    <!-- 용기 시뮬레이션 결과 저장 -->
+    <update id="updateResult" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_VESSEL_SIMUL_RESULT_F T /* com.hitejinro.snop.work.dao.M03070DaoMapper.updateResult */
+		USING
+    	(   
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				SELECT
+					  #{list.VER_CD, jdbcType=VARCHAR}                      			AS VER_CD
+					, #{list.PERIOD_YYYYMMDD, jdbcType=VARCHAR}             			AS PERIOD_YYYYMMDD
+					, TO_NUMBER(#{list.OLD_START_TERM_STOCK_QTY, jdbcType=VARCHAR})    	AS OLD_START_TERM_STOCK_QTY
+					, TO_NUMBER(#{list.OLD_TRANS_INPUT_QTY, jdbcType=VARCHAR})         	AS OLD_TRANS_INPUT_QTY
+					, TO_NUMBER(#{list.OLD_AVG_TRANS_INPUT_QTY, jdbcType=VARCHAR})     	AS OLD_AVG_TRANS_INPUT_QTY
+					, TO_NUMBER(#{list.OLD_NEW_BOTL_REQ_QTY, jdbcType=VARCHAR})        	AS OLD_NEW_BOTL_REQ_QTY
+					, TO_NUMBER(#{list.OLD_INPUT_REQ_QTY, jdbcType=VARCHAR})           	AS OLD_INPUT_REQ_QTY
+					, TO_NUMBER(#{list.OLD_INPUT_TOTAL_QTY, jdbcType=VARCHAR})         	AS OLD_INPUT_TOTAL_QTY
+					, TO_NUMBER(#{list.OLD_SUB_OUT_QTY, jdbcType=VARCHAR})             	AS OLD_SUB_OUT_QTY
+					, TO_NUMBER(#{list.OLD_FAULTY_LOSS_QTY, jdbcType=VARCHAR})         	AS OLD_FAULTY_LOSS_QTY
+					, TO_NUMBER(#{list.OLD_REAL_QTY, jdbcType=VARCHAR})                	AS OLD_REAL_QTY
+					, TO_NUMBER(#{list.OLD_NEW_BOTL_ADD_REQ_QTY, jdbcType=VARCHAR})    	AS OLD_NEW_BOTL_ADD_REQ_QTY
+					, TO_NUMBER(#{list.OLD_NEW_BOTL_TOTAL_REQ_QTY, jdbcType=VARCHAR})  	AS OLD_NEW_BOTL_TOTAL_REQ_QTY
+					, TO_NUMBER(#{list.OLD_STOCK_QTY, jdbcType=VARCHAR})               	AS OLD_STOCK_QTY
+					, TO_NUMBER(#{list.OLD_STOCK_DCNT, jdbcType=VARCHAR})              	AS OLD_STOCK_DCNT
+					, TO_NUMBER(#{list.NEW_START_TERM_STOCK_QTY, jdbcType=VARCHAR})    	AS NEW_START_TERM_STOCK_QTY
+					, TO_NUMBER(#{list.NEW_PURCHASE_QTY, jdbcType=VARCHAR})            	AS NEW_PURCHASE_QTY
+					, TO_NUMBER(#{list.NEW_PRDT_OUT_QTY, jdbcType=VARCHAR})            	AS NEW_PRDT_OUT_QTY
+					, TO_NUMBER(#{list.NEW_NEW_BOTL_RATE, jdbcType=VARCHAR})           	AS NEW_NEW_BOTL_RATE
+					, TO_NUMBER(#{list.NEW_STOCK_QTY, jdbcType=VARCHAR})               	AS NEW_STOCK_QTY
+					, TO_NUMBER(#{list.NEW_STOCK_DCNT, jdbcType=VARCHAR})              	AS NEW_STOCK_DCNT
+					, TO_NUMBER(#{list.MFG_STOCK_DCNT, jdbcType=VARCHAR})              	AS MFG_STOCK_DCNT
+					, TO_NUMBER(#{list.MFG_STOCK_QTY, jdbcType=VARCHAR})               	AS MFG_STOCK_QTY
+					, TO_NUMBER(#{list.MANURS_START_TERM_STOCK_QTY, jdbcType=VARCHAR}) 	AS MANURS_START_TERM_STOCK_QTY
+					, TO_NUMBER(#{list.MANURS_PRDT_QTY, jdbcType=VARCHAR})             	AS MANURS_PRDT_QTY
+					, TO_NUMBER(#{list.MANURS_OUT_QTY, jdbcType=VARCHAR})              	AS MANURS_OUT_QTY
+					, TO_NUMBER(#{list.MANURS_STOCK_QTY, jdbcType=VARCHAR})            	AS MANURS_STOCK_QTY
+					, TO_NUMBER(#{list.TOTAL_STOCK_QTY, jdbcType=VARCHAR})             	AS TOTAL_STOCK_QTY
+					, #{list.MODIFY_YN, jdbcType=VARCHAR}                   			AS MODIFY_YN
+				FROM DUAL
+    		</foreach>
+    		
+    	) S ON (
+    				    T.VER_CD 			= S.VER_CD
+    				AND T.PERIOD_YYYYMMDD	= S.PERIOD_YYYYMMDD
+				)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.OLD_START_TERM_STOCK_QTY    = S.OLD_START_TERM_STOCK_QTY
+				, T.OLD_TRANS_INPUT_QTY         = S.OLD_TRANS_INPUT_QTY
+				, T.OLD_AVG_TRANS_INPUT_QTY     = S.OLD_AVG_TRANS_INPUT_QTY
+				, T.OLD_NEW_BOTL_REQ_QTY        = S.OLD_NEW_BOTL_REQ_QTY
+				, T.OLD_INPUT_REQ_QTY           = S.OLD_INPUT_REQ_QTY
+				, T.OLD_INPUT_TOTAL_QTY         = S.OLD_INPUT_TOTAL_QTY
+				, T.OLD_SUB_OUT_QTY             = S.OLD_SUB_OUT_QTY
+				, T.OLD_FAULTY_LOSS_QTY         = S.OLD_FAULTY_LOSS_QTY
+				, T.OLD_REAL_QTY                = S.OLD_REAL_QTY
+				, T.OLD_NEW_BOTL_ADD_REQ_QTY    = S.OLD_NEW_BOTL_ADD_REQ_QTY
+				, T.OLD_NEW_BOTL_TOTAL_REQ_QTY  = S.OLD_NEW_BOTL_TOTAL_REQ_QTY
+				, T.OLD_STOCK_QTY               = S.OLD_STOCK_QTY
+				, T.OLD_STOCK_DCNT              = S.OLD_STOCK_DCNT
+				, T.NEW_START_TERM_STOCK_QTY    = S.NEW_START_TERM_STOCK_QTY
+				, T.NEW_PURCHASE_QTY            = S.NEW_PURCHASE_QTY
+				, T.NEW_PRDT_OUT_QTY            = S.NEW_PRDT_OUT_QTY
+				, T.NEW_NEW_BOTL_RATE           = S.NEW_NEW_BOTL_RATE
+				, T.NEW_STOCK_QTY               = S.NEW_STOCK_QTY
+				, T.NEW_STOCK_DCNT              = S.NEW_STOCK_DCNT
+				, T.MFG_STOCK_DCNT              = S.MFG_STOCK_DCNT
+				, T.MFG_STOCK_QTY               = S.MFG_STOCK_QTY
+				, T.MANURS_START_TERM_STOCK_QTY = S.MANURS_START_TERM_STOCK_QTY
+				, T.MANURS_PRDT_QTY             = S.MANURS_PRDT_QTY
+				, T.MANURS_OUT_QTY              = S.MANURS_OUT_QTY
+				, T.MANURS_STOCK_QTY            = S.MANURS_STOCK_QTY
+				, T.TOTAL_STOCK_QTY             = S.TOTAL_STOCK_QTY
+				, T.MODIFY_YN                   = S.MODIFY_YN
+				, T.RMKS						= T.RMKS || ' S->' || S.OLD_TRANS_INPUT_QTY
+				
+				, T.LAST_UPDATED_BY				= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE			= SYSDATE
+    </update>
+</mapper>

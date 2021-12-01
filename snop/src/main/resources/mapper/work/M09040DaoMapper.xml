@@ -1,0 +1,410 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 생산관리 > 원부자재/포장자재 사용 실적 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M09040DaoMapper">
+
+	<!-- 원부자재/포장자재 사용 실적 > 소분류 콤보 조회 -->
+	<select id="getSegment3Combo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09040DaoMapper.getSegment3Combo */
+			  T.ITEM_CATALOG_GROUP_ID AS CODE
+		    , T.SEGMENT3 			  AS NAME
+		FROM EDW.W_CM_TB_PK_ITEM_M T
+		WHERE 1 = 1
+		GROUP BY T.ITEM_CATALOG_GROUP_ID, T.SEGMENT3
+		ORDER BY COUNT(1) DESC
+	</select>
+	
+	<!-- 원부자재/포장자재 사용 실적 > 원부자재 > 헤더 조회 -->
+	<select id="searchRowSubMatHeader" parameterType="map" resultType="map">
+		WITH GUBUN_TBL AS  /* com.hitejinro.snop.work.dao.M09040DaoMapper.searchRowSubMatHeader */
+		(
+			SELECT '기초재고' AS HEADER2_DESC, 'BEGINNING_ONHAND_QTY' AS CODE, 1 AS SEQ FROM DUAL UNION ALL
+		    SELECT '입고' 	  AS HEADER2_DESC, 'RECEIPT_QTY' 		  AS CODE, 2 AS SEQ FROM DUAL UNION ALL
+		    SELECT '출고' 	  AS HEADER2_DESC, 'ISSUE_QTY' 			  AS CODE, 3 AS SEQ FROM DUAL UNION ALL
+		    SELECT '결감' 	  AS HEADER2_DESC, 'YIELD_ISSUE_QTY' 	  AS CODE, 4 AS SEQ FROM DUAL UNION ALL
+		    SELECT '결감률'   AS HEADER2_DESC, 'YIELD_ISSUE_QTY_RATE' AS CODE, 5 AS SEQ FROM DUAL UNION ALL
+		    SELECT '기말재고' AS HEADER2_DESC, 'ENDING_ONHAND_QTY' 	  AS CODE, 6 AS SEQ FROM DUAL
+		)
+		SELECT
+			  S.FR_SCM_YYYYWW, S.TO_SCM_YYYYWW, S.STD_PERIOD, S.CODE, S.NAME, S.HEADER1_SPAN, S.HEADER1_DESC, S.HEADER2_DESC
+		FROM
+		(
+			SELECT 
+				  MIN(T1.SCM_YYYYWW) 								 AS FR_SCM_YYYYWW
+                , MAX(T1.SCM_YYYYWW) 								 AS TO_SCM_YYYYWW
+			    , T1.YYYYMM 										 AS STD_PERIOD
+			    , T2.CODE   										 AS CODE
+			    , 'COL' || (ROW_NUMBER() OVER (ORDER BY T2.SEQ) - 1) AS NAME
+			    , CASE WHEN ROW_NUMBER() OVER (ORDER BY T2.SEQ) = 1 THEN COUNT(1) OVER (PARTITION BY 1) ELSE NULL END AS HEADER1_SPAN
+			    , CASE WHEN ROW_NUMBER() OVER (ORDER BY T2.SEQ) = 1 THEN '당월(' || SUBSTR(T1.YYYYMM, 3, 2) || '년 ' || CASE WHEN TO_NUMBER(SUBSTR(T1.YYYYMM, 5, 2)) <![CDATA[ < ]]>10 THEN SUBSTR(T1.YYYYMM, 6, 1) ELSE SUBSTR(T1.YYYYMM, 5, 2) END || '월)'  
+			           ELSE NULL
+			           END 											 AS HEADER1_DESC
+			    , T2.HEADER2_DESC 									 AS HEADER2_DESC
+			    , T2.SEQ 											 AS SEQ
+			FROM SCMU.W_SOP_VW_CALENDAR_M T1
+			INNER JOIN GUBUN_TBL 		  T2 ON 1 = 1
+			WHERE 1 = 1
+			    AND SUBSTR(T1.YYYYMMDD, 1, 6) = #{yyyymm, jdbcType=VARCHAR}
+			GROUP BY T1.YYYYMM, T2.CODE, T2.HEADER2_DESC, T2.SEQ
+			
+			UNION ALL
+			
+			SELECT 
+				  MIN(T1.SCM_YYYYWW) 												AS FR_SCM_YYYYWW
+                , MAX(T1.SCM_YYYYWW) 												AS TO_SCM_YYYYWW
+			    , T1.SCM_YYYYWW 													AS STD_PERIOD
+			    , T2.CODE 															AS CODE
+			    , 'COL' || (ROW_NUMBER() OVER (ORDER BY T1.SCM_YYYYWW, T2.SEQ) + 5) AS NAME
+			    , CASE WHEN ROW_NUMBER() OVER (PARTITION BY T1.SCM_YYYYWW ORDER BY T1.SCM_YYYYWW) = 1 THEN COUNT(1) OVER (PARTITION BY T1.SCM_YYYYWW) 
+			           ELSE NULL
+			           END 															AS HEADER1_SPAN
+			    <![CDATA[
+			    , CASE WHEN ROW_NUMBER() OVER (PARTITION BY T1.SCM_YYYYWW ORDER BY T1.SCM_YYYYWW) = 1 THEN SUBSTR(T1.SCM_YYYYWW, 3, 2) || '년 ' 
+			           || CASE WHEN TO_NUMBER(SUBSTR(T1.SCM_YYYYWW, 5, 2)) < 10 THEN SUBSTR(T1.SCM_YYYYWW, 6, 1) ELSE SUBSTR(T1.SCM_YYYYWW, 5, 2) END || '주(' || SUBSTR(MIN(T1.YYYYMMDD), 3, 2) || '년 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MIN(T1.YYYYMMDD), 5, 2)) < 10 THEN SUBSTR(MIN(T1.YYYYMMDD), 6, 1) ELSE SUBSTR(MIN(T1.YYYYMMDD), 5, 2) END || '월 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MIN(T1.YYYYMMDD), 7, 2)) < 10 THEN SUBSTR(MIN(T1.YYYYMMDD), 8, 1) ELSE SUBSTR(MIN(T1.YYYYMMDD), 7, 2) END || '일 ~ ' || SUBSTR(MAX(T1.YYYYMMDD), 3, 2) || '년 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MAX(T1.YYYYMMDD), 5, 2)) < 10 THEN SUBSTR(MAX(T1.YYYYMMDD), 6, 1) ELSE SUBSTR(MAX(T1.YYYYMMDD), 5, 2) END || '월 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MAX(T1.YYYYMMDD), 7, 2)) < 10 THEN SUBSTR(MAX(T1.YYYYMMDD), 8, 1) ELSE SUBSTR(MAX(T1.YYYYMMDD), 7, 2) END || '일)'
+			           ELSE NULL 
+			           END AS HEADER1_DESC
+			    ]]>
+			    , T2.HEADER2_DESC 													AS HEADER2_DESC
+			    , T2.SEQ 															AS SEQ
+			FROM SCMU.W_SOP_VW_CALENDAR_M T1
+			INNER JOIN GUBUN_TBL 		  T2 ON 1 = 1
+			WHERE 1 = 1
+			    AND T1.YYYYMM = #{yyyymm, jdbcType=VARCHAR}
+			GROUP BY T1.SCM_YYYYWW, T2.CODE, T2.HEADER2_DESC, T2.SEQ
+		) S
+		WHERE 1 = 1
+		ORDER BY S.STD_PERIOD, S.SEQ
+	</select>
+	
+	<!-- 원부자재/포장자재 사용 실적 > 원부자재 > 바디 조회 -->
+	<select id="searchRowSubMatBody" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09040DaoMapper.searchRowSubMatBody */
+			  S.ORG_CODE		    		AS ORG_CODE
+		    , MAX(S.ORG_NAME)				AS ORG_NAME
+		    , S.SEGMENT1					AS SEGMENT1
+		    , S.ITEM_CODE					AS ITEM_CODE
+		    , MAX(S.DESCRIPTION)			AS DESCRIPTION
+		    <foreach collection="header" item="list" index="i">
+				<if test='list.CODE != null and list.CODE == "BEGINNING_ONHAND_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.BEGINNING_ONHAND_QTY 
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "RECEIPT_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.RECEIPT_QTY 
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "ISSUE_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.ISSUE_QTY 
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "YIELD_ISSUE_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.YIELD_ISSUE_QTY
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "YIELD_ISSUE_QTY_RATE"'>
+			, CASE WHEN SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} THEN S.SUM_ISSUE_QTY ELSE 0 END ) <![CDATA[ <= ]]> 0 THEN 0
+				   ELSE SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} THEN S.YIELD_ISSUE_QTY ELSE 0 END ) 
+				      / SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} THEN S.SUM_ISSUE_QTY ELSE 0 END )
+				   END AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "ENDING_ONHAND_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.ENDING_ONHAND_QTY
+						ELSE 0
+						END ) AS ${list.NAME}
+		    	</if>
+		    </foreach>
+		FROM 
+		(
+		    SELECT /* com.hitejinro.snop.work.dao.M09040DaoMapper.searchList */
+			     A.SCM_YYYYWW                     AS SCM_YYYYWW
+			   , B.ORG_CODE						  AS ORG_CODE
+			   , MAX(D.ORG_NAME)				  AS ORG_NAME
+			   , C.SEGMENT1						  AS SEGMENT1
+			   , B.ITEM_CODE					  AS ITEM_CODE
+			   , MAX(C.DESCRIPTION)				  AS DESCRIPTION
+			   , SUM(B.BEGINNING_ONHAND_QTY)      AS BEGINNING_ONHAND_QTY
+			   , SUM(B.RECEIPT_QTY)               AS RECEIPT_QTY
+			   , SUM(B.ISSUE_QTY)                 AS ISSUE_QTY
+			   , SUM(B.YIELD_ISSUE_QTY)           AS YIELD_ISSUE_QTY
+			   , SUM(B.SUM_ISSUE_QTY)             AS SUM_ISSUE_QTY
+			   , SUM(B.ENDING_ONHAND_QTY)         AS ENDING_ONHAND_QTY
+			FROM SCMU.W_SOP_VW_CALENDAR_M            A
+			INNER JOIN EDW.W_PRD_TB_DAILY_SARM_TXN_F B ON B.TRANSACTION_DATE = A.YYYYMMDD  AND B.OU_CODE = 'HJ0'
+			INNER JOIN EDW.W_CM_TB_ITEM_M            C ON C.ITEM_CODE        = B.ITEM_CODE AND C.ITEM_TYPE != 'SA'
+			INNER JOIN EDW.W_CM_TB_ORGANIZATION_M    D ON D.ORG_CODE         = B.ORG_CODE
+			WHERE 1 = 1
+			   AND A.YYYYMM     = #{yyyymm, jdbcType=VARCHAR}
+			   AND (	-- 공장
+			   			( NVL(#{mfgCd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+			   			OR
+			   			( B.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+			   	   )
+			GROUP BY A.SCM_YYYYWW, B.ORG_CODE, C.SEGMENT1, B.ITEM_CODE
+			ORDER BY A.SCM_YYYYWW, B.ORG_CODE, C.SEGMENT1, B.ITEM_CODE
+		) S
+		WHERE 1 = 1
+		GROUP BY S.ORG_CODE, S.SEGMENT1, S.ITEM_CODE
+		ORDER BY S.ORG_CODE, S.SEGMENT1, S.ITEM_CODE
+	</select>
+	
+	<!-- 원부자재/포장자재 사용 실적 > 포장자재 > 헤더 조회 -->
+	<select id="searchPackMatHeader" parameterType="map" resultType="map">
+		WITH GUBUN_TBL AS /* com.hitejinro.snop.work.dao.M09040DaoMapper.searchPackMatHeader */
+		(
+		    SELECT '기초재고' AS HEADER2_DESC, 'BEGINNING_ONHAND_QTY' AS CODE, 1 AS SEQ FROM DUAL UNION ALL
+		    SELECT '입고'     AS HEADER2_DESC, 'RECEIPT_QTY'          AS CODE, 2 AS SEQ FROM DUAL UNION ALL
+		    SELECT '사용'     AS HEADER2_DESC, 'ISSUE_QTY'            AS CODE, 3 AS SEQ FROM DUAL UNION ALL
+		    SELECT '결감'     AS HEADER2_DESC, 'YIELD_ISSUE_QTY'      AS CODE, 4 AS SEQ FROM DUAL UNION ALL
+		    SELECT '결감률'   AS HEADER2_DESC, 'YIELD_ISSUE_QTY_RATE' AS CODE, 5 AS SEQ FROM DUAL UNION ALL
+		    SELECT '기말재고' AS HEADER2_DESC, 'ENDING_ONHAND_QTY'    AS CODE, 6 AS SEQ FROM DUAL UNION ALL
+		    SELECT '사용금액' AS HEADER2_DESC, 'OUT_AMT'              AS CODE, 7 AS SEQ FROM DUAL
+		)
+		SELECT
+			  S.FR_SCM_YYYYWW, S.TO_SCM_YYYYWW, S.STD_PERIOD, S.CODE, S.NAME, S.HEADER1_SPAN, S.HEADER1_DESC, S.HEADER2_DESC
+		FROM
+		(
+			SELECT 
+				  MIN(T1.SCM_YYYYWW)								 AS FR_SCM_YYYYWW
+                , MAX(T1.SCM_YYYYWW)								 AS TO_SCM_YYYYWW
+			    , T1.YYYYMM 										 AS STD_PERIOD
+			    , T2.CODE   										 AS CODE
+			    , 'COL' || (ROW_NUMBER() OVER (ORDER BY T2.SEQ) - 1) AS NAME
+			    , CASE WHEN ROW_NUMBER() OVER (ORDER BY T2.SEQ) = 1 THEN COUNT(1) OVER (PARTITION BY 1) ELSE NULL END AS HEADER1_SPAN
+			    , CASE WHEN ROW_NUMBER() OVER (ORDER BY T2.SEQ) = 1 THEN '당월(' || SUBSTR(T1.YYYYMM, 3, 2) || '년 ' || CASE WHEN TO_NUMBER(SUBSTR(T1.YYYYMM, 5, 2)) <![CDATA[ < ]]>10 THEN SUBSTR(T1.YYYYMM, 6, 1) ELSE SUBSTR(T1.YYYYMM, 5, 2) END || '월)'  
+			           ELSE NULL
+			           END 											 AS HEADER1_DESC
+			    , T2.HEADER2_DESC 									 AS HEADER2_DESC
+			    , T2.SEQ 											 AS SEQ
+			FROM SCMU.W_SOP_VW_CALENDAR_M T1
+			INNER JOIN GUBUN_TBL 		  T2 ON 1 = 1
+			WHERE 1 = 1
+			    AND SUBSTR(T1.YYYYMMDD, 1, 6) = #{yyyymm, jdbcType=VARCHAR}
+			GROUP BY T1.YYYYMM, T2.CODE, T2.HEADER2_DESC, T2.SEQ
+			
+			UNION ALL
+			
+			SELECT 
+				  MIN(T1.SCM_YYYYWW) 												AS FR_SCM_YYYYWW
+                , MAX(T1.SCM_YYYYWW) 												AS TO_SCM_YYYYWW
+			    , T1.SCM_YYYYWW 													AS STD_PERIOD
+			    , T2.CODE 															AS CODE
+			    , 'COL' || (ROW_NUMBER() OVER (ORDER BY T1.SCM_YYYYWW, T2.SEQ) + 6) AS NAME
+			    , CASE WHEN ROW_NUMBER() OVER (PARTITION BY T1.SCM_YYYYWW ORDER BY T1.SCM_YYYYWW) = 1 THEN COUNT(1) OVER (PARTITION BY T1.SCM_YYYYWW) 
+			           ELSE NULL
+			           END 															AS HEADER1_SPAN
+			    <![CDATA[
+			    , CASE WHEN ROW_NUMBER() OVER (PARTITION BY T1.SCM_YYYYWW ORDER BY T1.SCM_YYYYWW) = 1 THEN SUBSTR(T1.SCM_YYYYWW, 3, 2) || '년 ' 
+			           || CASE WHEN TO_NUMBER(SUBSTR(T1.SCM_YYYYWW, 5, 2)) < 10 THEN SUBSTR(T1.SCM_YYYYWW, 6, 1) ELSE SUBSTR(T1.SCM_YYYYWW, 5, 2) END || '주(' || SUBSTR(MIN(T1.YYYYMMDD), 3, 2) || '년 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MIN(T1.YYYYMMDD), 5, 2)) < 10 THEN SUBSTR(MIN(T1.YYYYMMDD), 6, 1) ELSE SUBSTR(MIN(T1.YYYYMMDD), 5, 2) END || '월 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MIN(T1.YYYYMMDD), 7, 2)) < 10 THEN SUBSTR(MIN(T1.YYYYMMDD), 8, 1) ELSE SUBSTR(MIN(T1.YYYYMMDD), 7, 2) END || '일 ~ ' || SUBSTR(MAX(T1.YYYYMMDD), 3, 2) || '년 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MAX(T1.YYYYMMDD), 5, 2)) < 10 THEN SUBSTR(MAX(T1.YYYYMMDD), 6, 1) ELSE SUBSTR(MAX(T1.YYYYMMDD), 5, 2) END || '월 '
+			           || CASE WHEN TO_NUMBER(SUBSTR(MAX(T1.YYYYMMDD), 7, 2)) < 10 THEN SUBSTR(MAX(T1.YYYYMMDD), 8, 1) ELSE SUBSTR(MAX(T1.YYYYMMDD), 7, 2) END || '일)'
+			           ELSE NULL 
+			           END AS HEADER1_DESC
+			    ]]>
+			    , T2.HEADER2_DESC 													AS HEADER2_DESC
+			    , T2.SEQ 															AS SEQ
+			FROM SCMU.W_SOP_VW_CALENDAR_M T1
+			INNER JOIN GUBUN_TBL 		  T2 ON 1 = 1
+			WHERE 1 = 1
+			    AND T1.YYYYMM = #{yyyymm, jdbcType=VARCHAR}
+			GROUP BY T1.SCM_YYYYWW, T2.CODE, T2.HEADER2_DESC, T2.SEQ
+		) S
+		WHERE 1 = 1
+		ORDER BY S.STD_PERIOD, S.SEQ
+	</select>
+	
+	<!-- 원부자재/포장자재 사용 실적 > 포장자재 > 바디 조회 -->
+	<select id="searchPackMatBody" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09040DaoMapper.searchPackMatBody */
+		      S.ORG_CODE 									 AS ORG_CODE
+		    , MAX(S.ORG_NAME) 								 AS ORG_NAME
+		    , S.SEGMENT2 									 AS SEGMENT2
+		    , S.SEGMENT3 									 AS SEGMENT3
+		    , DECODE(S.PK_SORT, NULL, S.SEGMENT3, S.PK_SORT) AS PK_SORT
+		    , S.ITEM_CODE 									 AS ITEM_CODE
+		    , MAX(S.DESCRIPTION) 							 AS DESCRIPTION
+		    
+		    <foreach collection="header" item="list" index="i">
+				<if test='list.CODE != null and list.CODE == "BEGINNING_ONHAND_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.BEGINNING_ONHAND_QTY 
+						ELSE 0 
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "RECEIPT_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.TOTAL_IN_QTY
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "ISSUE_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.TOTAL_OUT_QTY
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "YIELD_ISSUE_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.YIELD_ISSUE
+						ELSE 0
+						END ) AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "YIELD_ISSUE_QTY_RATE"'>
+			, CASE WHEN SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} THEN S.TOTAL_OUT_QTY ELSE 0 END ) <![CDATA[ <= ]]> 0 THEN 0
+				   ELSE SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} THEN S.YIELD_ISSUE ELSE 0 END ) 
+				      / SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} THEN S.TOTAL_OUT_QTY ELSE 0 END )
+				   END AS ${list.NAME}
+				</if>
+				<if test='list.CODE != null and list.CODE == "ENDING_ONHAND_QTY"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.ENDING_ONHAND_QTY
+						ELSE 0
+						END ) AS ${list.NAME}
+		    	</if>
+		    	<if test='list.CODE != null and list.CODE == "OUT_AMT"'>
+			, SUM( CASE WHEN S.SCM_YYYYWW BETWEEN #{list.FR_SCM_YYYYWW, jdbcType=VARCHAR} AND #{list.TO_SCM_YYYYWW, jdbcType=VARCHAR} 
+						THEN S.TOTAL_OUT_AMT
+						ELSE 0
+						END ) AS ${list.NAME}
+		    	</if>
+		    </foreach>
+		FROM
+		(
+			SELECT 
+			      A.SCM_YYYYWW                  		  AS SCM_YYYYWW
+			    , B.ORG_CODE                    		  AS ORG_CODE
+			    , MAX(D.ORG_NAME)               		  AS ORG_NAME
+			    , C.SEGMENT2                    		  AS SEGMENT2    
+			    , C.SEGMENT3                    		  AS SEGMENT3
+			    , C.PK_SORT                     		  AS PK_SORT
+			    , B.ITEM_CODE                   		  AS ITEM_CODE
+			    , MAX(C.DESCRIPTION)            		  AS DESCRIPTION
+			    
+			    , SUM( NVL(B.BEGINNING_ONHAND_QTY, 0) )   AS BEGINNING_ONHAND_QTY  -- 기초재고
+			    
+			    , SUM( NVL(B.PO_RECEIVING, 0) ) 		  AS PO_RECEIVING 		   -- 구매입고
+			    , SUM( NVL(B.PROD_RECEIVING, 0) ) 		  AS PROD_RECEIVING 	   -- 생산입고
+			    , SUM( NVL(B.SUBINV_TRANSFER_IN, 0) ) 	  AS SUBINV_TRANSFER_IN    -- 창고이전입고
+			    , SUM( NVL(B.INTER_ORG_TRANSFER_IN, 0) )  AS INTER_ORG_TRANSFER_IN -- 이송입고
+			    <if test="receiptTp != null and receiptTp !=''">
+			    , SUM( <foreach open="" collection="receiptTp" item="receiptTp" index="i" separator=" + " close="">
+				   	   CASE WHEN #{receiptTp, jdbcType=VARCHAR} = 'PO_RECEIVING' 		  THEN NVL(B.PO_RECEIVING, 0)
+				   	        WHEN #{receiptTp, jdbcType=VARCHAR} = 'PROD_RECEIVING' 	      THEN NVL(B.PROD_RECEIVING, 0)
+				   	        WHEN #{receiptTp, jdbcType=VARCHAR} = 'SUBINV_TRANSFER_IN'    THEN NVL(B.SUBINV_TRANSFER_IN, 0)
+				   	        WHEN #{receiptTp, jdbcType=VARCHAR} = 'INTER_ORG_TRANSFER_IN' THEN NVL(B.INTER_ORG_TRANSFER_IN, 0)
+				   	        ELSE 0
+				   	        END
+				   	   </foreach> ) 						   AS TOTAL_IN_QTY 			 -- 입고 합계
+			   	</if>
+			    , SUM( NVL(B.SUBINV_TRANSFER_OUT, 0) * -1 )    AS SUBINV_TRANSFER_OUT    -- 창고이전출고  
+			    , SUM( NVL(B.INTER_ORG_TRANSFER_OUT, 0) * -1 ) AS INTER_ORG_TRANSFER_OUT -- 이송출고    
+			    , SUM( NVL(B.PROD_ISSUE, 0) * -1 ) 			   AS PROD_ISSUE			 -- 생산출고     
+				, SUM( NVL(B.YIELD_ISSUE, 0) * -1 ) 		   AS YIELD_ISSUE			 -- 결감출고
+				<if test="issueTp != null and issueTp !=''">
+				, SUM( <foreach open="(" collection="issueTp" item="issueTp" index="i" separator=" + " close=")">
+					   CASE WHEN #{issueTp, jdbcType=VARCHAR} = 'SUBINV_TRANSFER_OUT'    THEN NVL(B.SUBINV_TRANSFER_OUT, 0)
+				   	        WHEN #{issueTp, jdbcType=VARCHAR} = 'INTER_ORG_TRANSFER_OUT' THEN NVL(B.INTER_ORG_TRANSFER_OUT, 0)
+				   	        WHEN #{issueTp, jdbcType=VARCHAR} = 'PROD_ISSUE'    		 THEN NVL(B.PROD_ISSUE, 0)
+				   	        WHEN #{issueTp, jdbcType=VARCHAR} = 'YIELD_ISSUE' 		     THEN NVL(B.YIELD_ISSUE, 0)
+				   	        ELSE 0
+				   	        END 
+				   	   </foreach> * -1 )				  AS TOTAL_OUT_QTY 				 -- 출고 계
+	   		  	</if>
+			    , SUM( NVL(B.ENDING_ONHAND_QTY, 0) )      AS ENDING_ONHAND_QTY			 -- 기말재고
+			    
+			    , SUM( NVL(B.SUBINV_TRANSFER_OUT, 0)    * NVL(F.UNIT_COST, 0) * -1 ) AS SUBINV_TRANSFER_OUT_AMT    -- 창고이전출고 사용금액
+			    , SUM( NVL(B.INTER_ORG_TRANSFER_OUT, 0) * NVL(F.UNIT_COST, 0) * -1 ) AS INTER_ORG_TRANSFER_OUT_AMT -- 이송출고 사용금액
+			    , SUM( NVL(B.PROD_ISSUE, 0)             * NVL(F.UNIT_COST, 0) * -1 ) AS PROD_ISSUE_AMT 			   -- 생산출고 사용금액
+			    , SUM( NVL(B.YIELD_ISSUE, 0)            * NVL(F.UNIT_COST, 0) * -1 ) AS YIELD_ISSUE_AMT 		   -- 결감출고 사용금액
+			    
+			    <if test="issueTp != null and issueTp !=''">
+				, SUM( <foreach open="(" collection="issueTp" item="issueTp" index="i" separator=" + " close=")">
+					   CASE WHEN #{issueTp, jdbcType=VARCHAR} = 'SUBINV_TRANSFER_OUT'    THEN B.SUBINV_TRANSFER_OUT * NVL(F.UNIT_COST, 0)
+				   	        WHEN #{issueTp, jdbcType=VARCHAR} = 'INTER_ORG_TRANSFER_OUT' THEN B.INTER_ORG_TRANSFER_OUT * NVL(F.UNIT_COST, 0)
+				   	        WHEN #{issueTp, jdbcType=VARCHAR} = 'PROD_ISSUE'    		 THEN B.PROD_ISSUE * NVL(F.UNIT_COST, 0)
+				   	        WHEN #{issueTp, jdbcType=VARCHAR} = 'YIELD_ISSUE' 		     THEN B.YIELD_ISSUE * NVL(F.UNIT_COST, 0)
+				   	        END
+				   	   </foreach> * -1 ) 								  			 AS TOTAL_OUT_AMT				  -- 출고금액 계
+	   		  	</if>
+
+			    
+			FROM SCMU.W_SOP_VW_CALENDAR_M           A
+			INNER JOIN EDW.W_PRD_TB_DAILY_TXN_BAL_F B ON B.PERIOD_YYYYMMDD = A.YYYYMMDD AND B.OU_CODE = 'HJ0' AND B.SUBINV_CODE IN ('RAW-PACK','RAW-PROD','RAW-SP')
+			INNER JOIN EDW.W_CM_TB_PK_ITEM_M 		C ON C.ITEM_CODE 	   = B.ITEM_CODE
+			INNER JOIN EDW.W_CM_TB_ORGANIZATION_M   D ON D.ORG_CODE        = B.ORG_CODE AND D.ORG_TYPE = 'MFG'
+			LEFT JOIN EDW.W_CM_TB_BRAND_M			E ON E.BRAND_DESC	   = C.BRAND_NAME
+			LEFT JOIN
+			(   -- 단가가 존재하는 최신 분기 데이터
+			    SELECT 
+			          A.PERIOD_QUARTER_CODE
+			        , A.OU_CODE
+			        , A.BUSINESS_CODE
+			        , A.LIQUOR_CODE
+			        , A.ORG_CODE
+			        , A.INVENTORY_ASSET_FLAG
+			        , A.ITEM_CODE
+			        , A.UNIT_COST
+			      FROM EDW.W_CM_TB_PACK_STD_COST_M A
+			     WHERE 1 = 1
+			       AND A.OU_CODE = 'HJ0'
+			       AND A.PERIOD_QUARTER_CODE = (
+			                                        SELECT /*+ INDEX_DESC (Z PK_W_CM_TB_PACK_STD_COST_M) */
+			                                               MAX(PERIOD_QUARTER_CODE)
+			                                          FROM EDW.W_CM_TB_PACK_STD_COST_M Z
+			                                         WHERE 1 = 1
+			                                           AND PERIOD_QUARTER_CODE <![CDATA[<=]]> TO_CHAR(TO_DATE(#{yyyymm, jdbcType=VARCHAR}, 'YYYYMM'), 'YYYYQ')
+			                                           AND ROWNUM = 1
+			                                   )
+			)                                       F ON 1 = 1
+			                                         AND F.OU_CODE              = B.OU_CODE
+			                                         AND F.BUSINESS_CODE        = B.BUSINESS_CODE
+			                                         AND F.LIQUOR_CODE          = C.LIQUOR_CODE
+			                                         AND F.ORG_CODE             = B.ORG_CODE
+			                                         AND F.INVENTORY_ASSET_FLAG = B.INV_ASSET_FLAG
+			                                         AND F.ITEM_CODE            = B.ITEM_CODE
+			                                         
+			WHERE 1 = 1
+			    AND A.YYYYMM = #{yyyymm, jdbcType=VARCHAR}
+			    AND (	-- 공장
+			   			( NVL(#{mfgCd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+			   			OR
+			   			( B.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+			   	    )
+			   	AND (	-- 소분류
+			   			( NVL(#{segment3Cd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1 )
+			   			OR
+			   			( C.ITEM_CATALOG_GROUP_ID IN (SELECT REGEXP_SUBSTR(#{segment3Cd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ITEM_CATALOG_GROUP_ID FROM DUAL CONNECT BY REGEXP_SUBSTR(#{segment3Cd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+			   		)
+			   	AND (	-- 브랜드
+			   			( NVL(#{brandCd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1 )
+			   			OR
+			   			( E.BRAND_CODE IN (SELECT REGEXP_SUBSTR(#{brandCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS BRAND_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{brandCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+			   		)
+			   	AND (	-- 용량
+			   			( NVL(#{volumeCd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1 )
+			   			OR
+			   			( C.VOLUME_VALUE IN (SELECT REGEXP_SUBSTR(#{volumeCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS VOLUME_VALUE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{volumeCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+			   		)
+			GROUP BY A.SCM_YYYYWW, B.ORG_CODE, C.SEGMENT2, C.SEGMENT3, C.PK_SORT, B.ITEM_CODE
+			ORDER BY A.SCM_YYYYWW, B.ORG_CODE, C.SEGMENT2, C.SEGMENT3, C.PK_SORT, B.ITEM_CODE 
+		) S
+		WHERE 1 = 1
+		GROUP BY S.ORG_CODE, S.SEGMENT2, S.SEGMENT3, S.PK_SORT, S.ITEM_CODE
+		ORDER BY S.ORG_CODE, S.SEGMENT2, S.SEGMENT3, S.PK_SORT, S.ITEM_CODE
+	</select>
+</mapper>

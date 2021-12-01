@@ -1,0 +1,524 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 판매실적분석(품목) -->
+<mapper namespace="com.hitejinro.snop.work.dao.M01031DaoMapper">
+
+	
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+	
+	<if test='month != null and !month.equals("12")'>
+		SELECT /* com.hitejinro.snop.work.dao.M01031DaoMapper.searchHeader */ 
+			   'COL' || YYYYMMDD AS COL_ID
+		     , SUBSTR(YYYYMMDD, 0, 4) AS YEAR_ID
+			 , SUBSTR(YYYYMMDD, 5, 2) AS MONTH_ID
+			 , SUBSTR(YYYYMMDD, -2)   AS COL_SEQ
+		     , CASE WHEN SUBSTR(YYYYMMDD, -2) = '01' THEN '경영목표'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '02' THEN '판매계획'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '03' THEN '판매실적'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '04' THEN '달성률'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '05' THEN '판매구성비'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '06' THEN '전년동기'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '07' THEN '전년대비증감'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '08' THEN '증감률'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '09' THEN '목표대비차이'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '10' THEN '달성률'
+		       END COL_DESC
+		     , CASE WHEN SUBSTR(YYYYMMDD, -2) = '01' THEN '당월(' || #{year, jdbcType=VARCHAR} || '년' || TO_NUMBER(SUBSTR(YYYYMMDD, 5, 2)) || '월' ||  ')'
+		            ELSE '' 
+		       END COL_HRNK_DESC
+		     , DECODE(SUBSTR(YYYYMMDD, -2), '01', 10, 1) AS HEADER_COL_SPAN
+		     , DECODE(SUBSTR(YYYYMMDD, -2), '04', 'Float', '05', 'Float', '08', 'Float', '10', 'Float', 'Int') AS COL_TYPE
+		     , 0 AS VISIBLE
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMM BETWEEN TO_CHAR(TO_NUMBER(#{year, jdbcType=VARCHAR}) - 1) || <if test='!month.equals("09") and !month.equals("10") and !month.equals("11")'>'0' || </if> TO_CHAR(TO_NUMBER(#{month, jdbcType=VARCHAR}) + 1)
+		 				  AND TO_CHAR(TO_NUMBER(#{year, jdbcType=VARCHAR}) - 1) || '12' 
+		   AND SUBSTR(YYYYMMDD, -2) <![CDATA[ < ]]> 11
+		 UNION ALL
+	</if>
+	
+		SELECT 'COL' || YYYY || '00' || SUBSTR(YYYYMMDD, -2) AS COL_ID
+			 , SUBSTR(YYYYMMDD, 0, 4) AS YEAR_ID
+			 , '00' AS MONTH_ID
+			 , SUBSTR(YYYYMMDD, -2) AS COL_SEQ
+		     , CASE WHEN SUBSTR(YYYYMMDD, -2) = '01' THEN '경영목표'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '02' THEN '판매계획'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '03' THEN '판매실적'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '04' THEN '달성률'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '05' THEN '판매구성비'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '06' THEN '전년동기'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '07' THEN '전년대비증감'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '08' THEN '증감률'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '09' THEN '목표대비차이'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '10' THEN '달성률'
+		       END COL_DESC
+		     , CASE WHEN SUBSTR(YYYYMMDD, -2) = '01' THEN '누계(' || #{year, jdbcType=VARCHAR} || '년' || '1' || '월' || ' ~ ' || #{year, jdbcType=VARCHAR} || '년' || TO_NUMBER(#{month, jdbcType=VARCHAR}) || '월' || ')'
+		            ELSE '' 
+		       END COL_HRNK_DESC
+		     , DECODE(SUBSTR(YYYYMMDD, -2), '01', 10, 1) AS HEADER_COL_SPAN
+		     , DECODE(SUBSTR(YYYYMMDD, -2), '04', 'Float', '05', 'Float', '08', 'Float', '10', 'Float', 'Int') AS COL_TYPE
+		     , 1 AS VISIBLE
+		  FROM SCMU.W_SOP_VW_CALENDAR_M  
+		 WHERE YYYYMM = #{fromYYYYMM, jdbcType=VARCHAR}
+		   AND SUBSTR(YYYYMMDD, -2) <![CDATA[ < ]]> 11
+		 UNION ALL
+		SELECT 'COL' || YYYYMMDD AS COL_ID
+			 , SUBSTR(YYYYMMDD, 0, 4) AS YEAR_ID
+			 , SUBSTR(YYYYMMDD, 5, 2) AS MONTH_ID
+			 , SUBSTR(YYYYMMDD, -2)   AS COL_SEQ
+		     , CASE WHEN SUBSTR(YYYYMMDD, -2) = '01' THEN '경영목표'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '02' THEN '판매계획'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '03' THEN '판매실적'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '04' THEN '달성률'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '05' THEN '판매구성비'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '06' THEN '전년동기'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '07' THEN '전년대비증감'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '08' THEN '증감률'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '09' THEN '목표대비차이'
+		            WHEN SUBSTR(YYYYMMDD, -2) = '10' THEN '달성률'
+		       END COL_DESC
+		     , CASE WHEN SUBSTR(YYYYMMDD, -2) = '01' THEN '당월(' || #{year, jdbcType=VARCHAR} || '년' || TO_NUMBER(SUBSTR(YYYYMMDD, 5, 2)) || '월' ||  ')'
+		            ELSE '' 
+		       END COL_HRNK_DESC
+		     , DECODE(SUBSTR(YYYYMMDD, -2), '01', 10, 1) AS HEADER_COL_SPAN
+		     , DECODE(SUBSTR(YYYYMMDD, -2), '04', 'Float', '05', 'Float', '08', 'Float', '10', 'Float', 'Int') AS COL_TYPE
+		     , 1 AS VISIBLE
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+		   AND SUBSTR(YYYYMMDD, -2) <![CDATA[ < ]]> 11
+		 ORDER BY COL_ID
+
+	</select>
+
+	<select id="searchBody" parameterType="map" resultType="map">
+	WITH SITE_TBL AS (/* com.hitejinro.snop.work.dao.M01031DaoMapper.searchBody */      -- 조회조건 중 조직콤보로 필터링 된 사업부
+            SELECT SITE_CODE
+            	 , ACCOUNT_NUMBER
+                 , LIQUOR_CODE 
+                 , BUSINESS_CODE
+              FROM EDW.W_CM_TB_OM_DEPT_M 
+             WHERE LIQUOR_CODE IN ('10', '20') 
+               AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O') 
+               AND TERRITORY_CODE NOT IN ('1006475','2079209') 
+               AND TERRITORY_CODE IS NOT NULL 
+               AND DEPARTMENT_CODE IS NOT NULL 
+               AND PART_CODE IS NOT NULL 
+               AND SALESREP_NUMBER IS NOT NULL
+               AND OU_CODE = 'HJ0'
+			   <if test='liquorCode != null and !liquorCode.equals("!ALL")'>
+	           AND LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+	           </if>
+    )
+    , ITEM_TBL AS (
+            SELECT ITEM_CODE
+                 , LIQUOR_CODE
+                 , BUSINESS_CODE
+                 , UOM_CONVERSION_VALUE 
+              FROM EDW.W_CM_TB_FG_ITEM_M 
+             WHERE LIQUOR_CODE IN ('10', '20')
+               AND BUSINESS_CODE IN ('1', '2')
+               AND ITEM_TYPE = 'FG'
+               AND BRAND_CODE != '27'
+	       	   <if test='liquorCode != null and !liquorCode.equals("!ALL")'>
+	           AND B.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+	           </if>  
+	       	   <if test='segment2 != null and !segment2.equals("!ALL")'>
+	           AND B.SEGMENT2 = #{segment2, jdbcType=VARCHAR}
+	           </if>
+	           <if test='segment3 != null and !segment3.equals("!ALL")'>
+	           AND B.SEGMENT3 = #{segment3, jdbcType=VARCHAR}
+	           </if>
+	           <if test='mainFlag != null and !mainFlag.equals("!ALL")'>
+	           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+	           </if>
+	           <if test="brandCode != null and brandCode != ''">
+		            <foreach open="AND B.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+						#{brandCode, jdbcType=VARCHAR}
+		            </foreach>
+		       </if>
+		       <if test="usageCode != null and usageCode != ''">
+		            <foreach open="AND B.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+						#{usageCode, jdbcType=VARCHAR}
+		            </foreach>
+		       </if>
+	           <if test="vesselCode != null and vesselCode != ''">
+		            <foreach open="AND B.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+						#{vesselCode, jdbcType=VARCHAR}
+		            </foreach>
+	           </if>
+		       <if test="volumeCode != null and volumeCode != ''">
+		            <foreach open="AND B.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+						#{volumeCode, jdbcType=VARCHAR}
+		            </foreach>
+		       </if>
+    ) 
+    , SALES_TBL AS (                                                                -- 월별, 사업별  당월 및 년 누계 판매량
+            SELECT A.SALES_YYYYMM
+                 , A.LIQUOR_CODE
+                 <if test='uomYn != null and uomYn.equals("N")'>
+                 , SUM(A.SALES_QTY_CD_ACCU) AS SALES_QTY_CD_ACCU_SUM 
+                 , SUM(A.SALES_QTY_CD)      AS SALES_QTY_CD_SUM
+                 </if>
+                 <if test='uomYn != null and uomYn.equals("Y")'>
+                 , SUM(A.CONV_SALES_QTY_CD_ACCU) AS SALES_QTY_CD_ACCU_SUM 
+                 , SUM(A.CONV_SALES_QTY_CD)      AS SALES_QTY_CD_SUM
+                 </if>
+              FROM EDW.M_OM_TB_SALE_ITEM_MONTH_F    A
+                 , ITEM_TBL                         B
+                 , SITE_TBL                         C 
+             WHERE A.OU_CODE = 'HJ0' 
+               AND A.SALES_YYYYMM LIKE #{year, jdbcType=VARCHAR} || '%'
+               AND A.LIQUOR_CODE IN ('10', '20')
+               AND A.BUSINESS_CODE IN ('1', '2')
+               AND A.ITEM_CODE = B.ITEM_CODE
+               AND A.LIQUOR_CODE = B.LIQUOR_CODE
+               AND A.BUSINESS_CODE = B.BUSINESS_CODE
+               AND A.SITE_CODE = C.SITE_CODE
+               AND A.LIQUOR_CODE = C.LIQUOR_CODE
+               AND A.BUSINESS_CODE = C.BUSINESS_CODE
+             GROUP BY A.SALES_YYYYMM, A.LIQUOR_CODE
+    ) 
+    , SALES_PLAN_TBL AS (                                                           -- 월, 사이트, 아이템, 사업 별 판매목표
+            SELECT A.PERIOD_YYYYMM_CODE AS SALES_YYYYMM
+                 , C.ACCOUNT_NUMBER
+                 , A.ITEM_CODE
+                 , A.LIQUOR_CODE
+                 <if test='uomYn != null and uomYn.equals("N")'>
+                 , A.SALES_PLAN_QTY
+                 </if>
+                 <if test='uomYn != null and uomYn.equals("Y")'>
+                 , SALES_PLAN_QTY * UOM_CONVERSION_VALUE AS SALES_PLAN_QTY
+                 </if>
+              FROM W_OM_TB_SALE_RESULT_MM_F A
+                 , ITEM_TBL                 B
+                 , SITE_TBL                 C 
+             WHERE 1 = 1
+		       AND A.PERIOD_YYYYMM_CODE BETWEEN TO_CHAR(TO_NUMBER(#{year, jdbcType=VARCHAR}) - 1) || <if test='!month.equals("09") and !month.equals("10") and !month.equals("11")'>'0' || </if> TO_CHAR(TO_NUMBER(#{month, jdbcType=VARCHAR}) + 1)
+											AND #{toYYYYMM, jdbcType=VARCHAR}
+               AND A.LIQUOR_CODE IN ('10', '20')
+               AND A.ITEM_CODE = B.ITEM_CODE
+               AND A.LIQUOR_CODE = B.LIQUOR_CODE
+               AND A.SITE_CODE = C.SITE_CODE
+               AND A.LIQUOR_CODE = C.LIQUOR_CODE
+    )
+    , UNION_TBL AS (
+            SELECT A.SALES_YYYYMM
+                 , (SELECT MAX(SALES_YYYYMM) 
+                       FROM EDW.M_OM_TB_SALE_ITEM_MONTH_F 
+                      WHERE SALES_YYYYMM <![CDATA[ <= ]]> #{toYYYYMM, jdbcType=VARCHAR}
+                 ) AS MAX_SALES_YYYYMM
+                 , A.ACCOUNT_NUMBER
+                 , MAX(A.SALES_QTY_CD_ACCU_SUM) AS SALES_QTY_CD_ACCU_SUM
+                 , MAX(A.SALES_QTY_CD_SUM) AS SALES_QTY_CD_SUM
+                 , SUM(NVL(A.PLAN_QTY_CM_ACCU, 0)) AS PLAN_QTY_CM_ACCU                                                                                          -- 년당월목표누계판매량 (경영목표)
+                 , SUM(NVL(A.SALES_QTY_CD_ACCU, 0)) AS SALES_QTY_CD_ACCU                                                                                        -- 년누계판매량 (판매실적)
+                 , SUM(NVL(A.SALES_QTY_BYM_ACCU, 0)) AS SALES_QTY_BYM_ACCU                                                                                      -- 전년동월누계판매량 (전년동기)
+                 , SUM(NVL(A.SALES_VARIATION_BYY_ACCU, 0)) AS SALES_VARIATION_BYY_ACCU                                                                          -- (전년대비증감)
+                 , SUM(NVL(A.DIFF_PER_PLAN_ACCU, 0)) AS DIFF_PER_PLAN_ACCU                                                                                      -- (목표대비차이)
+
+                 , SUM(NVL(A.PLAN_QTY, 0)) AS PLAN_QTY                                                                                                          -- 당월목표량(경영목표)
+                 , SUM(NVL(A.SALES_PLAN_QTY, 0)) AS SALES_PLAN_QTY                                                                                              -- (판매계획)
+                 , SUM(NVL(A.SALES_QTY_CD, 0)) AS SALES_QTY_CD                                                                                                  -- 당월판매량(판매실적)
+                 , SUM(NVL(A.SALES_QTY_BYM, 0)) AS SALES_QTY_BYM                                                                                                -- 전년동월판매량(전년동기)
+                 , SUM(NVL(A.SALES_VARIATION_BYY, 0)) AS SALES_VARIATION_BYY                                                                                    -- (전년대비증감)
+                 , SUM(NVL(A.DIFF_PER_PLAN, 0)) AS DIFF_PER_PLAN                                                                                                -- (목표대비차이)
+              FROM (
+                    -- PLAN
+                    SELECT A.SALES_YYYYMM
+                         , A.LIQUOR_CODE
+                         , A.ACCOUNT_NUMBER
+                         , MAX(C.SALES_QTY_CD_ACCU_SUM) AS SALES_QTY_CD_ACCU_SUM
+                         , MAX(C.SALES_QTY_CD_SUM) AS SALES_QTY_CD_SUM
+                         , NULL AS PLAN_QTY_CM_ACCU                                                                                        -- 년당월목표누계판매량 (경영목표)
+                         , NULL AS SALES_QTY_CD_ACCU                                                                                      -- 년누계판매량 (판매실적)
+                         , NULL AS SALES_QTY_BYM_ACCU                                                                                    -- 전년동월누계판매량 (전년동기)
+                         , NULL AS SALES_VARIATION_BYY_ACCU                                                          -- (전년대비증감)
+                         , NULL AS DIFF_PER_PLAN_ACCU                                                             -- (목표대비차이)
+                         , NULL AS PLAN_QTY                                                                                                        -- 당월목표량(경영목표)
+                         , SUM(A.SALES_PLAN_QTY) AS SALES_PLAN_QTY                                                                                            -- (판매계획)
+                         , NULL AS SALES_QTY_CD                                                                                                -- 당월판매량(판매실적)
+                         , NULL AS SALES_QTY_BYM                                                                                              -- 전년동월판매량(전년동기)
+                         , NULL AS SALES_VARIATION_BYY                                                                    -- (전년대비증감)
+                         , NULL AS DIFF_PER_PLAN                                                                               -- (목표대비차이)
+                      FROM SALES_PLAN_TBL A
+                         , SALES_TBL C
+                     WHERE 1 = 1
+                       AND A.SALES_YYYYMM = C.SALES_YYYYMM
+                       AND A.LIQUOR_CODE = C.LIQUOR_CODE
+                     GROUP BY A.SALES_YYYYMM, A.LIQUOR_CODE, A.ACCOUNT_NUMBER
+                     UNION ALL
+                    -- DATA
+                    SELECT A.SALES_YYYYMM
+                         , A.LIQUOR_CODE
+                         , B.ACCOUNT_NUMBER
+                         , MAX(C.SALES_QTY_CD_ACCU_SUM) AS SALES_QTY_CD_ACCU_SUM
+                         , MAX(C.SALES_QTY_CD_SUM) AS SALES_QTY_CD_SUM
+
+		        	     <if test='uomYn != null and uomYn.equals("N")'>
+		                 -- 단순
+		                 , SUM(A.PLAN_QTY_CM_ACCU) AS PLAN_QTY_CM_ACCU                                                                                        -- 년당월목표누계판매량 (경영목표)
+		                 , SUM(A.SALES_QTY_CD_ACCU) AS SALES_QTY_CD_ACCU                                                                                      -- 년누계판매량 (판매실적)
+		                 , SUM(A.SALES_QTY_BYM_ACCU) AS SALES_QTY_BYM_ACCU                                                                                    -- 전년동월누계판매량 (전년동기)
+		                 , SUM(A.SALES_QTY_CD_ACCU) - SUM(A.SALES_QTY_BYM_ACCU) AS SALES_VARIATION_BYY_ACCU                                                   -- (전년대비증감)
+		                 , SUM(A.PLAN_QTY_CM_ACCU) - SUM(A.SALES_QTY_CD_ACCU) AS DIFF_PER_PLAN_ACCU                                                           -- (목표대비차이)
+		                 
+		                 , SUM(A.PLAN_QTY) AS PLAN_QTY                                                                                                        -- 당월목표량(경영목표)
+		                 , NULL AS SALES_PLAN_QTY																							  				  -- (판매계획)
+		                 , SUM(A.SALES_QTY_CD) AS SALES_QTY_CD                                                                                                -- 당월판매량(판매실적)
+		                 , SUM(A.SALES_QTY_BYM) AS SALES_QTY_BYM                                                                                              -- 전년동월판매량(전년동기)
+		                 , SUM(A.SALES_QTY_CD) - SUM(A.SALES_QTY_BYM) AS SALES_VARIATION_BYY                                                                  -- (전년대비증감)
+		                 , SUM(A.PLAN_QTY) - SUM(A.SALES_QTY_CD) AS DIFF_PER_PLAN                                                                             -- (목표대비차이)
+		    	         </if>
+		    	         
+			             <if test='uomYn != null and uomYn.equals("Y")'>
+		                 -- 환산
+	                     , SUM(A.CONV_PLAN_QTY_CM_ACCU) AS PLAN_QTY_CM_ACCU                                                                                   -- 년당월목표누계환산판매량 (경영목표)
+	                     , SUM(A.CONV_SALES_QTY_CD_ACCU) AS SALES_QTY_CD_ACCU                                                                                 -- 년누계환산판매량 (판매실적)
+	                     , SUM(A.CONV_SALES_QTY_BYM_ACCU) AS SALES_QTY_BYM_ACCU                                                                               -- 전년동월누계환산판매량 (전년동기)
+	                     , SUM(A.CONV_SALES_QTY_CD_ACCU) - SUM(A.CONV_SALES_QTY_BYM) AS SALES_VARIATION_BYY_ACCU                                              -- (전년대비증감)
+	                     , SUM(A.CONV_PLAN_QTY_CM_ACCU) - SUM(CONV_SALES_QTY_CD_ACCU) AS DIFF_PER_PLAN_ACCU                                                   -- (목표대비차이)
+	                     
+	                     , SUM(A.CONV_PLAN_QTY) AS PLAN_QTY                                                                                                   -- 당월환산목표량(경영목표)
+	                     , NULL AS SALES_PLAN_QTY																						  					  -- (판매계획)
+	                     , SUM(A.CONV_SALES_QTY_CD) AS SALES_QTY_CD                                                                                           -- 당월환산판매량(판매실적)
+	                     , SUM(A.CONV_SALES_QTY_BYM) AS SALES_QTY_BYM                                                                                         -- 전년동월환산판매량(전년동기)
+	                     , SUM(A.CONV_SALES_QTY_CD) - SUM(A.CONV_SALES_QTY_BYM) AS SALES_VARIATION_BYY                                                        -- (전년대비증감)
+	                     , SUM(A.CONV_PLAN_QTY) - SUM(A.CONV_SALES_QTY_CD) AS DIFF_PER_PLAN                                                                   -- (목표대비차이)
+			             </if>
+			             
+                      FROM EDW.M_OM_TB_SALE_ITEM_MONTH_F A 
+                         , SITE_TBL B
+                         , SALES_TBL C
+                         , ITEM_TBL D
+                     WHERE 1 = 1
+                       AND A.OU_CODE = 'HJ0'
+                       AND A.SALES_YYYYMM BETWEEN TO_CHAR(TO_NUMBER(#{year, jdbcType=VARCHAR}) - 1) || <if test='!month.equals("09") and !month.equals("10") and !month.equals("11")'>'0' || </if> TO_CHAR(TO_NUMBER(#{month, jdbcType=VARCHAR}) + 1) 
+	               						  AND #{toYYYYMM, jdbcType=VARCHAR}
+                       AND A.LIQUOR_CODE IN ('10', '20')
+                       AND A.BUSINESS_CODE IN ('1', '2')
+                       AND A.SITE_CODE = B.SITE_CODE
+                       AND A.BUSINESS_CODE = B.BUSINESS_CODE
+                       AND A.LIQUOR_CODE = B.LIQUOR_CODE
+                       AND A.SALES_YYYYMM = C.SALES_YYYYMM
+                       AND A.LIQUOR_CODE = C.LIQUOR_CODE
+                       AND A.ITEM_CODE = D.ITEM_CODE
+                       AND A.BUSINESS_CODE = D.BUSINESS_CODE
+                       AND A.LIQUOR_CODE = D.LIQUOR_CODE
+                     GROUP BY A.SALES_YYYYMM, A.LIQUOR_CODE, B.ACCOUNT_NUMBER
+                 ) A
+             GROUP BY A.SALES_YYYYMM, A.ACCOUNT_NUMBER
+    )
+    , TBL AS (
+        SELECT CASE WHEN C.LVL = 1 THEN 'TR' || A.TERRITORY_CODE
+                    WHEN C.LVL = 2 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE
+                    WHEN C.LVL = 3 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE
+                    WHEN C.LVL = 4 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE || '|' || 'SE' || A.SALESREP_NUMBER
+                    WHEN C.LVL = 5 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE || '|' || 'SE' || A.SALESREP_NUMBER || '|' || 'AC' || A.ACCOUNT_NUMBER
+               END              AS PK_PATH
+             , CASE WHEN C.LVL = 1 THEN 'NULL'
+                    WHEN C.LVL = 2 THEN 'TR' || A.TERRITORY_CODE
+                    WHEN C.LVL = 3 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE
+                    WHEN C.LVL = 4 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE
+                    WHEN C.LVL = 5 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE || '|' || 'SE' || A.SALESREP_NUMBER 
+               END              AS HRNK_PK_PATH 
+             , TO_CHAR( CASE WHEN C.LVL = 1 THEN A.TERRITORY_SORT_NUMBER
+                    WHEN C.LVL = 2 THEN A.DEPT_SORT_NUMBER
+                    WHEN C.LVL = 3 THEN A.PART_SORT_NUMBER
+                    WHEN C.LVL = 4 THEN A.SALESREP_SORT_NUMBER
+                    WHEN C.LVL = 5 THEN TO_NUMBER(A.CUSTOMER_SORT_NUMBER)
+               END )             AS SORT_ORDER
+             , CASE WHEN C.LVL = 1 THEN A.TERRITORY_NAME
+                    WHEN C.LVL = 2 THEN A.DEPT_NAME
+                    WHEN C.LVL = 3 THEN A.PART_NAME
+                    WHEN C.LVL = 4 THEN A.SALESREP_NAME
+                    WHEN C.LVL = 5 THEN A.CUSTOMER_SHORT_NAME
+               END              AS DESCRIPTION
+             , MAX(SALES_QTY_CD_ACCU_SUM) AS SALES_QTY_CD_ACCU_SUM
+             , MAX(SALES_QTY_CD_SUM)      AS SALES_QTY_CD_SUM
+	<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+		<if test='item.MONTH_ID != null and item.MONTH_ID == "00"'>
+	        <choose>
+		       	<when test='item.COL_SEQ != null and item.COL_SEQ == "01"'>
+	         , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, PLAN_QTY_CM_ACCU, 0))         AS ${item.COL_ID}                                                     	-- 년당월목표누계판매량 (경영목표)	
+	         	</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "02"'>
+	         , SUM(SALES_PLAN_QTY) AS ${item.COL_ID}																														-- 년 누계(판매계획)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "03"'>
+	         , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_CD_ACCU, 0))        AS ${item.COL_ID}                                                    	-- 년누계판매량 (판매실적)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "04"'>
+			 , ROUND(DECODE(SUM(SALES_PLAN_QTY), 0, 0
+			 			  , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_CD_ACCU, 0)) / SUM(SALES_PLAN_QTY))
+			 	   , 4) AS ${item.COL_ID}																																	-- (계획 대비 달성률) 실적 / 계획
+
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "05"'>
+			 , ROUND(SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_CD_ACCU, 0)) / MAX(SALES_QTY_CD_ACCU_SUM), 4) AS ${item.COL_ID}                           -- (판매구성비)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "06"'>
+	         , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_BYM_ACCU, 0))       AS ${item.COL_ID}                                                   	-- 전년동월누계판매량 (전년동기)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "07"'>
+	         , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_VARIATION_BYY_ACCU, 0)) AS ${item.COL_ID}                                             			-- (전년대비증감)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "08"'>
+			 , ROUND(DECODE(SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_BYM_ACCU, 0)), 0, 0
+			 			  , (SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_CD_ACCU, 0)) - SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_BYM_ACCU, 0))) 
+			 			  / SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_BYM_ACCU, 0)))
+			 	   , 4) AS ${item.COL_ID}      																																-- (증감률)	         	
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "09"'>
+	         , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, DIFF_PER_PLAN_ACCU, 0))       AS ${item.COL_ID}													 	-- (목표대비차이)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "10"'>
+			 , ROUND(DECODE(SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, PLAN_QTY_CM_ACCU, 0)), 0, 0
+			 			  , SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, SALES_QTY_CD_ACCU, 0)) / SUM(DECODE(SALES_YYYYMM, MAX_SALES_YYYYMM, PLAN_QTY_CM_ACCU, 0)))
+			 	   , 4) AS ${item.COL_ID}																																	-- (목표 대비 달성률) 실적 / 목표
+				</when>
+	        </choose>
+		</if>
+	         
+		<if test='item.MONTH_ID != null and item.MONTH_ID != "00"'>
+			<choose>
+		       	<when test='item.COL_SEQ != null and item.COL_SEQ == "01"'>
+	         , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, PLAN_QTY, 0)) AS ${item.COL_ID}                                      -- 당월목표량(경영목표)
+		       	</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "02"'>
+	         , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_PLAN_QTY, 0)) AS ${item.COL_ID}								-- 당월 (판매계획)
+				</when>
+		       	<when test='item.COL_SEQ != null and item.COL_SEQ == "03"'>
+	         , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) AS ${item.COL_ID}                                  -- 당월판매량(판매실적)
+	         	</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "04"'>
+			 , ROUND(DECODE(SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_PLAN_QTY, 0)), 0, 0
+			 			  , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) / SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_PLAN_QTY, 0)))
+			 	   , 4) AS ${item.COL_ID}																																	-- (계획 대비 달성률) 실적 / 계획
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "05"'>
+			 , ROUND(SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) / MAX(SALES_QTY_CD_SUM), 4) AS ${item.COL_ID}     -- (판매구성비)
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "06"'>
+	         , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_BYM, 0)) AS ${item.COL_ID}                                 -- 전년동월판매량(전년동기)
+	         	</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "07"'>
+	         , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) 
+	         - SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_BYM, 0)) AS ${item.COL_ID}   								-- (전년대비증감)
+	         	</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "08"'>
+			 , ROUND(DECODE(SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_BYM, 0)), 0, 0
+			 			  , (SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) - SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_BYM, 0))) 
+			 			  / SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_BYM, 0)))
+			 	   , 4) AS ${item.COL_ID}      																																-- (증감률)	         	
+				</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "09"'>
+	         , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, PLAN_QTY, 0)) 
+	         - SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) AS ${item.COL_ID}              					-- (목표대비차이)
+	         	</when>
+	         	<when test='item.COL_SEQ != null and item.COL_SEQ == "10"'>
+			 , ROUND(DECODE(SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, PLAN_QTY, 0)), 0, 0
+			 			  , SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, SALES_QTY_CD, 0)) / SUM(DECODE(SALES_YYYYMM, #{item.YEAR_ID, jdbcType=VARCHAR}||#{item.MONTH_ID, jdbcType=VARCHAR}, PLAN_QTY, 0)))
+			 	   , 4) AS ${item.COL_ID}																																	-- (목표 대비 달성률) 실적 / 목표
+				</when>
+		    </choose>	         
+		</if>	 
+	</foreach>
+          FROM UNION_TBL B
+    INNER JOIN EDW.W_CM_TB_OM_DEPT_M A
+            ON B.ACCOUNT_NUMBER = A.ACCOUNT_NUMBER
+    CROSS JOIN (
+                    SELECT 1 AS LVL FROM DUAL UNION ALL
+                    SELECT 2 AS LVL FROM DUAL UNION ALL
+                    SELECT 3 AS LVL FROM DUAL UNION ALL
+                    SELECT 4 AS LVL FROM DUAL UNION ALL
+                    SELECT 5 AS LVL FROM DUAL 
+               )                         C
+         WHERE 1 = 1
+         GROUP BY 
+              CASE WHEN C.LVL = 1 THEN 'TR' || A.TERRITORY_CODE
+                    WHEN C.LVL = 2 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE
+                    WHEN C.LVL = 3 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE
+                    WHEN C.LVL = 4 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE || '|' || 'SE' || A.SALESREP_NUMBER
+                    WHEN C.LVL = 5 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE || '|' || 'SE' || A.SALESREP_NUMBER || '|' || 'AC' || A.ACCOUNT_NUMBER
+               END            
+             , CASE WHEN C.LVL = 1 THEN 'NULL'
+                    WHEN C.LVL = 2 THEN 'TR' || A.TERRITORY_CODE
+                    WHEN C.LVL = 3 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE
+                    WHEN C.LVL = 4 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE
+                    WHEN C.LVL = 5 THEN 'TR' || A.TERRITORY_CODE || '|' || 'DP' || A.DEPARTMENT_CODE || '|' || 'PT' || A.PART_CODE || '|' || 'SE' || A.SALESREP_NUMBER 
+               END             
+             , CASE WHEN C.LVL = 1 THEN A.TERRITORY_SORT_NUMBER
+                    WHEN C.LVL = 2 THEN A.DEPT_SORT_NUMBER
+                    WHEN C.LVL = 3 THEN A.PART_SORT_NUMBER
+                    WHEN C.LVL = 4 THEN A.SALESREP_SORT_NUMBER
+                    WHEN C.LVL = 5 THEN TO_NUMBER(A.CUSTOMER_SORT_NUMBER)
+               END              
+             , CASE WHEN C.LVL = 1 THEN A.TERRITORY_NAME
+                    WHEN C.LVL = 2 THEN A.DEPT_NAME
+                    WHEN C.LVL = 3 THEN A.PART_NAME
+                    WHEN C.LVL = 4 THEN A.SALESREP_NAME
+                    WHEN C.LVL = 5 THEN A.CUSTOMER_SHORT_NAME
+               END             
+    )
+        SELECT LEVEL AS DEPTH
+             , DESCRIPTION
+             , SORT_ORDER
+             , PK_PATH
+             , HRNK_PK_PATH
+             , CONNECT_BY_ISLEAF IS_LEAF
+			<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+	    	 , ${item.COL_ID}
+			</foreach>
+	      FROM TBL A
+	     START WITH HRNK_PK_PATH = 'NULL'
+	   CONNECT BY NOCYCLE PRIOR PK_PATH = HRNK_PK_PATH
+	     ORDER SIBLINGS BY SORT_ORDER 
+	</select>
+
+
+	<select id="getSegment2Combo" parameterType="map" resultType="map">
+        SELECT DISTINCT SEGMENT2 AS CODE
+             , SEGMENT2 AS NAME 
+          FROM EDW.W_CM_TB_FG_ITEM_M
+         WHERE 1 = 1
+           AND LIQUOR_CODE IN ('10', '20') 
+           AND ITEM_TYPE = 'FG'
+           AND BRAND_CODE != '27'
+           AND ITEM_STATUS = 'Active'
+           AND BUSINESS_CODE IN ('1', '2')
+         ORDER BY (DECODE(SEGMENT2, '맥주류', 0, '소주류', 1, '기타주류', 2, '기재주', 3, 4))
+	</select>
+	
+	<select id="getSegment3Combo" parameterType="map" resultType="map">
+        SELECT DISTINCT SEGMENT3 AS CODE
+        	 , SEGMENT3 AS NAME 
+          FROM EDW.W_CM_TB_FG_ITEM_M
+         WHERE 1 = 1
+		   AND LIQUOR_CODE IN ('10', '20') 
+		   AND ITEM_TYPE = 'FG'
+		   AND BRAND_CODE != '27'
+		   AND ITEM_STATUS = 'Active'
+		   AND BUSINESS_CODE IN ('1', '2') 
+        <if test="segment2 != null and segment2 != '!ALL'">
+	       AND SEGMENT2 = #{segment2, jdbcType=VARCHAR}
+		</if>
+	</select>
+	
+    <select id="getMagamYmd" resultType="String">
+		SELECT MAGAM_YMD
+		  FROM EDW.GEIS_MAGAM
+		 WHERE SCRN_ID = 'GEISM0500R'
+		   AND CO_CODE = 'HJ0'
+    </select>
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+</mapper>

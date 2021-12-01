@@ -1,0 +1,1902 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제품수급 > 연간 제품수급 Simul -->
+<mapper namespace="com.hitejinro.snop.work.dao.M02030DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.search */
+           A.VER_CD
+         , A.VER_NM, A.VER_DESC
+         , A.STD_YYYYMMDD, A.STD_YYYY
+         , A.USE_YN
+         , TO_CHAR(A.WORK_DT_10, 'YYYY-MM-DD HH24:MI:SS') || ' ' || NVL(BA.USER_NM, A.WORK_USER_10) AS WORK_INFO_10
+         , TO_CHAR(A.WORK_DT_20, 'YYYY-MM-DD HH24:MI:SS') || ' ' || NVL(BB.USER_NM, A.WORK_USER_20) AS WORK_INFO_20
+         
+         /*
+         , TO_CHAR(A.WORK_DT_10, 'YYYY-MM-DD HH24:MI:SS') AS WORK_DT_10, A.WORK_USER_10, BA.USER_NM AS WORK_USER_10_NM
+         , TO_CHAR(A.WORK_DT_20, 'YYYY-MM-DD HH24:MI:SS') AS WORK_DT_20, A.WORK_USER_20, BB.USER_NM AS WORK_USER_20_NM
+         , A.PRDT_VAR_VER_CD
+         */
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M A
+ LEFT JOIN SCMU.W_SOP_TB_USER_M           BA
+        ON BA.USER_ID = A.WORK_USER_10
+ LEFT JOIN SCMU.W_SOP_TB_USER_M           BB
+        ON BB.USER_ID = A.WORK_USER_20
+     WHERE 1 = 1
+       AND A.STD_YYYY = #{bssYYYY, jdbcType=VARCHAR}
+       AND (
+                (#{useYn, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{useYn, jdbcType=VARCHAR} = A.USE_YN)
+           )
+     ORDER BY A.STD_YYYY, A.STD_YYYYMMDD DESC, A.VER_CD DESC
+    </select>
+
+    <!-- 신규 버전코드 조회 -->
+    <select id="selectNewVerCd" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.selectNewVerCd */
+       NVL2(MAX(VER_CD)
+            , #{STD_YYYY, jdbcType=VARCHAR} || '-' || LPAD((TO_NUMBER(SUBSTR(MAX(VER_CD), 6))+1), 4, '0')
+            , #{STD_YYYY, jdbcType=VARCHAR} || '-0001') AS NEW_VER_CD -- 기준년도+일련번호 4자리. ex) 2021-0001
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M
+ WHERE 1 = 1
+   AND STD_YYYY = #{STD_YYYY, jdbcType=VARCHAR}
+    </select>
+
+    
+    <!-- 데이터 저장 : 추가 -->
+    <update id="insert" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M02030DaoMapper.insert */
+  INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_M
+       (VER_CD
+        , VER_NM, VER_DESC, STD_YYYYMMDD, STD_YYYY, USE_YN
+        , WORK_DT_10, WORK_USER_10, WORK_DT_20, WORK_USER_20, PRDT_VAR_VER_CD
+        , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+        , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+VALUES (#{NEW_VER_CD, jdbcType=VARCHAR}
+        , #{VER_NM, jdbcType=VARCHAR}, #{VER_DESC, jdbcType=VARCHAR}, #{STD_YYYYMMDD, jdbcType=VARCHAR}, #{STD_YYYY, jdbcType=VARCHAR}, #{USE_YN, jdbcType=VARCHAR}
+        , NULL, NULL, NULL, NULL, NULL
+        , NULL, NULL, NULL, NULL, NULL
+        , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+    
+    <!-- 데이터 저장 : 수정 -->
+    <update id="update" parameterType="map">
+UPDATE /* com.hitejinro.snop.work.dao.M02030DaoMapper.update */
+       SCMU.W_SOP_TB_YLY_SCM_SIMUL_M T
+       -- 기준일자(STD_YYYYMMDD), 시작일자(VER_FR_DT)는 변경 불가
+   SET T.VER_NM             = #{VER_NM, jdbcType=VARCHAR}
+     , T.VER_DESC           = #{VER_DESC, jdbcType=VARCHAR}
+     , T.USE_YN             = #{USE_YN, jdbcType=VARCHAR}
+     , T.LAST_UPDATED_BY    = #{userId, jdbcType=VARCHAR}
+     , T.LAST_UPDATE_DATE   = SYSDATE
+ WHERE 1 = 1
+   AND T.VER_CD = #{VER_CD, jdbcType=VARCHAR}
+    </update>
+    
+
+    
+    <!-- 버전 정보 조회 -->
+    <select id="selectVerInfo" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.selectVerInfo */
+           A.VER_CD
+         , A.VER_NM, A.VER_DESC
+         , A.STD_YYYYMMDD, A.STD_YYYY
+         , A.USE_YN
+         , TO_CHAR(A.WORK_DT_10, 'YYYY-MM-DD HH24:MI:SS') || ' ' || NVL(BA.USER_NM, A.WORK_USER_10) AS WORK_INFO_10
+         , TO_CHAR(A.WORK_DT_20, 'YYYY-MM-DD HH24:MI:SS') || ' ' || NVL(BB.USER_NM, A.WORK_USER_20) AS WORK_INFO_20
+         , TO_CHAR(A.WORK_DT_10, 'YYYY-MM-DD HH24:MI:SS') AS WORK_DT_10, A.WORK_USER_10, BA.USER_NM AS WORK_USER_10_NM
+         , TO_CHAR(A.WORK_DT_20, 'YYYY-MM-DD HH24:MI:SS') AS WORK_DT_20, A.WORK_USER_20, BB.USER_NM AS WORK_USER_20_NM
+         , A.PRDT_VAR_VER_CD, NVL(C.PRDT_VAR_VER_NM, 'N/A') AS PRDT_VAR_VER_NM, C.PRDT_VAR_VER_DESC
+         
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M A
+ LEFT JOIN SCMU.W_SOP_TB_USER_M           BA
+        ON BA.USER_ID = A.WORK_USER_10
+ LEFT JOIN SCMU.W_SOP_TB_USER_M           BB
+        ON BB.USER_ID = A.WORK_USER_20
+ LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_M       C
+        ON C.PRDT_VAR_VER_CD = A.PRDT_VAR_VER_CD
+     WHERE 1 = 1
+       AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+    </select>
+
+    <!-- 버전 정보의 작업정보 저장 -->
+    <update id="updateVerWorkInfo" parameterType="map">
+UPDATE /* com.hitejinro.snop.work.dao.M02030DaoMapper.updateVerWorkInfo */
+       SCMU.W_SOP_TB_YLY_SCM_SIMUL_M T
+   SET T.WORK_DT_10         = CASE WHEN #{liquorCode, jdbcType=VARCHAR} = '!ALL' THEN SYSDATE
+                                   WHEN #{liquorCode, jdbcType=VARCHAR} = '10'   THEN SYSDATE
+                                   ELSE                                               T.WORK_DT_10
+                              END
+     , T.WORK_USER_10       = CASE WHEN #{liquorCode, jdbcType=VARCHAR} = '!ALL' THEN #{userId, jdbcType=VARCHAR}
+                                   WHEN #{liquorCode, jdbcType=VARCHAR} = '10'   THEN #{userId, jdbcType=VARCHAR}
+                                   ELSE                                               T.WORK_USER_10
+                              END
+     , T.WORK_DT_20         = CASE WHEN #{liquorCode, jdbcType=VARCHAR} = '!ALL' THEN SYSDATE
+                                   WHEN #{liquorCode, jdbcType=VARCHAR} = '20'   THEN SYSDATE
+                                   ELSE                                               T.WORK_DT_20
+                              END
+     , T.WORK_USER_20       = CASE WHEN #{liquorCode, jdbcType=VARCHAR} = '!ALL' THEN #{userId, jdbcType=VARCHAR}
+                                   WHEN #{liquorCode, jdbcType=VARCHAR} = '20'   THEN #{userId, jdbcType=VARCHAR}
+                                   ELSE                                               T.WORK_USER_20
+                              END
+ WHERE 1 = 1
+   AND T.VER_CD = #{verCd, jdbcType=VARCHAR}
+    </update>
+
+
+
+    <!-- 생산변수 리스트 조회 -->
+    <select id="selectPrdtVarList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.selectPrdtVarList */
+       A.PRDT_VAR_VER_CD, A.PRDT_VAR_VER_NM
+  FROM SCMU.W_SOP_TB_PRDT_VAR_M A
+ WHERE 1 = 1
+   AND A.USE_YN = 'Y'
+ ORDER BY A.PRDT_VAR_VER_CD DESC
+    </select>
+
+    <!-- 생산변수 저장 -->
+    <update id="updatePrdtVarVerCd" parameterType="map">
+UPDATE /* com.hitejinro.snop.work.dao.M02030DaoMapper.updatePrdtVarVerCd */
+       SCMU.W_SOP_TB_YLY_SCM_SIMUL_M T
+   SET T.PRDT_VAR_VER_CD    = #{prdtVarVerCd, jdbcType=VARCHAR}
+     , T.LAST_UPDATED_BY    = #{userId, jdbcType=VARCHAR}
+     , T.LAST_UPDATE_DATE   = SYSDATE
+ WHERE 1 = 1
+   AND T.VER_CD = #{verCd, jdbcType=VARCHAR}
+    </update>
+
+
+    <!-- 주간근무일수유형별 근무형태 리스트(주당 생산기준 관리) 조회 -->
+    <select id="selectSftPtrnDtyByWeekWorkDcntTpList" parameterType="map" resultType="map">
+        <![CDATA[
+SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.selectSftPtrnDtyByWeekWorkDcntTpList */
+       F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, F.WEEK_WORK_DCNT_TP_NAME
+     , F.CALENDAR_WORK_CNT, G.WEEK_WORK_CNT
+     --, F.SFT_PTRN_DTY_CODE, F.SFT_PTRN_DTY_NAME, F.SFT_PTRN_DTY_AVL_HR, F.WORK_DCNT, F.SFT_RNUM, F.SFT_REVERSE_RNUM
+     -- 주의 시작일부터 근무형태를 채우는 경우 : 월말, 월중)
+     , LISTAGG(CASE WHEN F.SFT_RNUM         <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_CODE || '(' || F.SFT_PTRN_DTY_NAME || ' : ' || F.SFT_PTRN_DTY_AVL_HR || 'HR' || ')' END
+               , ' + ') WITHIN GROUP (ORDER BY F.SFT_RNUM)          AS SFT_LIST
+     , SUM(CASE WHEN F.SFT_RNUM         <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_AVL_HR ELSE 0 END)
+                                                                    AS TOTAL_AVL_HR
+     -- 주의 종료일부터 근무형태를 채우는 경우 : 월초(해당 주의 앞부분이 짤리므로, 뒤부터 채운다)
+     , LISTAGG(CASE WHEN F.SFT_REVERSE_RNUM <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_CODE || '(' || F.SFT_PTRN_DTY_NAME || ' : ' || F.SFT_PTRN_DTY_AVL_HR || 'HR' || ')' END
+               , ' + ') WITHIN GROUP (ORDER BY F.SFT_REVERSE_RNUM)  AS SFT_REVERSE_LIST
+     , SUM(CASE WHEN F.SFT_REVERSE_RNUM <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_AVL_HR ELSE 0 END)
+                                                                    AS REVERSE_TOTAL_AVL_HR
+     
+  FROM (    -- F. 주간근무일수유형별로 "달력상의 주차내 근무일수"에 따른 근무형태 리스트 
+            SELECT LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE, WEEK_WORK_DCNT_TP_NAME
+                 , SFT_PTRN_DTY_CODE, SFT_PTRN_DTY_NAME
+                 , SFT_PTRN_DTY_AVL_HR, WORK_DCNT
+                 , WEEK_WORK_CNT AS CALENDAR_WORK_CNT -- 달력상의 주차내의 근무일수
+                 , ROW_NUMBER() OVER (PARTITION BY LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE ORDER BY SFT_PTRN_DTY_AVL_HR DESC, SFT_PTRN_DTY_SEQ, SFT_PTRN_DTY_CODE)          AS SFT_RNUM         -- 주간근무일수유형 내에서 주차 시작부터 순번
+                 , ROW_NUMBER() OVER (PARTITION BY LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE ORDER BY SFT_PTRN_DTY_AVL_HR ASC, SFT_PTRN_DTY_SEQ DESC, SFT_PTRN_DTY_CODE DESC) AS SFT_REVERSE_RNUM -- 주간근무일수유형 내에서 주차 종료부터 순번(월초의 경우, 해당 주의 앞부분이 짤릴때 사용)
+              FROM (
+                        SELECT A.WEEK_WORK_DCNT_TP_CODE, B.NAME AS WEEK_WORK_DCNT_TP_NAME                       -- 주간근무일수유형
+                             , A.SFT_PTRN_DTY_CODE, C.NAME AS SFT_PTRN_DTY_NAME                                 -- 근무형태
+                             , A.WORK_DCNT                                                                      -- 주간일수유형별로 한 주당 근무형태의 작업일수. 즉, 근무형태가 한 주동안 반복되는 횟수
+                             , SUM(A.WORK_DCNT) OVER (PARTITION BY A.WEEK_WORK_DCNT_TP_CODE, E.DAY_OF_WEEK) AS WEEK_WORK_CNT   -- 주간 근무일수(영업일수)
+                             , NVL(DC.AVL_HR, 0) AS SFT_PTRN_DTY_AVL_HR
+                             , A.LIQUOR_CODE, B.SEQ AS WEEK_WORK_DCNT_TP_SEQ, C.SEQ AS SFT_PTRN_DTY_SEQ
+                             , ROW_NUMBER() OVER (PARTITION BY A.WEEK_WORK_DCNT_TP_CODE, A.SFT_PTRN_DTY_CODE ORDER BY E.DAY_OF_WEEK) AS RNUM
+                          FROM SCMU.W_SOP_TB_WEEK_PRDT_STD_M    A
+                     LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         B
+                            ON B.GROUP_CODE = 'WEEK_WORK_DCNT_TP' -- 주간근무일수유형
+                           AND B.CODE       = A.WEEK_WORK_DCNT_TP_CODE
+                     LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         C
+                            ON C.GROUP_CODE = 'SFT_PTRN_DTY' -- 근무형태
+                           AND C.CODE       = A.SFT_PTRN_DTY_CODE
+                     LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M    DA
+                            ON DA.VER_CD = #{verCd, jdbcType=VARCHAR}
+                     LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_M         DB
+                            ON DB.PRDT_VAR_VER_CD = DA.PRDT_VAR_VER_CD
+                     LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M  DC
+                            ON DC.PRDT_VAR_VER_CD   = DB.PRDT_VAR_VER_CD
+                           AND DC.SFT_PTRN_DTY_CODE = A.SFT_PTRN_DTY_CODE
+                    CROSS JOIN (    -- 근무형태별 반복되는 횟수를 하나씩 분리하기 위한 목적. 이렇게 해야, 화면단에서 처리가 편함
+                                    SELECT LEVEL AS DAY_OF_WEEK FROM DUAL CONNECT BY LEVEL <=7
+                               )                                E
+                         WHERE 1 = 1
+                   )
+             WHERE 1 = 1
+               AND (
+                        --(WORK_DCNT = 0 AND RNUM = 1) OR       -- 근무형태를 사용하지 않더라도 표현
+                        (WORK_DCNT > 0 AND RNUM <= WORK_DCNT)   -- 근무형태가 사용되는 일수만큼만 표현
+                   )
+       ) F
+  JOIN (
+            SELECT LEVEL AS WEEK_WORK_CNT -- 실제 (월로 짤린) 주차내의 근무일수
+              FROM DUAL
+           CONNECT BY LEVEL <= 7
+       ) G
+    ON G.WEEK_WORK_CNT <= F.CALENDAR_WORK_CNT
+ WHERE 1 = 1
+ GROUP BY F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, F.WEEK_WORK_DCNT_TP_NAME, F.CALENDAR_WORK_CNT, G.WEEK_WORK_CNT
+ ORDER BY F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, G.WEEK_WORK_CNT
+        ]]>
+    </select>
+
+    <!-- 생산설정의 그리드 헤더 조회 : 생산변수의 공장/라인 리스트 -->
+    <select id="searchPrdtSetHeader" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.searchPrdtSetHeader */
+           A.VER_CD, A.STD_YYYYMMDD, A.STD_YYYY
+         , A.PRDT_VAR_VER_CD, NVL(B.PRDT_VAR_VER_NM, 'N/A') AS PRDT_VAR_VER_NM, B.PRDT_VAR_VER_DESC, B.USE_YN AS PRDT_VAR_VER_USE_YN
+         , C.LIQUOR_CODE
+         , C.ORG_CODE, C.ORG_NAME
+         , C.LINE_DEPT_CODE, C.LINE_DEPT_NAME, C.NEW_LINE_YN, C.VESSEL_CODE
+         , 'COL_' || ROW_NUMBER() OVER (PARTITION BY C.LIQUOR_CODE ORDER BY C.ORG_CODE, DECODE(C.NEW_LINE_YN, 'Y', -1, 1), C.LINE_DEPT_CODE) AS COL_ID
+         , CASE WHEN ROW_NUMBER() OVER (PARTITION BY C.LIQUOR_CODE, C.ORG_CODE ORDER BY DECODE(C.NEW_LINE_YN, 'Y', -1, 1), C.LINE_DEPT_CODE) = 1 THEN COUNT(1) OVER (PARTITION BY C.LIQUOR_CODE, C.ORG_CODE)
+                ELSE 1
+           END AS HEADER_COL_SPAN -- 공장별 라인의 개수(공장이 나오는 첫번째 라인에서만 View)
+         
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M A
+      JOIN SCMU.W_SOP_TB_PRDT_VAR_M       B
+        ON B.PRDT_VAR_VER_CD = A.PRDT_VAR_VER_CD
+      JOIN (    -- C. 생산변수의 공장/라인/제품 리스트에서 공장/라인만 추출
+                SELECT CA.PRDT_VAR_VER_CD
+                     , CASE WHEN CA.ORG_CODE LIKE 'MH%' THEN '10'
+                            WHEN CA.ORG_CODE LIKE 'MJ%' THEN '20'
+                       END AS LIQUOR_CODE
+                     , CA.ORG_CODE, MAX(CB.ORG_NAME) AS ORG_NAME
+                     , CA.LINE_DEPT_CODE
+                     , MAX(
+                                CASE WHEN CA.NEW_LINE_YN = 'Y' THEN CD.LINE_DEPT_NAME
+                                     ELSE                           CC.START_DEPARTMENT_DESC
+                                END
+                          ) AS LINE_DEPT_NAME
+                     , MAX(NVL(CA.NEW_LINE_YN, 'N'))    AS NEW_LINE_YN
+                     , MAX(CA.VESSEL_CODE)              AS VESSEL_CODE          -- 특이하게도, 청주공장(MJ2)의 병5/6/7호라인(BTL5, BTL6, BTL6)은 실제로는 페트(3)만 생산
+                     , MAX(NVL(CA.QTY_PER_HOUR * NVL(CA.PRDT_EFC_RATE, 1) * CA.UOM_CONVERSION_VALUE, 0))
+                                                        AS MAX_CONV_QTY_PER_HR  -- 시간당 최대 생산량(환산c/s) : 생산효율 적용
+                     
+                  FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M      CA
+             LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M        CB
+                    ON CB.ORG_CODE = CA.ORG_CODE
+             LEFT JOIN EDW.W_PRD_TB_ITEM_ROUTING_F       CC
+                    ON CC.ORG_CODE         = CA.ORG_CODE
+                   AND CC.START_DEPARTMENT = CA.LINE_DEPT_CODE
+             LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M CD
+                    ON CD.PRDT_VAR_VER_CD = CA.PRDT_VAR_VER_CD
+                   AND CD.ORG_CODE        = CA.ORG_CODE
+                   AND CD.LINE_DEPT_CODE  = CA.LINE_DEPT_CODE
+                   AND 'Y'                = CA.NEW_LINE_YN -- 신규라인만 대상
+                 WHERE 1 = 1
+                 GROUP BY CA.PRDT_VAR_VER_CD, CASE WHEN CA.ORG_CODE LIKE 'MH%' THEN '10' WHEN CA.ORG_CODE LIKE 'MJ%' THEN '20' END, CA.ORG_CODE, CA.LINE_DEPT_CODE
+           )                              C
+        ON C.PRDT_VAR_VER_CD = B.PRDT_VAR_VER_CD
+       AND C.LIQUOR_CODE     = #{liquorCode, jdbcType=VARCHAR}
+     WHERE 1 = 1
+       AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+     ORDER BY C.LIQUOR_CODE, C.ORG_CODE, DECODE(C.NEW_LINE_YN, 'Y', -1, 1), C.LINE_DEPT_CODE
+    </select>
+    
+    <!-- 생산설정의 그리드 바디 조회 : 버전의 기간 리스트와 헤더의 조합 -->
+    <select id="searchPrdtSetBody" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.searchPrdtSetBody */
+           A.VER_CD
+         , C.LIQUOR_CODE, C.LIQUOR_DESC
+         , D.YYYYMM AS PERIOD_YYYYMM, D.PERIOD_TYPE, D.PERIOD_CODE, D.PERIOD_NAME
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYMM'   THEN ''
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   THEN '    '
+                     WHEN D.PERIOD_TYPE = 'YYYYMMDD' THEN '        '
+                     ELSE                                 ''
+                END
+                || D.PERIOD_NAME
+              ) AS PERIOD_DESC -- 기간유형에 따라서, 들여쓰기 처리
+        <![CDATA[
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYMMDD' AND D.PERIOD_CODE        <= A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_ACTUAL'
+                     WHEN D.PERIOD_TYPE = 'YYYYMMDD' AND D.PERIOD_CODE        >  A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_PLAN'
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   AND D.PERIOD_TO_YYYYMMDD <= A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_ACTUAL'
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   AND D.PERIOD_FR_YYYYMMDD >  A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_PLAN'
+                     ELSE                                                                            D.PERIOD_TYPE
+                END
+              ) AS "Def"    -- 트리그리드의 행별 속성 설정 : YYYYMM, YYYYWW, YYYYMMDD
+        ]]>
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYMMDD' AND NVL(D.BUSINESS_DAY_FLAG, 'N') = 'Y' THEN '정상'
+                     WHEN D.PERIOD_TYPE = 'YYYYMMDD' AND NVL(D.BUSINESS_DAY_FLAG, 'N') = 'N' THEN '휴일'
+                     ELSE                                                                         ''
+                END
+              ) AS BUSINESS_DAY_FLAG_DESC, D.BUSINESS_DAY_FLAG -- 일자가 없어서, 무의미
+         , D.PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD, D.PERIOD_TYPE_SEQ, MAX(D.CALENDAR_WORK_CNT) AS CALENDAR_WORK_CNT, MAX(D.WORK_CNT) AS WORK_CNT
+         , D.HAS_SAT_YN -- 주차내에 토요일 포함여부 : 소주의 6일 근무를 하는 경우가 있어서, 토요일 포함여부 체크
+         /* 공장/라인별로 근무형태(SFT_PTRN_DTY_CODE), 근무시간(AVL_HR), 시간당 최대 생산량(MAX_CONV_QTY_PER_HR)
+         , MAX(CASE WHEN D.PERIOD_TYPE IN (          'YYYYWW') AND G.ORG_CODE = 'MH1' AND G.LINE_DEPT_CODE = 'BTL1' THEN NVL(E.SFT_PTRN_DTY_CODE, '')                      END) AS COL_1_SFT_PTRN_DTY_CODE
+         , SUM(CASE WHEN D.PERIOD_TYPE IN ('YYYYMM', 'YYYYWW') AND G.ORG_CODE = 'MH1' AND G.LINE_DEPT_CODE = 'BTL1' THEN NVL(E.AVL_HR, 0)                                  END) AS COL_1_AVL_HR
+         , MAX(CASE WHEN D.PERIOD_TYPE IN ('YYYYMM', 'YYYYWW') AND G.ORG_CODE = 'MH1' AND G.LINE_DEPT_CODE = 'BTL1' THEN NVL(E.MAX_CONV_QTY_PER_HR, G.MAX_CONV_QTY_PER_HR) END) AS COL_1_MAX_CONV_QTY_PER_HR
+         */
+        <if test="TREEGRID_HEADER != '' and TREEGRID_HEADER != null">
+            <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+         , MAX(CASE WHEN D.PERIOD_TYPE IN (          'YYYYWW') AND G.ORG_CODE = #{item.ORG_CODE, jdbcType=VARCHAR} AND G.LINE_DEPT_CODE = #{item.LINE_DEPT_CODE, jdbcType=VARCHAR} THEN NVL(E.SFT_PTRN_DTY_CODE, '')                      END) AS ${item.COL_ID}_SFT_PTRN_DTY_CODE
+         , SUM(CASE WHEN D.PERIOD_TYPE IN ('YYYYMM', 'YYYYWW') AND G.ORG_CODE = #{item.ORG_CODE, jdbcType=VARCHAR} AND G.LINE_DEPT_CODE = #{item.LINE_DEPT_CODE, jdbcType=VARCHAR} THEN NVL(E.AVL_HR, 0)                                  END) AS ${item.COL_ID}_AVL_HR
+         , MAX(CASE WHEN D.PERIOD_TYPE IN ('YYYYMM', 'YYYYWW') AND G.ORG_CODE = #{item.ORG_CODE, jdbcType=VARCHAR} AND G.LINE_DEPT_CODE = #{item.LINE_DEPT_CODE, jdbcType=VARCHAR} THEN NVL(E.MAX_CONV_QTY_PER_HR, G.MAX_CONV_QTY_PER_HR) END) AS ${item.COL_ID}_MAX_CONV_QTY_PER_HR
+            </foreach>
+        </if>
+         
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M        A
+ LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_M             B
+        ON B.PRDT_VAR_VER_CD = A.PRDT_VAR_VER_CD
+      JOIN EDW.W_CM_TB_LIQUOR_M                 C
+        ON C.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+ LEFT JOIN (    -- 생산변수에 따른 공장/라인 리스트(시간당 최대 생산량 포함)
+                SELECT CASE WHEN CA.ORG_CODE LIKE 'MH%' THEN '10'
+                            WHEN CA.ORG_CODE LIKE 'MJ%' THEN '20'
+                       END AS LIQUOR_CODE
+                     , CA.ORG_CODE
+                     , CA.LINE_DEPT_CODE
+                     , MAX(NVL(CA.NEW_LINE_YN, 'N'))    AS NEW_LINE_YN
+                     , MAX(CA.VESSEL_CODE)              AS VESSEL_CODE
+                     , MAX(NVL(CA.QTY_PER_HOUR * NVL(CA.PRDT_EFC_RATE, 1) * CA.UOM_CONVERSION_VALUE, 0))
+                                                        AS MAX_CONV_QTY_PER_HR -- 시간당 최대 생산량(환산c/s) : 생산효율 적용
+                                 
+                  FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M      CA
+             LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M        CB
+                    ON CB.ORG_CODE = CA.ORG_CODE
+             LEFT JOIN EDW.W_PRD_TB_ITEM_ROUTING_F       CC
+                    ON CC.ORG_CODE         = CA.ORG_CODE
+                   AND CC.START_DEPARTMENT = CA.LINE_DEPT_CODE
+             LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M CD
+                    ON CD.PRDT_VAR_VER_CD = CA.PRDT_VAR_VER_CD
+                   AND CD.ORG_CODE        = CA.ORG_CODE
+                   AND CD.LINE_DEPT_CODE  = CA.LINE_DEPT_CODE
+                   AND 'Y'                = CA.NEW_LINE_YN -- 신규라인만 대상
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M     CE
+                    ON CE.PRDT_VAR_VER_CD = CA.PRDT_VAR_VER_CD
+                 WHERE 1 = 1
+                   AND CE.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY CA.PRDT_VAR_VER_CD, CASE WHEN CA.ORG_CODE LIKE 'MH%' THEN '10' WHEN CA.ORG_CODE LIKE 'MJ%' THEN '20' END, CA.ORG_CODE, CA.LINE_DEPT_CODE
+           )                                    G
+        ON G.LIQUOR_CODE = C.LIQUOR_CODE
+ LEFT JOIN (    -- D. 버전의 유효기간에 해당하는 날짜 리스트(월, 연주차) : 일자까지 포함하면, 데이터가 너무 많아서 저장이 너무 오래 걸려서 삭제
+                SELECT DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                       END                  AS PERIOD_CODE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( SUBSTR(DA.YYYYMM, 1, 4) || '-' || SUBSTR(DA.YYYYMM, 5, 2) || '월' )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( SUBSTR(DA.SCM_YYYYWW, 1, 4) || '년 ' || SUBSTR(DA.SCM_YYYYWW, 5, 2) || '주차' ) || '(' || MIN(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || '~' || MAX(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || ')'
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX( TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') || ' (' || DA.DAY_OF_WEEK_DESC || ')' )
+                       END                  AS PERIOD_NAME
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX(DA.BUSINESS_DAY_FLAG)
+                       END                  AS BUSINESS_DAY_FLAG
+                     , MIN(DA.YYYYMMDD)     AS PERIOD_FR_YYYYMMDD
+                     , MAX(DA.YYYYMMDD)     AS PERIOD_TO_YYYYMMDD
+                     , MAX(DC.SEQ)          AS PERIOD_TYPE_SEQ
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( DA.YYYYMM_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( DA.SCM_YYYYWW_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN 1
+                       END                  AS CALENDAR_WORK_CNT -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                     , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END) AS WORK_CNT -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                     , CASE WHEN TO_CHAR(TO_DATE(MAX(DA.YYYYMMDD), 'YYYYMMDD'), 'D') = '7' THEN 'Y' ELSE 'N' END AS HAS_SAT_YN -- 주차내에 토요일 포함여부 : 소주의 6일 근무를 하는 경우가 있어서, 토요일 포함여부 체크
+                     
+                  FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                    ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+            CROSS JOIN (
+                            SELECT 'YYYYMM'   AS PERIOD_TYPE, 1 AS SEQ FROM DUAL UNION ALL
+                            SELECT 'YYYYWW'   AS PERIOD_TYPE, 2 AS SEQ FROM DUAL
+                       )                              DC
+                 WHERE 1 = 1
+                   AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                        , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                               WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                               WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                          END
+           )                                    D
+        ON D.VER_CD = A.VER_CD
+ LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F   E -- E. 생산설정 중 주차(YYYYWW)의 주간근무일수유형(WEEK_WORK_DCNT_TP_CODE), 근무시간(AVL_HR), 시간당 최대 생산량(MAX_CONV_QTY_PER_HR) 조회
+        ON E.VER_CD         = A.VER_CD
+       AND E.LIQUOR_CODE    = C.LIQUOR_CODE
+       AND E.PERIOD_YYYYMM  = D.YYYYMM
+       AND E.ORG_CODE       = G.ORG_CODE
+       AND E.LINE_DEPT_CODE = G.LINE_DEPT_CODE
+       AND (
+                (D.PERIOD_TYPE = 'YYYYWW' AND E.PERIOD_TYPE = D.PERIOD_TYPE AND E.PERIOD_CODE = D.PERIOD_CODE)
+                OR
+                (D.PERIOD_TYPE = 'YYYYMM' AND E.PERIOD_TYPE = 'YYYYWW' AND 1 = 1) -- 앞에서 년월을 조인해서, 여기선 불필요
+           )
+     WHERE 1 = 1
+       AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+     GROUP BY A.VER_CD, C.LIQUOR_CODE, C.LIQUOR_DESC, D.YYYYMM, D.PERIOD_TYPE, D.PERIOD_CODE, D.PERIOD_NAME, D.BUSINESS_DAY_FLAG, D.PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD, D.PERIOD_TYPE_SEQ, D.HAS_SAT_YN
+     ORDER BY C.LIQUOR_CODE, D.YYYYMM, D.PERIOD_FR_YYYYMMDD, D.PERIOD_TYPE_SEQ, D.PERIOD_CODE
+    </select>
+    
+    <!-- 생산설정 데이터 저장 : 연주차별 공장/라인의 근무형태/가용시간 삭제(근무형태가 N/A인경우) -->
+    <update id="deletePrdtSet" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deletePrdtSet */
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F T
+ WHERE 1 = 1
+   AND EXISTS (
+            SELECT SA.VER_CD, SA.LIQUOR_CODE, SA.ORG_CODE, SA.LINE_DEPT_CODE, SA.PERIOD_YYYYMM, SA.PERIOD_TYPE, SA.PERIOD_CODE
+                 , SA.SFT_PTRN_DTY_CODE         -- 주차(YYYYWW)에서는 주간근무일수유형(WEEK_WORK_DCNT_TP_CODE)
+              FROM (
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+SELECT #{list.VER_CD, jdbcType=VARCHAR}                                                                     AS VER_CD
+     , #{list.LIQUOR_CODE, jdbcType=VARCHAR}                                                                AS LIQUOR_CODE
+     , #{list.ORG_CODE, jdbcType=VARCHAR}                                                                   AS ORG_CODE
+     , #{list.LINE_DEPT_CODE, jdbcType=VARCHAR}                                                             AS LINE_DEPT_CODE
+     , #{list.PERIOD_YYYYMM, jdbcType=VARCHAR}                                                              AS PERIOD_YYYYMM
+     , #{list.PERIOD_TYPE, jdbcType=VARCHAR}                                                                AS PERIOD_TYPE
+     , #{list.PERIOD_CODE, jdbcType=VARCHAR}                                                                AS PERIOD_CODE
+     , #{list.SFT_PTRN_DTY_CODE, jdbcType=VARCHAR}                                                          AS SFT_PTRN_DTY_CODE
+     , #{list.PERIOD_FR_YYYYMMDD, jdbcType=VARCHAR}                                                         AS PERIOD_FR_YYYYMMDD
+     , #{list.PERIOD_TO_YYYYMMDD, jdbcType=VARCHAR}                                                         AS PERIOD_TO_YYYYMMDD
+     , TO_NUMBER(#{list.WEEK_WORK_CNT, jdbcType=VARCHAR})                                                   AS WEEK_WORK_CNT
+     , TO_NUMBER(#{list.CALENDAR_WORK_CNT, jdbcType=VARCHAR})                                               AS CALENDAR_WORK_CNT
+     
+     , #{list.action, jdbcType=VARCHAR}                                                                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+     , ROWNUM                                                                                               AS RNUM
+  FROM DUAL
+        </foreach>
+                   )                               SA
+             WHERE 1 = 1
+               AND (    -- 근무형태가 N/A이면, 삭제될 예정
+                        (SA.SFT_PTRN_DTY_CODE IS NULL)
+                        OR
+                        (SA.SFT_PTRN_DTY_CODE = 'NA')
+                        OR
+                        (SA.SFT_PTRN_DTY_CODE = 'N/A')
+                   )
+               AND SA.VER_CD            = T.VER_CD
+               AND SA.LIQUOR_CODE       = T.LIQUOR_CODE
+               AND SA.ORG_CODE          = T.ORG_CODE
+               AND SA.LINE_DEPT_CODE    = T.LINE_DEPT_CODE
+               AND SA.PERIOD_YYYYMM     = T.PERIOD_YYYYMM
+               AND SA.PERIOD_TYPE       = T.PERIOD_TYPE
+               AND SA.PERIOD_CODE       = T.PERIOD_CODE
+       )
+    </update>
+    
+    <!-- 생산설정 데이터 저장 : 연주차별 공장/라인의 근무형태/가용시간 저장 -->
+    <update id="updatePrdtSet" parameterType="map">
+MERGE /* com.hitejinro.snop.work.dao.M02030DaoMapper.updatePrdtSet */
+ INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F T
+USING (
+            SELECT SA.VER_CD, SA.LIQUOR_CODE, SA.ORG_CODE, SA.LINE_DEPT_CODE, SA.PERIOD_YYYYMM, SA.PERIOD_TYPE, SA.PERIOD_CODE
+                 , SA.SFT_PTRN_DTY_CODE         -- 주차(YYYYWW)에서는 주간근무일수유형(WEEK_WORK_DCNT_TP_CODE)
+                 , CASE WHEN SUBSTR(SA.PERIOD_FR_YYYYMMDD, 7, 2) = '01' THEN NVL(SC.REVERSE_TOTAL_AVL_HR, 0)
+                        ELSE                                                 NVL(SC.TOTAL_AVL_HR, 0)
+                   END AS AVL_HR  -- 생산변수의 주간근무일수유형와 영업일수에 따른 근무형태 리스트의 가용시간 합산 : 실제 저장에 사용할 부분
+                 , SF.VESSEL_CODE, NVL(SF.MAX_CONV_QTY_PER_HR, 0) AS MAX_CONV_QTY_PER_HR
+                 , SA.PERIOD_FR_YYYYMMDD, SA.PERIOD_TO_YYYYMMDD
+                 , CASE WHEN SB.STD_YYYYMMDD >= SA.PERIOD_TO_YYYYMMDD THEN 'Y'
+                        ELSE                                               'N'
+                   END AS ACTUAL_YN
+                 , NVL(SA.WEEK_WORK_CNT, 0) AS WORK_DCNT
+                 , NVL(SC.WEEK_WORK_DCNT_TP_NAME, SG.NAME) AS SFT_PTRN_DTY_NAME
+                 , SF.LINE_DEPT_NAME, SF.NEW_LINE_YN
+                 , CASE WHEN SUBSTR(SA.PERIOD_FR_YYYYMMDD, 7, 2) = '01' THEN SC.SFT_REVERSE_LIST
+                        ELSE                                                 SC.SFT_LIST
+                   END AS RMKS
+                 , NULL AS ATTRIBUTE1, NULL AS ATTRIBUTE2, NULL AS ATTRIBUTE3, NULL AS ATTRIBUTE4, NULL AS ATTRIBUTE5
+                 
+              FROM (
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+SELECT #{list.VER_CD, jdbcType=VARCHAR}                                                                     AS VER_CD
+     , #{list.LIQUOR_CODE, jdbcType=VARCHAR}                                                                AS LIQUOR_CODE
+     , #{list.ORG_CODE, jdbcType=VARCHAR}                                                                   AS ORG_CODE
+     , #{list.LINE_DEPT_CODE, jdbcType=VARCHAR}                                                             AS LINE_DEPT_CODE
+     , #{list.PERIOD_YYYYMM, jdbcType=VARCHAR}                                                              AS PERIOD_YYYYMM
+     , #{list.PERIOD_TYPE, jdbcType=VARCHAR}                                                                AS PERIOD_TYPE
+     , #{list.PERIOD_CODE, jdbcType=VARCHAR}                                                                AS PERIOD_CODE
+     , #{list.SFT_PTRN_DTY_CODE, jdbcType=VARCHAR}                                                          AS SFT_PTRN_DTY_CODE
+     , #{list.PERIOD_FR_YYYYMMDD, jdbcType=VARCHAR}                                                         AS PERIOD_FR_YYYYMMDD
+     , #{list.PERIOD_TO_YYYYMMDD, jdbcType=VARCHAR}                                                         AS PERIOD_TO_YYYYMMDD
+     , TO_NUMBER(#{list.WEEK_WORK_CNT, jdbcType=VARCHAR})                                                   AS WEEK_WORK_CNT
+     , TO_NUMBER(#{list.CALENDAR_WORK_CNT, jdbcType=VARCHAR})                                               AS CALENDAR_WORK_CNT
+     
+     , #{list.action, jdbcType=VARCHAR}                                                                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+     , ROWNUM                                                                                               AS RNUM
+  FROM DUAL
+        </foreach>
+                   )                               SA
+         LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M   SB
+                ON SB.VER_CD = SA.VER_CD
+         LEFT JOIN (    -- SC. 주간근무일수유형+"실제 연주차 내의 근무일수"에 따른 근무시간 리스트
+        <![CDATA[
+                        SELECT F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, F.WEEK_WORK_DCNT_TP_NAME
+                             , F.CALENDAR_WORK_CNT, G.WEEK_WORK_CNT
+                             --, F.SFT_PTRN_DTY_CODE, F.SFT_PTRN_DTY_NAME, F.SFT_PTRN_DTY_AVL_HR, F.WORK_DCNT, F.SFT_RNUM, F.SFT_REVERSE_RNUM
+                             -- 주의 시작일부터 근무형태를 채우는 경우 : 월말, 월중)
+                             , LISTAGG(CASE WHEN F.SFT_RNUM         <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_CODE || '(' || F.SFT_PTRN_DTY_NAME || ' : ' || F.SFT_PTRN_DTY_AVL_HR || 'HR' || ')' END
+                                       , ' + ') WITHIN GROUP (ORDER BY F.SFT_RNUM)          AS SFT_LIST
+                             , SUM(CASE WHEN F.SFT_RNUM         <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_AVL_HR ELSE 0 END)
+                                                                                            AS TOTAL_AVL_HR
+                             -- 주의 종료일부터 근무형태를 채우는 경우 : 월초(해당 주의 앞부분이 짤리므로, 뒤부터 채운다)
+                             , LISTAGG(CASE WHEN F.SFT_REVERSE_RNUM <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_CODE || '(' || F.SFT_PTRN_DTY_NAME || ' : ' || F.SFT_PTRN_DTY_AVL_HR || 'HR' || ')' END
+                                       , ' + ') WITHIN GROUP (ORDER BY F.SFT_REVERSE_RNUM)  AS SFT_REVERSE_LIST
+                             , SUM(CASE WHEN F.SFT_REVERSE_RNUM <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_AVL_HR ELSE 0 END)
+                                                                                            AS REVERSE_TOTAL_AVL_HR
+                             
+                          FROM (    -- F. 주간근무일수유형별로 "달력상의 주차내 근무일수"에 따른 근무형태 리스트 
+                                    SELECT LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE, WEEK_WORK_DCNT_TP_NAME
+                                         , SFT_PTRN_DTY_CODE, SFT_PTRN_DTY_NAME
+                                         , SFT_PTRN_DTY_AVL_HR, WORK_DCNT
+                                         , WEEK_WORK_CNT AS CALENDAR_WORK_CNT -- 달력상의 주차내의 근무일수
+                                         , ROW_NUMBER() OVER (PARTITION BY LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE ORDER BY SFT_PTRN_DTY_AVL_HR DESC, SFT_PTRN_DTY_SEQ, SFT_PTRN_DTY_CODE)          AS SFT_RNUM         -- 주간근무일수유형 내에서 주차 시작부터 순번
+                                         , ROW_NUMBER() OVER (PARTITION BY LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE ORDER BY SFT_PTRN_DTY_AVL_HR ASC, SFT_PTRN_DTY_SEQ DESC, SFT_PTRN_DTY_CODE DESC) AS SFT_REVERSE_RNUM -- 주간근무일수유형 내에서 주차 종료부터 순번(월초의 경우, 해당 주의 앞부분이 짤릴때 사용)
+                                      FROM (
+                                                SELECT A.WEEK_WORK_DCNT_TP_CODE, B.NAME AS WEEK_WORK_DCNT_TP_NAME                       -- 주간근무일수유형
+                                                     , A.SFT_PTRN_DTY_CODE, C.NAME AS SFT_PTRN_DTY_NAME                                 -- 근무형태
+                                                     , A.WORK_DCNT                                                                      -- 주간일수유형별로 한 주당 근무형태의 작업일수. 즉, 근무형태가 한 주동안 반복되는 횟수
+                                                     , SUM(A.WORK_DCNT) OVER (PARTITION BY A.WEEK_WORK_DCNT_TP_CODE, E.DAY_OF_WEEK) AS WEEK_WORK_CNT   -- 주간 근무일수(영업일수)
+                                                     , NVL(DC.AVL_HR, 0) AS SFT_PTRN_DTY_AVL_HR
+                                                     , A.LIQUOR_CODE, B.SEQ AS WEEK_WORK_DCNT_TP_SEQ, C.SEQ AS SFT_PTRN_DTY_SEQ
+                                                     , ROW_NUMBER() OVER (PARTITION BY A.WEEK_WORK_DCNT_TP_CODE, A.SFT_PTRN_DTY_CODE ORDER BY E.DAY_OF_WEEK) AS RNUM
+                                                  FROM SCMU.W_SOP_TB_WEEK_PRDT_STD_M    A
+                                             LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         B
+                                                    ON B.GROUP_CODE = 'WEEK_WORK_DCNT_TP' -- 주간근무일수유형
+                                                   AND B.CODE       = A.WEEK_WORK_DCNT_TP_CODE
+                                             LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         C
+                                                    ON C.GROUP_CODE = 'SFT_PTRN_DTY' -- 근무형태
+                                                   AND C.CODE       = A.SFT_PTRN_DTY_CODE
+                                             LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M    DA
+                                                    ON DA.VER_CD = #{verCd, jdbcType=VARCHAR}
+                                             LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_M         DB
+                                                    ON DB.PRDT_VAR_VER_CD = DA.PRDT_VAR_VER_CD
+                                             LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M  DC
+                                                    ON DC.PRDT_VAR_VER_CD   = DB.PRDT_VAR_VER_CD
+                                                   AND DC.SFT_PTRN_DTY_CODE = A.SFT_PTRN_DTY_CODE
+                                            CROSS JOIN (    -- 근무형태별 반복되는 횟수를 하나씩 분리하기 위한 목적. 이렇게 해야, 화면단에서 처리가 편함
+                                                            SELECT LEVEL AS DAY_OF_WEEK FROM DUAL CONNECT BY LEVEL <=7
+                                                       )                                E
+                                                 WHERE 1 = 1
+                                           )
+                                     WHERE 1 = 1
+                                       AND (
+                                                --(WORK_DCNT = 0 AND RNUM = 1) OR       -- 근무형태를 사용하지 않더라도 표현
+                                                (WORK_DCNT > 0 AND RNUM <= WORK_DCNT)   -- 근무형태가 사용되는 일수만큼만 표현
+                                           )
+                               ) F
+                          JOIN (
+                                    SELECT LEVEL AS WEEK_WORK_CNT -- 실제 (월로 짤린) 주차내의 근무일수
+                                      FROM DUAL
+                                   CONNECT BY LEVEL <= 7
+                               ) G
+                            ON G.WEEK_WORK_CNT <= F.CALENDAR_WORK_CNT
+                         WHERE 1 = 1
+                         GROUP BY F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, F.WEEK_WORK_DCNT_TP_NAME, F.CALENDAR_WORK_CNT, G.WEEK_WORK_CNT
+        ]]>
+                   )                               SC
+                ON SC.WEEK_WORK_DCNT_TP_CODE = SA.SFT_PTRN_DTY_CODE
+               AND (    -- 보통은 연주차내 근무일수가 동일해야 하지만, 소주(20)이고 달력상 주간 근무일수가 5일이면 6일 근무도 진행하므로 체크한다.
+                        (SC.WEEK_WORK_CNT = SA.WEEK_WORK_CNT)
+                        OR
+                        (SA.CALENDAR_WORK_CNT = 5 AND SA.LIQUOR_CODE = '20' AND SC.WEEK_WORK_CNT = (SA.WEEK_WORK_CNT+1))
+                   )
+               
+         LEFT JOIN (    -- SF. 생산변수의 공장/라인/제품 리스트에서 공장/라인만 추출
+                        SELECT CA.PRDT_VAR_VER_CD
+                             , CASE WHEN CA.ORG_CODE LIKE 'MH%' THEN '10'
+                                    WHEN CA.ORG_CODE LIKE 'MJ%' THEN '20'
+                               END AS LIQUOR_CODE
+                             , CA.ORG_CODE, MAX(CB.ORG_NAME) AS ORG_NAME
+                             , CA.LINE_DEPT_CODE
+                             , MAX(
+                                        CASE WHEN CA.NEW_LINE_YN = 'Y' THEN CD.LINE_DEPT_NAME
+                                             ELSE                           CC.START_DEPARTMENT_DESC
+                                        END
+                                  ) AS LINE_DEPT_NAME
+                             , MAX(NVL(CA.NEW_LINE_YN, 'N'))    AS NEW_LINE_YN
+                             , MAX(CA.VESSEL_CODE)              AS VESSEL_CODE          -- 특이하게도, 청주공장(MJ2)의 병5/6/7호라인(BTL5, BTL6, BTL6)은 실제로는 페트(3)만 생산
+                             , MAX(NVL(CA.QTY_PER_HOUR * NVL(CA.PRDT_EFC_RATE, 1) * CA.UOM_CONVERSION_VALUE, 0))
+                                                                AS MAX_CONV_QTY_PER_HR  -- 시간당 최대 생산량(환산c/s) : 생산효율 적용
+                             
+                          FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M      CA
+                     LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M        CB
+                            ON CB.ORG_CODE = CA.ORG_CODE
+                     LEFT JOIN EDW.W_PRD_TB_ITEM_ROUTING_F       CC
+                            ON CC.ORG_CODE         = CA.ORG_CODE
+                           AND CC.START_DEPARTMENT = CA.LINE_DEPT_CODE
+                     LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M CD
+                            ON CD.PRDT_VAR_VER_CD = CA.PRDT_VAR_VER_CD
+                           AND CD.ORG_CODE        = CA.ORG_CODE
+                           AND CD.LINE_DEPT_CODE  = CA.LINE_DEPT_CODE
+                           AND 'Y'                = CA.NEW_LINE_YN -- 신규라인만 대상
+                         WHERE 1 = 1
+                         GROUP BY CA.PRDT_VAR_VER_CD, CASE WHEN CA.ORG_CODE LIKE 'MH%' THEN '10' WHEN CA.ORG_CODE LIKE 'MJ%' THEN '20' END, CA.ORG_CODE, CA.LINE_DEPT_CODE
+                   )                                SF
+                ON SF.PRDT_VAR_VER_CD = SB.PRDT_VAR_VER_CD
+               AND SF.LIQUOR_CODE     = SA.LIQUOR_CODE
+               AND SF.ORG_CODE        = SA.ORG_CODE
+               AND SF.LINE_DEPT_CODE  = SA.LINE_DEPT_CODE
+         LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         SG
+                ON SG.GROUP_CODE = 'WEEK_WORK_DCNT_TP' -- 주간근무일수유형
+               AND SG.CODE       = SA.SFT_PTRN_DTY_CODE
+             WHERE 1 = 1
+               AND (    -- 근무형태가 N/A이면, 삭제될 예정
+                        (SA.SFT_PTRN_DTY_CODE IS NOT NULL)
+                        AND
+                        (SA.SFT_PTRN_DTY_CODE != 'NA')
+                        AND
+                        (SA.SFT_PTRN_DTY_CODE != 'N/A')
+                   )
+      ) S
+   ON (T.VER_CD = S.VER_CD AND T.LIQUOR_CODE = S.LIQUOR_CODE AND T.ORG_CODE = S.ORG_CODE AND T.LINE_DEPT_CODE = S.LINE_DEPT_CODE AND T.PERIOD_YYYYMM = S.PERIOD_YYYYMM AND T.PERIOD_TYPE = S.PERIOD_TYPE AND T.PERIOD_CODE = S.PERIOD_CODE)
+ WHEN MATCHED THEN
+    UPDATE
+       SET T.SFT_PTRN_DTY_CODE   = S.SFT_PTRN_DTY_CODE
+         , T.AVL_HR              = S.AVL_HR
+         , T.MAX_CONV_QTY_PER_HR = S.MAX_CONV_QTY_PER_HR
+         , T.PERIOD_FR_YYYYMMDD  = S.PERIOD_FR_YYYYMMDD
+         , T.PERIOD_TO_YYYYMMDD  = S.PERIOD_TO_YYYYMMDD
+         , T.SFT_PTRN_DTY_NAME   = S.SFT_PTRN_DTY_NAME
+         , T.LINE_DEPT_NAME      = S.LINE_DEPT_NAME
+         , T.NEW_LINE_YN         = S.NEW_LINE_YN
+         , T.RMKS                = S.RMKS
+         , T.LAST_UPDATED_BY     = #{userId, jdbcType=VARCHAR}
+         , T.LAST_UPDATE_DATE    = SYSDATE
+ 
+ WHEN NOT MATCHED THEN
+    INSERT (T.VER_CD, T.LIQUOR_CODE, T.ORG_CODE, T.LINE_DEPT_CODE, T.PERIOD_YYYYMM, T.PERIOD_TYPE, T.PERIOD_CODE
+            , T.SFT_PTRN_DTY_CODE, T.AVL_HR, T.MAX_CONV_QTY_PER_HR, T.VESSEL_CODE
+            , T.PERIOD_FR_YYYYMMDD, T.PERIOD_TO_YYYYMMDD, T.ACTUAL_YN, T.WORK_DCNT, T.SFT_PTRN_DTY_NAME, T.LINE_DEPT_NAME, T.NEW_LINE_YN, T.RMKS
+            , T.ATTRIBUTE1, T.ATTRIBUTE2, T.ATTRIBUTE3, T.ATTRIBUTE4, T.ATTRIBUTE5, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+    VALUES (S.VER_CD, S.LIQUOR_CODE, S.ORG_CODE, S.LINE_DEPT_CODE, S.PERIOD_YYYYMM, S.PERIOD_TYPE, S.PERIOD_CODE
+            , S.SFT_PTRN_DTY_CODE, S.AVL_HR, S.MAX_CONV_QTY_PER_HR, S.VESSEL_CODE
+            , S.PERIOD_FR_YYYYMMDD, S.PERIOD_TO_YYYYMMDD, S.ACTUAL_YN, S.WORK_DCNT, S.SFT_PTRN_DTY_NAME, S.LINE_DEPT_NAME, S.NEW_LINE_YN, S.RMKS
+            , S.ATTRIBUTE1, S.ATTRIBUTE2, S.ATTRIBUTE3, S.ATTRIBUTE4, S.ATTRIBUTE5, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+
+    
+    <!-- 생산설정 갱신 초기화 : 허용되지 않는 근무형태(주간근무일수유형)와 공장/라인 리스트 삭제 -->
+    <update id="deletePrdtSetRefresh" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deletePrdtSetRefresh */
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F T
+ WHERE 1 = 1
+   AND T.VER_CD = #{verCd, jdbcType=VARCHAR}
+   AND NOT EXISTS (
+        -- Z. 현재 허용되는 근무형태 리스트 + 공장/라인 리스트
+        SELECT B.VER_CD, A.PERIOD_TYPE, A.LIQUOR_CODE
+             , A.SFT_PTRN_DTY_CODE, A.SFT_PTRN_DTY_NAME, A.AVL_HR
+             , B.ORG_CODE, B.ORG_NAME, B.LINE_DEPT_CODE, B.LINE_DEPT_NAME, B.NEW_LINE_YN
+          FROM (
+                    -- A. 기간구분별 근무형태 리스트
+                    SELECT 'YYYYWW' AS PERIOD_TYPE, AA.SEGMENT2 AS LIQUOR_CODE
+                         , AA.CODE AS SFT_PTRN_DTY_CODE, AA.NAME AS SFT_PTRN_DTY_NAME -- 실제로는 주간근무일수유형이지만, 동일 컬럼에 주간근무일수유형과 근무형태를 혼용해서 사용(컬럼명이 근무형태임)
+                         , 0 AS AVL_HR
+                      FROM SCMU.W_SOP_TB_COM_CODE_M AA
+                     WHERE 1 = 1
+                       AND AA.GROUP_CODE = 'WEEK_WORK_DCNT_TP' -- 주간근무일수유형
+                       AND AA.USE_YN     = 'Y'
+               ) A
+          JOIN (
+                    -- B. 생산변수의 공장/라인/제품 리스트에서 공장/라인만 추출
+                    SELECT BA.VER_CD, BA.PRDT_VAR_VER_CD
+                         , CASE WHEN BB.ORG_CODE LIKE 'MH%' THEN '10'
+                                WHEN BB.ORG_CODE LIKE 'MJ%' THEN '20'
+                           END AS LIQUOR_CODE
+                         , BB.ORG_CODE, NVL(MAX(BC.ORG_NAME), BB.ORG_CODE) AS ORG_NAME
+                         , BB.LINE_DEPT_CODE
+                         , MAX(
+                                   CASE WHEN BB.NEW_LINE_YN = 'Y' THEN NVL(BE.LINE_DEPT_NAME, BB.LINE_DEPT_CODE)
+                                        ELSE                           NVL(BD.START_DEPARTMENT_DESC, BB.LINE_DEPT_CODE)
+                                   END
+                              ) AS LINE_DEPT_NAME
+                         , MAX(NVL(BB.NEW_LINE_YN, 'N')) AS NEW_LINE_YN
+                                     
+                      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M    BA
+                      JOIN SCMU.W_SOP_TB_PRDT_VAR_DTL_M      BB
+                        ON BB.PRDT_VAR_VER_CD = BA.PRDT_VAR_VER_CD
+                 LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M        BC
+                        ON BC.ORG_CODE = BB.ORG_CODE
+                 LEFT JOIN EDW.W_PRD_TB_ITEM_ROUTING_F       BD
+                        ON BD.ORG_CODE         = BB.ORG_CODE
+                       AND BD.START_DEPARTMENT = BB.LINE_DEPT_CODE
+                 LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M BE
+                        ON BE.PRDT_VAR_VER_CD = BA.PRDT_VAR_VER_CD
+                       AND BE.ORG_CODE        = BB.ORG_CODE
+                       AND BE.LINE_DEPT_CODE  = BB.LINE_DEPT_CODE
+                       AND 'Y'                = BB.NEW_LINE_YN -- 신규라인만 대상
+                     WHERE 1 = 1
+                       AND BA.VER_CD      = #{verCd, jdbcType=VARCHAR}
+                     GROUP BY BA.VER_CD, BA.PRDT_VAR_VER_CD, CASE WHEN BB.ORG_CODE LIKE 'MH%' THEN '10' WHEN BB.ORG_CODE LIKE 'MJ%' THEN '20' END, BB.ORG_CODE, BB.LINE_DEPT_CODE
+               ) B
+            ON B.LIQUOR_CODE = A.LIQUOR_CODE
+         WHERE 1 = 1
+           AND T.VER_CD            = B.VER_CD 
+           AND T.LIQUOR_CODE       = A.LIQUOR_CODE 
+           AND T.ORG_CODE          = B.ORG_CODE
+           AND T.LINE_DEPT_CODE    = B.LINE_DEPT_CODE
+           AND T.PERIOD_TYPE       = A.PERIOD_TYPE
+           AND T.SFT_PTRN_DTY_CODE = A.SFT_PTRN_DTY_CODE
+       )
+    </update>
+
+    <!-- 생산설정 갱신 Update : 근무형태(주간근무일수유형)에 따른 가용시간과 공장/라인의 명칭 Update -->
+    <update id="updatePrdtSetRefresh" parameterType="map">
+MERGE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deletePrdtSetRefresh */
+ INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F T
+USING (
+            SELECT SA.VER_CD, SA.LIQUOR_CODE, SA.ORG_CODE, SA.LINE_DEPT_CODE, SA.PERIOD_TYPE, SB.PERIOD_CODE
+                 , SA.WEEK_WORK_DCNT_TP_CODE AS SFT_PTRN_DTY_CODE, SA.WEEK_WORK_DCNT_TP_NAME AS SFT_PTRN_DTY_NAME
+                 , CASE WHEN SUBSTR(SB.PERIOD_FR_YYYYMMDD, 7, 2) = '01' THEN SA.REVERSE_TOTAL_AVL_HR
+                        ELSE                                                 SA.TOTAL_AVL_HR
+                   END AS AVL_HR
+                 , CASE WHEN SUBSTR(SB.PERIOD_FR_YYYYMMDD, 7, 2) = '01' THEN SA.SFT_REVERSE_LIST
+                        ELSE                                                 SA.SFT_LIST
+                   END AS RMKS
+                 , SA.ORG_NAME, SA.LINE_DEPT_NAME, SA.NEW_LINE_YN, SA.MAX_CONV_QTY_PER_HR
+              FROM (    -- SA. 현재 허용되는 근무형태 리스트 + 공장/라인 리스트
+                        SELECT B.VER_CD, A.PERIOD_TYPE, A.LIQUOR_CODE
+                             , A.WEEK_WORK_DCNT_TP_CODE, A.WEEK_WORK_DCNT_TP_NAME, A.WEEK_WORK_CNT, A.SFT_LIST, A.TOTAL_AVL_HR, A.SFT_REVERSE_LIST, A.REVERSE_TOTAL_AVL_HR
+                             , B.ORG_CODE, B.ORG_NAME, B.LINE_DEPT_CODE, B.LINE_DEPT_NAME, B.NEW_LINE_YN, B.MAX_CONV_QTY_PER_HR
+                          FROM (
+                                    -- A. 기간구분별 근무형태(주간근무일수유형) 리스트
+        <![CDATA[
+                                    SELECT 'YYYYWW' AS PERIOD_TYPE, F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, F.WEEK_WORK_DCNT_TP_NAME
+                                         , F.CALENDAR_WORK_CNT, G.WEEK_WORK_CNT
+                                         --, F.SFT_PTRN_DTY_CODE, F.SFT_PTRN_DTY_NAME, F.SFT_PTRN_DTY_AVL_HR, F.WORK_DCNT, F.SFT_RNUM, F.SFT_REVERSE_RNUM
+                                         -- 주의 시작일부터 근무형태를 채우는 경우 : 월말, 월중)
+                                         , LISTAGG(CASE WHEN F.SFT_RNUM         <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_CODE || '(' || F.SFT_PTRN_DTY_NAME || ' : ' || F.SFT_PTRN_DTY_AVL_HR || 'HR' || ')' END
+                                                   , ' + ') WITHIN GROUP (ORDER BY F.SFT_RNUM)          AS SFT_LIST
+                                         , SUM(CASE WHEN F.SFT_RNUM         <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_AVL_HR ELSE 0 END)
+                                                                                                        AS TOTAL_AVL_HR
+                                         -- 주의 종료일부터 근무형태를 채우는 경우 : 월초(해당 주의 앞부분이 짤리므로, 뒤부터 채운다)
+                                         , LISTAGG(CASE WHEN F.SFT_REVERSE_RNUM <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_CODE || '(' || F.SFT_PTRN_DTY_NAME || ' : ' || F.SFT_PTRN_DTY_AVL_HR || 'HR' || ')' END
+                                                   , ' + ') WITHIN GROUP (ORDER BY F.SFT_REVERSE_RNUM)  AS SFT_REVERSE_LIST
+                                         , SUM(CASE WHEN F.SFT_REVERSE_RNUM <= G.WEEK_WORK_CNT THEN F.SFT_PTRN_DTY_AVL_HR ELSE 0 END)
+                                                                                                        AS REVERSE_TOTAL_AVL_HR
+                                         
+                                      FROM (    -- F. 주간근무일수유형별로 "달력상의 주차내 근무일수"에 따른 근무형태 리스트 
+                                                SELECT LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE, WEEK_WORK_DCNT_TP_NAME
+                                                     , SFT_PTRN_DTY_CODE, SFT_PTRN_DTY_NAME
+                                                     , SFT_PTRN_DTY_AVL_HR, WORK_DCNT
+                                                     , WEEK_WORK_CNT AS CALENDAR_WORK_CNT -- 달력상의 주차내의 근무일수
+                                                     , ROW_NUMBER() OVER (PARTITION BY LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE ORDER BY SFT_PTRN_DTY_AVL_HR DESC, SFT_PTRN_DTY_SEQ, SFT_PTRN_DTY_CODE)          AS SFT_RNUM         -- 주간근무일수유형 내에서 주차 시작부터 순번
+                                                     , ROW_NUMBER() OVER (PARTITION BY LIQUOR_CODE, WEEK_WORK_DCNT_TP_CODE ORDER BY SFT_PTRN_DTY_AVL_HR ASC, SFT_PTRN_DTY_SEQ DESC, SFT_PTRN_DTY_CODE DESC) AS SFT_REVERSE_RNUM -- 주간근무일수유형 내에서 주차 종료부터 순번(월초의 경우, 해당 주의 앞부분이 짤릴때 사용)
+                                                  FROM (
+                                                            SELECT A.WEEK_WORK_DCNT_TP_CODE, B.NAME AS WEEK_WORK_DCNT_TP_NAME                       -- 주간근무일수유형
+                                                                 , A.SFT_PTRN_DTY_CODE, C.NAME AS SFT_PTRN_DTY_NAME                                 -- 근무형태
+                                                                 , A.WORK_DCNT                                                                      -- 주간일수유형별로 한 주당 근무형태의 작업일수. 즉, 근무형태가 한 주동안 반복되는 횟수
+                                                                 , SUM(A.WORK_DCNT) OVER (PARTITION BY A.WEEK_WORK_DCNT_TP_CODE, E.DAY_OF_WEEK) AS WEEK_WORK_CNT   -- 주간 근무일수(영업일수)
+                                                                 , NVL(DC.AVL_HR, 0) AS SFT_PTRN_DTY_AVL_HR
+                                                                 , A.LIQUOR_CODE, B.SEQ AS WEEK_WORK_DCNT_TP_SEQ, C.SEQ AS SFT_PTRN_DTY_SEQ
+                                                                 , ROW_NUMBER() OVER (PARTITION BY A.WEEK_WORK_DCNT_TP_CODE, A.SFT_PTRN_DTY_CODE ORDER BY E.DAY_OF_WEEK) AS RNUM
+                                                              FROM SCMU.W_SOP_TB_WEEK_PRDT_STD_M    A
+                                                         LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         B
+                                                                ON B.GROUP_CODE = 'WEEK_WORK_DCNT_TP' -- 주간근무일수유형
+                                                               AND B.CODE       = A.WEEK_WORK_DCNT_TP_CODE
+                                                         LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         C
+                                                                ON C.GROUP_CODE = 'SFT_PTRN_DTY' -- 근무형태
+                                                               AND C.CODE       = A.SFT_PTRN_DTY_CODE
+                                                         LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M    DA
+                                                                ON DA.VER_CD = #{verCd, jdbcType=VARCHAR}
+                                                         LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_M         DB
+                                                                ON DB.PRDT_VAR_VER_CD = DA.PRDT_VAR_VER_CD
+                                                         LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M  DC
+                                                                ON DC.PRDT_VAR_VER_CD   = DB.PRDT_VAR_VER_CD
+                                                               AND DC.SFT_PTRN_DTY_CODE = A.SFT_PTRN_DTY_CODE
+                                                        CROSS JOIN (    -- 근무형태별 반복되는 횟수를 하나씩 분리하기 위한 목적. 이렇게 해야, 화면단에서 처리가 편함
+                                                                        SELECT LEVEL AS DAY_OF_WEEK FROM DUAL CONNECT BY LEVEL <=7
+                                                                   )                                E
+                                                             WHERE 1 = 1
+                                                       )
+                                                 WHERE 1 = 1
+                                                   AND (
+                                                            --(WORK_DCNT = 0 AND RNUM = 1) OR       -- 근무형태를 사용하지 않더라도 표현
+                                                            (WORK_DCNT > 0 AND RNUM <= WORK_DCNT)   -- 근무형태가 사용되는 일수만큼만 표현
+                                                       )
+                                           ) F
+                                      JOIN (
+                                                SELECT LEVEL AS WEEK_WORK_CNT -- 실제 (월로 짤린) 주차내의 근무일수
+                                                  FROM DUAL
+                                               CONNECT BY LEVEL <= 7
+                                           ) G
+                                        ON G.WEEK_WORK_CNT <= F.CALENDAR_WORK_CNT
+                                     WHERE 1 = 1
+                                     GROUP BY F.LIQUOR_CODE, F.WEEK_WORK_DCNT_TP_CODE, F.WEEK_WORK_DCNT_TP_NAME, F.CALENDAR_WORK_CNT, G.WEEK_WORK_CNT
+        ]]>
+                               ) A
+                          JOIN (
+                                    -- B. 생산변수의 공장/라인/제품 리스트에서 공장/라인만 추출
+                                    SELECT BA.VER_CD, BA.PRDT_VAR_VER_CD
+                                         , CASE WHEN BB.ORG_CODE LIKE 'MH%' THEN '10'
+                                                WHEN BB.ORG_CODE LIKE 'MJ%' THEN '20'
+                                           END AS LIQUOR_CODE
+                                         , BB.ORG_CODE, NVL(MAX(BC.ORG_NAME), BB.ORG_CODE) AS ORG_NAME
+                                         , BB.LINE_DEPT_CODE
+                                         , MAX(
+                                                   CASE WHEN BB.NEW_LINE_YN = 'Y' THEN NVL(BE.LINE_DEPT_NAME, BB.LINE_DEPT_CODE)
+                                                        ELSE                           NVL(BD.START_DEPARTMENT_DESC, BB.LINE_DEPT_CODE)
+                                                   END
+                                              ) AS LINE_DEPT_NAME
+                                         , MAX(NVL(BB.NEW_LINE_YN, 'N')) AS NEW_LINE_YN
+                                         , MAX(NVL(BB.QTY_PER_HOUR * NVL(BB.PRDT_EFC_RATE, 1) * BB.UOM_CONVERSION_VALUE, 0))
+                                                                         AS MAX_CONV_QTY_PER_HR  -- 시간당 최대 생산량(환산c/s) : 생산효율 적용
+                                                     
+                                      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M     BA
+                                      JOIN SCMU.W_SOP_TB_PRDT_VAR_DTL_M      BB
+                                        ON BB.PRDT_VAR_VER_CD = BA.PRDT_VAR_VER_CD
+                                 LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M        BC
+                                        ON BC.ORG_CODE = BB.ORG_CODE
+                                 LEFT JOIN EDW.W_PRD_TB_ITEM_ROUTING_F       BD
+                                        ON BD.ORG_CODE         = BB.ORG_CODE
+                                       AND BD.START_DEPARTMENT = BB.LINE_DEPT_CODE
+                                 LEFT JOIN SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M BE
+                                        ON BE.PRDT_VAR_VER_CD = BA.PRDT_VAR_VER_CD
+                                       AND BE.ORG_CODE        = BB.ORG_CODE
+                                       AND BE.LINE_DEPT_CODE  = BB.LINE_DEPT_CODE
+                                       AND 'Y'                = BB.NEW_LINE_YN -- 신규라인만 대상
+                                     WHERE 1 = 1
+                                       AND BA.VER_CD      = #{verCd, jdbcType=VARCHAR}
+                                     GROUP BY BA.VER_CD, BA.PRDT_VAR_VER_CD, CASE WHEN BB.ORG_CODE LIKE 'MH%' THEN '10' WHEN BB.ORG_CODE LIKE 'MJ%' THEN '20' END, BB.ORG_CODE, BB.LINE_DEPT_CODE
+                               ) B
+                            ON B.LIQUOR_CODE = A.LIQUOR_CODE
+                         WHERE 1 = 1
+                   )                                   SA
+              JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F  SB
+                ON SA.VER_CD                 = SB.VER_CD
+               AND SA.LIQUOR_CODE            = SB.LIQUOR_CODE
+               AND SA.ORG_CODE               = SB.ORG_CODE
+               AND SA.LINE_DEPT_CODE         = SB.LINE_DEPT_CODE
+               AND SA.PERIOD_TYPE            = SB.PERIOD_TYPE
+               AND SA.WEEK_WORK_DCNT_TP_CODE = SB.SFT_PTRN_DTY_CODE
+              JOIN SCMU.W_SOP_VW_CALENDAR_M            SC -- SC. 달력상의 주간 근무일수 체크용
+                ON SC.YYYYMMDD = SB.PERIOD_FR_YYYYMMDD
+               AND (    -- 보통은 연주차내 근무일수가 동일해야 하지만, 소주(20)이고 달력상 주간 근무일수가 5일이면 6일 근무도 진행하므로 체크한다.
+                        (SA.WEEK_WORK_CNT = SB.WORK_DCNT)
+                        OR
+                        (SC.SCM_YYYYWW_WORK_CNT = 5 AND SB.LIQUOR_CODE = '20' AND SA.WEEK_WORK_CNT = (SB.WORK_DCNT+1))
+                   )
+             WHERE 1 = 1
+      ) S
+   ON (T.VER_CD = S.VER_CD AND T.LIQUOR_CODE = S.LIQUOR_CODE AND T.ORG_CODE = S.ORG_CODE AND T.LINE_DEPT_CODE = S.LINE_DEPT_CODE AND T.PERIOD_TYPE = S.PERIOD_TYPE AND T.PERIOD_CODE = S.PERIOD_CODE)
+ WHEN MATCHED THEN
+    UPDATE
+       SET T.AVL_HR              = S.AVL_HR
+         , T.MAX_CONV_QTY_PER_HR = S.MAX_CONV_QTY_PER_HR
+         , T.SFT_PTRN_DTY_NAME   = S.SFT_PTRN_DTY_NAME
+         , T.LINE_DEPT_NAME      = S.LINE_DEPT_NAME
+         , T.RMKS                = S.RMKS
+         , T.LAST_UPDATED_BY     = CASE WHEN NVL(T.AVL_HR, 0) = NVL(S.AVL_HR, 0) AND NVL(T.MAX_CONV_QTY_PER_HR, 0) = NVL(S.MAX_CONV_QTY_PER_HR, 0) AND T.SFT_PTRN_DTY_NAME = S.SFT_PTRN_DTY_NAME AND T.LINE_DEPT_NAME = S.LINE_DEPT_NAME THEN T.LAST_UPDATED_BY
+                                        ELSE #{userId, jdbcType=VARCHAR}
+                                   END
+         , T.LAST_UPDATE_DATE    = CASE WHEN NVL(T.AVL_HR, 0) = NVL(S.AVL_HR, 0) AND NVL(T.MAX_CONV_QTY_PER_HR, 0) = NVL(S.MAX_CONV_QTY_PER_HR, 0) AND T.SFT_PTRN_DTY_NAME = S.SFT_PTRN_DTY_NAME AND T.LINE_DEPT_NAME = S.LINE_DEPT_NAME THEN T.LAST_UPDATE_DATE
+                                        ELSE SYSDATE
+                                   END
+    </update>
+
+
+
+    <!-- 판매설정의 그리드 조회 -->
+    <select id="searchSaleSet" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.searchSaleSet */
+           A.VER_CD
+         , A.STD_YYYYMMDD       -- 기준일자(실적일자)
+         , C.LIQUOR_CODE, C.LIQUOR_DESC
+         , D.YYYYMM AS PERIOD_YYYYMM, D.PERIOD_TYPE, D.PERIOD_CODE, D.PERIOD_NAME
+        <![CDATA[
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYWW'   AND D.PERIOD_TO_YYYYMMDD <= A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_ACTUAL'
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   AND D.PERIOD_FR_YYYYMMDD >  A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_PLAN'
+                     ELSE                                                                            D.PERIOD_TYPE
+                END
+              ) AS "Def"    -- 트리그리드의 행별 속성 설정 : YYYYMM, YYYYWW
+        ]]>
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYMM'   THEN ''
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   THEN '    '
+                     ELSE                                 ''
+                END
+                || D.PERIOD_NAME
+              ) AS PERIOD_DESC  -- 기간유형에 따라서, 들여쓰기 처리
+         , D.PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD, D.PERIOD_TYPE_SEQ, MAX(D.CALENDAR_WORK_CNT) AS CALENDAR_WORK_CNT, MAX(D.WORK_CNT) AS WORK_CNT
+
+         , SUM(NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0))    AS USE_YYYY_TRG_SALE_CONV_QTY       -- 사용 연간 목표 판매 수량(환산c/s) : 실제 시뮬레이션에서 사용할 판매량
+         , SUM(NVL(E.USE_ESPN_ACTUAL_SALE_CONV_QTY, 0)) AS USE_ESPN_ACTUAL_SALE_CONV_QTY    -- 사용 예상실적 판매 수량(환산c/s) : 실제 시뮬레이션에서 사용할 판매량
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYMM'   THEN ''
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   THEN E.RMKS
+                     ELSE                                 ''
+                END
+              )                                         AS RMKS                             -- 판매변수 적용 내용
+              
+         , SUM(NVL(E.ACTUAL_SALE_CONV_QTY, 0))          AS ACTUAL_SALE_CONV_QTY             -- 판매 실적 수량(환산c/s)
+         , SUM(NVL(E.YYYY_TRG_SALE_CONV_QTY, 0))        AS YYYY_TRG_SALE_CONV_QTY           -- 연간 목표 판매 수량(환산c/s)
+         , SUM(NVL(E.ESPN_SALE_CONV_QTY, 0))            AS ESPN_SALE_CONV_QTY               -- 예상 판매량(환산c/s)
+
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M        A
+      JOIN EDW.W_CM_TB_LIQUOR_M                 C
+        ON C.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+ LEFT JOIN (    -- D. 버전의 유효기간에 해당하는 날짜 리스트(월, 연주차)
+                SELECT DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                       END                  AS PERIOD_CODE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( SUBSTR(DA.YYYYMM, 1, 4) || '-' || SUBSTR(DA.YYYYMM, 5, 2) || '월' )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( SUBSTR(DA.SCM_YYYYWW, 1, 4) || '년 ' || SUBSTR(DA.SCM_YYYYWW, 5, 2) || '주차' ) || '(' || MIN(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || '~' || MAX(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || ')'
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX( TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') || ' (' || DA.DAY_OF_WEEK_DESC || ')' )
+                       END                  AS PERIOD_NAME
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX(DA.BUSINESS_DAY_FLAG)
+                       END                  AS BUSINESS_DAY_FLAG
+                     , MIN(DA.YYYYMMDD)     AS PERIOD_FR_YYYYMMDD
+                     , MAX(DA.YYYYMMDD)     AS PERIOD_TO_YYYYMMDD
+                     , MAX(DC.SEQ)          AS PERIOD_TYPE_SEQ
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( DA.YYYYMM_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( DA.SCM_YYYYWW_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN 1
+                       END                  AS CALENDAR_WORK_CNT -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                     , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END) AS WORK_CNT -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                     , CASE WHEN TO_CHAR(TO_DATE(MAX(DA.YYYYMMDD), 'YYYYMMDD'), 'D') = '7' THEN 'Y' ELSE 'N' END AS HAS_SAT_YN -- 주차내에 토요일 포함여부 : 소주의 6일 근무를 하는 경우가 있어서, 토요일 포함여부 체크
+                     
+                  FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                    ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+            CROSS JOIN (
+                            SELECT 'YYYYMM'   AS PERIOD_TYPE, 1 AS SEQ FROM DUAL UNION ALL
+                            SELECT 'YYYYWW'   AS PERIOD_TYPE, 2 AS SEQ FROM DUAL
+                       )                              DC
+                 WHERE 1 = 1
+                   AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                        , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                               WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                               WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                          END
+           )                                    D
+        ON D.VER_CD = A.VER_CD
+        
+ LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_F  E -- E. 계산된 판매량 조회
+        ON E.VER_CD          = A.VER_CD
+       AND E.LIQUOR_CODE     = C.LIQUOR_CODE
+       AND E.PERIOD_YYYYMM   = D.YYYYMM
+       AND (
+                (D.PERIOD_TYPE = 'YYYYWW' AND E.PERIOD_SCM_YYYYWW = D.PERIOD_CODE)
+                OR
+                (D.PERIOD_TYPE = 'YYYYMM' AND 1 = 1) -- 앞에서 년월을 조인해서, 여기선 불필요
+           )
+       AND (    -- 용기 조건절
+                (#{vesselCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{vesselCode, jdbcType=VARCHAR} = E.VESSEL_CODE)
+           )
+     WHERE 1 = 1
+       AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+     GROUP BY A.VER_CD, A.STD_YYYYMMDD, C.LIQUOR_CODE, C.LIQUOR_DESC, D.YYYYMM, D.PERIOD_TYPE, D.PERIOD_CODE, D.PERIOD_NAME, D.BUSINESS_DAY_FLAG, D.PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD, D.PERIOD_TYPE_SEQ
+     ORDER BY C.LIQUOR_CODE, D.PERIOD_FR_YYYYMMDD, D.PERIOD_TYPE_SEQ, D.PERIOD_CODE
+    </select>
+    
+    
+    <!-- 버전의 기간 리스트(년월+연주차) : 판매변수의 적용기간 설정시 사용 -->
+    <select id="selectPeriodList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.selectPeriodList */
+       DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+     , DA.YYYYMM || '-' || DA.SCM_YYYYWW    AS CODE
+     , MAX( SUBSTR(DA.YYYYMM, 1, 4) || '-' || SUBSTR(DA.YYYYMM, 5, 2) || '월' )
+       || ' - ' || MAX( SUBSTR(DA.SCM_YYYYWW, 1, 4) || '년 ' || SUBSTR(DA.SCM_YYYYWW, 5, 2) || '연주차' ) || '(' || MIN(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || '~' || MAX(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || ')'
+                                            AS NAME
+  FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+    ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+ WHERE 1 = 1
+   AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+   --AND DA.YYYYMMDD > DB.STD_YYYYMMDD    -- 계획기간만 : 전체기간으로하고, 적용을 안하는 방법으로 전환
+ GROUP BY DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+ ORDER BY DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+    </select>
+
+    <!-- 판매설정 - 판매변수 조회 -->
+    <select id="searchSaleVar" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.searchSaleVar */
+           A.VER_CD
+         , B.CODE AS SALE_SET_TYPE_CODE
+         --, B.NAME AS SALE_SET_TYPE_NAME
+         , C.SEQNO
+         , C.SALE_VAR_APL_FR_YYYYMM || '-' || C.SALE_VAR_APL_FR_SCM_YYYYWW AS SALE_VAR_APL_FR_PERIOD
+         , C.SALE_VAR_APL_TO_YYYYMM || '-' || C.SALE_VAR_APL_TO_SCM_YYYYWW AS SALE_VAR_APL_TO_PERIOD
+         , C.SALE_VAR_APL_FR_YYYYMM, C.SALE_VAR_APL_FR_SCM_YYYYWW
+         , C.SALE_VAR_APL_TO_YYYYMM, C.SALE_VAR_APL_TO_SCM_YYYYWW
+         , C.VAL                                        AS SALE_VAR_DFNT_SEQNO      -- 판매변수의 일련번호
+         , '[' || C.VAL || ']' || C.SALE_VAR_NAME       AS SALE_VAR_DFNT_SEQNO_NAME -- 판매변수의 일련번호 + 명칭
+         , C.SALE_VAR_VAL                                                           -- 판매변수의 변수값 : 저장된 값으로 View. 실제 판매변수(W_SOP_TB_SALE_VAR_DFNT_F)에 등록된 값과 다를 수 있음
+         -- 판매변수를 적용할 대상 : 사업부문, 용도, 제품
+         , C.LIQUOR_CODE
+         , NVL(DA.LIQUOR_DESC, C.LIQUOR_CODE)           AS LIQUOR_DESC
+         , NVL(DB.USAGE_NAME, C.SALE_VAR_USAGE_CODE)    AS SALE_VAR_USAGE_NAME
+         , CASE WHEN C.SALE_VAR_ITEM_CODE = '!ALL' THEN '전체'
+                ELSE                                    NVL(DC.DESCRIPTION, C.SALE_VAR_ITEM_CODE)
+           END                                          AS SALE_VAR_ITEM_NAME
+         , C.SALE_VAR_NAME, C.SALE_VAR_TYPE, C.SALE_VAR_USAGE_CODE, C.SALE_VAR_ITEM_CODE
+         , C.SALE_VAR_APL_DIF_TYPE                                                  -- 판매변수 차액 반영 방법 : 판매변수 적용에 따른 판매량 변동분을 당월(THIS_MONTH)/차월(NEXT_MONTH)로 반영할지 여부
+         -- 실제 판매변수(W_SOP_TB_SALE_VAR_DFNT_F)와 비교
+         , CASE WHEN C.VAL IS NULL                  THEN TO_CHAR(NULL)
+                WHEN E.SALE_VAR_DFNT_SEQNO IS NULL  THEN '현재 존재하지 않는 판매변수'
+                ELSE SUBSTR(CASE WHEN NVL(C.SALE_VAR_TYPE, '^') != E.SALE_VAR_TYPE          THEN ', ' || '판매변수 유형 다름' END
+                            || CASE WHEN NVL(C.SALE_VAR_NAME, '^') != E.SALE_VAR_NAME       THEN ', ' || '판매변수 명칭 다름' END
+                            || CASE WHEN NVL(C.LIQUOR_CODE, '^') != E.LIQUOR_CODE           THEN ', ' || '대상 사업부문 다름' END
+                            || CASE WHEN NVL(C.SALE_VAR_USAGE_CODE, '^') != E.USAGE_CODE    THEN ', ' || '대상 용도 다름' END
+                            || CASE WHEN NVL(C.SALE_VAR_ITEM_CODE, '^') != E.ITEM_CODE      THEN ', ' || '대상 제품 다름' END
+                            || CASE WHEN NVL(C.SALE_VAR_VAL, 0) != E.VAR_VAL                THEN ', ' || '변수값 다름' END
+                            , 3)
+           END                                          AS SALE_VAR_VALID_MSG
+         
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M            A
+      JOIN SCMU.W_SOP_TB_COM_CODE_M                 B
+        ON B.GROUP_CODE = 'SALE_SET_TYPE'
+       AND B.CODE       = 'SALE_VAR' -- "판매변수" 로 고정
+      JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M  C
+        ON C.VER_CD             = A.VER_CD
+       AND C.SALE_SET_TYPE_CODE = B.CODE
+ LEFT JOIN EDW.W_CM_TB_LIQUOR_M                     DA
+        ON DA.LIQUOR_CODE = C.LIQUOR_CODE
+ LEFT JOIN (
+                SELECT '!ALL' AS USAGE_CODE, '전체' AS USAGE_NAME FROM DUAL
+                 UNION ALL
+                SELECT USAGE_CODE, MAX(USAGE_NAME) AS USAGE_NAME
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1 = 1
+                   AND ITEM_TYPE  = 'FG'
+                   AND USAGE_CODE IS NOT NULL
+                 GROUP BY USAGE_CODE
+           )                                        DB
+        ON DB.USAGE_CODE = C.SALE_VAR_USAGE_CODE
+ LEFT JOIN EDW.W_CM_TB_FG_ITEM_M                    DC
+        ON DC.ITEM_CODE = C.SALE_VAR_ITEM_CODE
+ LEFT JOIN SCMU.W_SOP_TB_SALE_VAR_DFNT_F            E
+        ON TO_CHAR(E.SALE_VAR_DFNT_SEQNO) = C.VAL
+     WHERE 1 = 1
+       AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+     ORDER BY A.VER_CD, B.CODE, C.SALE_VAR_APL_FR_YYYYMM, C.SALE_VAR_APL_FR_SCM_YYYYWW, C.SALE_VAR_NAME, C.LIQUOR_CODE, C.SEQNO
+    </select>
+
+    <!-- 판매설정 - 판매변수 저장(추가/수정) -->
+    <update id="updateSaleVar" parameterType="map">
+MERGE /* com.hitejinro.snop.work.dao.M02030DaoMapper.updateSaleVar */
+ INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M T
+USING (
+            SELECT SA.VER_CD, SB.LIQUOR_CODE, SA.SALE_SET_TYPE_CODE, SA.SEQNO
+                 , SA.SALE_VAR_DFNT_SEQNO
+                 , SA.SALE_VAR_APL_FR_YYYYMM, SA.SALE_VAR_APL_FR_SCM_YYYYWW, SA.SALE_VAR_APL_TO_YYYYMM, SA.SALE_VAR_APL_TO_SCM_YYYYWW
+                 , SB.SALE_VAR_NAME, SB.SALE_VAR_TYPE, SB.USAGE_CODE AS SALE_VAR_USAGE_CODE, SB.ITEM_CODE AS SALE_VAR_ITEM_CODE, SB.VAR_VAL AS SALE_VAR_VAL, SA.SALE_VAR_APL_DIF_TYPE
+                 , NULL AS ATTRIBUTE1, NULL AS ATTRIBUTE2, NULL AS ATTRIBUTE3, NULL AS ATTRIBUTE4, NULL AS ATTRIBUTE5
+              FROM (
+                        SELECT #{VER_CD, jdbcType=VARCHAR}                                                                      AS VER_CD
+                             , 'SALE_VAR'                                                                                       AS SALE_SET_TYPE_CODE   -- "판매변수"(SALE_VAR) 로 고정
+                             , NVL(TO_NUMBER(#{SEQNO, jdbcType=VARCHAR}), 0)                                                    AS SEQNO
+                             , #{SALE_VAR_DFNT_SEQNO, jdbcType=VARCHAR}                                                         AS SALE_VAR_DFNT_SEQNO  -- 판매변수의 일련번호
+                             , #{SALE_VAR_APL_FR_YYYYMM, jdbcType=VARCHAR}                                                      AS SALE_VAR_APL_FR_YYYYMM
+                             , #{SALE_VAR_APL_FR_SCM_YYYYWW, jdbcType=VARCHAR}                                                  AS SALE_VAR_APL_FR_SCM_YYYYWW
+                             , #{SALE_VAR_APL_TO_YYYYMM, jdbcType=VARCHAR}                                                      AS SALE_VAR_APL_TO_YYYYMM
+                             , #{SALE_VAR_APL_TO_SCM_YYYYWW, jdbcType=VARCHAR}                                                  AS SALE_VAR_APL_TO_SCM_YYYYWW
+                             , #{SALE_VAR_APL_DIF_TYPE, jdbcType=VARCHAR}                                                       AS SALE_VAR_APL_DIF_TYPE
+                          FROM DUAL
+                   )                             SA
+         LEFT JOIN SCMU.W_SOP_TB_SALE_VAR_DFNT_F SB
+                ON TO_CHAR(SB.SALE_VAR_DFNT_SEQNO) = SA.SALE_VAR_DFNT_SEQNO
+             WHERE 1 = 1
+      ) S
+   ON (T.VER_CD = S.VER_CD AND T.LIQUOR_CODE = S.LIQUOR_CODE AND T.SALE_SET_TYPE_CODE = S.SALE_SET_TYPE_CODE AND T.SEQNO = S.SEQNO)
+ WHEN MATCHED THEN
+    UPDATE
+       SET T.VAL                        = TO_CHAR(S.SALE_VAR_DFNT_SEQNO)
+         , T.SALE_VAR_APL_FR_YYYYMM     = S.SALE_VAR_APL_FR_YYYYMM
+         , T.SALE_VAR_APL_FR_SCM_YYYYWW = S.SALE_VAR_APL_FR_SCM_YYYYWW
+         , T.SALE_VAR_APL_TO_YYYYMM     = S.SALE_VAR_APL_TO_YYYYMM
+         , T.SALE_VAR_APL_TO_SCM_YYYYWW = S.SALE_VAR_APL_TO_SCM_YYYYWW
+         , T.SALE_VAR_NAME              = S.SALE_VAR_NAME
+         , T.SALE_VAR_TYPE              = S.SALE_VAR_TYPE
+         , T.SALE_VAR_USAGE_CODE        = S.SALE_VAR_USAGE_CODE
+         , T.SALE_VAR_ITEM_CODE         = S.SALE_VAR_ITEM_CODE
+         , T.SALE_VAR_VAL               = S.SALE_VAR_VAL
+         , T.SALE_VAR_APL_DIF_TYPE      = S.SALE_VAR_APL_DIF_TYPE
+         , T.LAST_UPDATED_BY        = #{userId, jdbcType=VARCHAR}
+         , T.LAST_UPDATE_DATE       = SYSDATE
+ 
+ WHEN NOT MATCHED THEN
+    INSERT (T.VER_CD, T.LIQUOR_CODE, T.SALE_SET_TYPE_CODE, T.SEQNO
+            , T.VAL
+            , T.SALE_VAR_APL_FR_YYYYMM, T.SALE_VAR_APL_FR_SCM_YYYYWW, T.SALE_VAR_APL_TO_YYYYMM, T.SALE_VAR_APL_TO_SCM_YYYYWW
+            , T.SALE_VAR_NAME, T.SALE_VAR_TYPE, T.SALE_VAR_USAGE_CODE, T.SALE_VAR_ITEM_CODE, T.SALE_VAR_VAL, T.SALE_VAR_APL_DIF_TYPE
+            , T.RMKS, T.ATTRIBUTE1, T.ATTRIBUTE2, T.ATTRIBUTE3, T.ATTRIBUTE4, T.ATTRIBUTE5, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+    VALUES (S.VER_CD, S.LIQUOR_CODE, S.SALE_SET_TYPE_CODE, (SELECT NVL(MAX(SEQNO), 0)+1 FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M WHERE VER_CD = S.VER_CD AND LIQUOR_CODE = S.LIQUOR_CODE AND SALE_SET_TYPE_CODE = 'SALE_VAR')
+            , TO_CHAR(S.SALE_VAR_DFNT_SEQNO)
+            , S.SALE_VAR_APL_FR_YYYYMM, S.SALE_VAR_APL_FR_SCM_YYYYWW, S.SALE_VAR_APL_TO_YYYYMM, S.SALE_VAR_APL_TO_SCM_YYYYWW
+            , S.SALE_VAR_NAME, S.SALE_VAR_TYPE, S.SALE_VAR_USAGE_CODE, S.SALE_VAR_ITEM_CODE, S.SALE_VAR_VAL, S.SALE_VAR_APL_DIF_TYPE
+            , NULL, S.ATTRIBUTE1, S.ATTRIBUTE2, S.ATTRIBUTE3, S.ATTRIBUTE4, S.ATTRIBUTE5, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+    
+    <!-- 판매설정 - 판매변수 저장(삭제) -->
+    <delete id="deleteSaleVar" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deleteSaleVar */
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M T
+ WHERE 1 = 1
+   AND T.VER_CD             = #{verCd, jdbcType=VARCHAR}
+   AND T.LIQUOR_CODE        = #{LIQUOR_CODE, jdbcType=VARCHAR}
+   AND T.SALE_SET_TYPE_CODE = 'SALE_VAR' -- "판매변수" 로 고정
+   AND T.SEQNO              = #{SEQNO, jdbcType=VARCHAR}
+    </delete>
+
+    <!-- 판매설정 - 판매변수 저장(동기화 수정) : 판매변수의 상세 속성이 변경되어있으면 반영(화면단에서 변경한 변수는 자동 처리됨) -->
+    <update id="updateSaleVarSync" parameterType="map">
+MERGE /* com.hitejinro.snop.work.dao.M02030DaoMapper.updateSaleVarSync */
+ INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M T
+USING (
+            SELECT SA.VER_CD, SB.LIQUOR_CODE, SA.SALE_SET_TYPE_CODE, SA.SEQNO
+                 , SA.VAL
+                 , SB.SALE_VAR_NAME, SB.SALE_VAR_TYPE, SB.USAGE_CODE AS SALE_VAR_USAGE_CODE, SB.ITEM_CODE AS SALE_VAR_ITEM_CODE, SB.VAR_VAL AS SALE_VAR_VAL
+              FROM W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M SA
+         LEFT JOIN SCMU.W_SOP_TB_SALE_VAR_DFNT_F      SB
+                ON TO_CHAR(SB.SALE_VAR_DFNT_SEQNO) = SA.VAL
+             WHERE 1 = 1
+               AND SA.VER_CD             = #{verCd, jdbcType=VARCHAR}
+               AND SA.SALE_SET_TYPE_CODE = 'SALE_VAR' -- "판매변수"(SALE_VAR) 로 고정
+               AND (    -- 상세 속성이 다른 경우
+                        NVL(SA.SALE_VAR_TYPE, '^') != SB.SALE_VAR_TYPE
+                        OR
+                        NVL(SA.SALE_VAR_NAME, '^') != SB.SALE_VAR_NAME
+                        OR
+                        NVL(SA.LIQUOR_CODE, '^') != SB.LIQUOR_CODE
+                        OR
+                        NVL(SA.SALE_VAR_USAGE_CODE, '^') != SB.USAGE_CODE
+                        OR
+                        NVL(SA.SALE_VAR_ITEM_CODE, '^') != SB.ITEM_CODE
+                        OR
+                        NVL(SA.SALE_VAR_VAL, 0) != SB.VAR_VAL
+                   )
+      ) S
+   ON (T.VER_CD = S.VER_CD AND T.SALE_SET_TYPE_CODE = S.SALE_SET_TYPE_CODE AND T.VAL = S.VAL)
+ WHEN MATCHED THEN
+    UPDATE
+       SET T.LIQUOR_CODE            = S.LIQUOR_CODE
+         , T.SALE_VAR_NAME          = S.SALE_VAR_NAME
+         , T.SALE_VAR_TYPE          = S.SALE_VAR_TYPE
+         , T.SALE_VAR_USAGE_CODE    = S.SALE_VAR_USAGE_CODE
+         , T.SALE_VAR_ITEM_CODE     = S.SALE_VAR_ITEM_CODE
+         , T.SALE_VAR_VAL           = S.SALE_VAR_VAL
+         , T.RMKS                   = '변수 동기화 수정. 이전 값 : SALE_VAR_NAME=' || T.SALE_VAR_NAME || ', SALE_VAR_NAME=' || T.SALE_VAR_NAME || ', LIQUOR_CODE=' || T.LIQUOR_CODE
+                                        || ', SALE_VAR_USAGE_CODE=' || T.SALE_VAR_USAGE_CODE || ', SALE_VAR_ITEM_CODE=' || T.SALE_VAR_ITEM_CODE || ', SALE_VAR_VAL=' || T.SALE_VAR_VAL
+         , T.LAST_UPDATED_BY        = #{userId, jdbcType=VARCHAR}
+         , T.LAST_UPDATE_DATE       = SYSDATE
+    </update>
+    
+    <!-- 판매설정 - 판매변수 저장(동기화 삭제) : 존재하지 않는 변수 삭제 -->
+    <delete id="deleteSaleVarSync" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deleteSaleVarSync */
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M T
+ WHERE 1 = 1
+   AND T.VER_CD             = #{verCd, jdbcType=VARCHAR}
+   AND T.SALE_SET_TYPE_CODE = 'SALE_VAR' -- "판매변수"(SALE_VAR) 로 고정
+   AND NOT EXISTS (
+                    SELECT 1
+                      FROM SCMU.W_SOP_TB_SALE_VAR_DFNT_F X
+                     WHERE 1 = 1
+                       AND TO_CHAR(X.SALE_VAR_DFNT_SEQNO) = T.VAL
+       )
+    </delete>
+    
+
+    <!-- 판매설정 - 판매량 계산(생성=추가) : 설정된 판매변수를 이용하여, 연주차별 판매량 산출 -->
+    <update id="updateSale" parameterType="map">
+        <![CDATA[
+INSERT /* com.hitejinro.snop.work.dao.M02030DaoMapper.updateSale */
+  INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_F
+       (VER_CD, LIQUOR_CODE, PERIOD_YYYYMM, PERIOD_SCM_YYYYWW, VESSEL_CODE
+       , USE_YYYY_TRG_SALE_CONV_QTY, USE_ESPN_ACTUAL_SALE_CONV_QTY
+       , BF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY, BF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY
+       , AF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY, AF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY
+       , ACTUAL_SALE_CONV_QTY, YYYY_TRG_SALE_CONV_QTY, ESPN_SALE_CONV_QTY
+       , PERIOD_FR_YYYYMMDD, PERIOD_TO_YYYYMMDD, ACTUAL_YN, ESPN_SALE_YN, WORK_DCNT, SALE_VAR_DFNT_SEQNO, SALE_VAR_VAL
+       , RMKS
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+WITH SALE_TBL AS (
+    -- E. 판매마트의 실적/연간목표/예상판매량 리스트 : 속도 향상을 위해서 위에서 선언
+        SELECT EA.PERIOD_YYYYMM, EA.PERIOD_SCM_YYYYWW, EA.LIQUOR_CODE, EA.VESSEL_CODE
+             , SUM(EA.YYYY_TRG_SALE_CONV_QTY)                       AS YYYY_TRG_SALE_CONV_QTY
+             , SUM(EA.ESPN_SALE_QTY * EA.UOM_CONVERSION_VALUE)      AS ESPN_SALE_CONV_QTY
+             , SUM(CASE WHEN EA.PERIOD_YYYYMMDD <= EB.STD_YYYYMMDD THEN EA.ACTUAL_SALE_QTY * EA.UOM_CONVERSION_VALUE
+                        ELSE 0
+                   END)                                             AS ACTUAL_SALE_CONV_QTY
+             , SUM(CASE WHEN EA.PERIOD_YYYYMMDD <= EB.STD_YYYYMMDD THEN EA.ACTUAL_SALE_QTY * EA.UOM_CONVERSION_VALUE
+                        ELSE                                            EA.ESPN_SALE_QTY * EA.UOM_CONVERSION_VALUE
+                   END)                                             AS ESPN_ACTUAL_SALE_CONV_QTY
+             -- 변수 관련 정보
+             , MAX(I.SALE_VAR_DFNT_SEQNO)                           AS SALE_VAR_DFNT_SEQNO
+             , MAX(I.SALE_VAR_VAL)                                  AS SALE_VAR_VAL
+             , MAX(I.SALE_VAR_DFNT_SEQNO_LIST)                      AS SALE_VAR_DFNT_SEQNO_LIST
+             , MAX(I.SALE_VAR_DESC_LIST)                            AS SALE_VAR_DESC_LIST
+             , MAX(I.SALE_VAR_VAL_APL_DIF_THIS_MONTH)               AS SALE_VAR_VAL_APL_DIF_THIS_MONTH
+             , MAX(I.SALE_VAR_VAL_APL_DIF_NEXT_MONTH)               AS SALE_VAR_VAL_APL_DIF_NEXT_MONTH
+             -- 변수 적용한 판매량
+             , SUM(EA.YYYY_TRG_SALE_CONV_QTY * NVL(I.SALE_VAR_VAL, 1))
+                                                                    AS AF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY
+             , SUM(CASE WHEN EA.PERIOD_YYYYMMDD <= EB.STD_YYYYMMDD THEN EA.ACTUAL_SALE_QTY * EA.UOM_CONVERSION_VALUE
+                        ELSE                                            EA.ESPN_SALE_QTY * EA.UOM_CONVERSION_VALUE * NVL(I.SALE_VAR_VAL, 1)
+                   END)                                             AS AF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY
+             -- 변수 적용해서 차이가 발생한 연간목표 판매량 : 당월, 차월
+             , SUM(EA.YYYY_TRG_SALE_CONV_QTY * NVL(I.SALE_VAR_VAL_APL_DIF_THIS_MONTH, 0))
+                                                                    AS APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY
+             , SUM(EA.YYYY_TRG_SALE_CONV_QTY * NVL(I.SALE_VAR_VAL_APL_DIF_NEXT_MONTH, 0))
+                                                                    AS APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY
+             -- 변수 적용해서 차이가 발생한 예상실적 판매량 : 당월, 차월
+             , SUM(CASE WHEN EA.PERIOD_YYYYMMDD <= EB.STD_YYYYMMDD THEN 0
+                        ELSE                                            EA.ESPN_SALE_QTY * EA.UOM_CONVERSION_VALUE * NVL(I.SALE_VAR_VAL_APL_DIF_THIS_MONTH, 0)
+                   END)                                             AS APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY
+             , SUM(CASE WHEN EA.PERIOD_YYYYMMDD <= EB.STD_YYYYMMDD THEN 0
+                        ELSE                                            EA.ESPN_SALE_QTY * EA.UOM_CONVERSION_VALUE * NVL(I.SALE_VAR_VAL_APL_DIF_NEXT_MONTH, 0)
+                   END)                                             AS APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY
+
+          FROM SCMU.M_SOP_TB_ITEM_SALE_F        EA
+          JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M    EB
+            ON EA.PERIOD_YYYYMMDD BETWEEN EB.STD_YYYY || '0101' AND EB.STD_YYYY || '1231'
+     LEFT JOIN (    -- I. 판매변수를 적용할 일자/제품 리스트
+                    SELECT IA.VER_CD, IB.YYYYMMDD, ID.ITEM_CODE
+                         , MIN(TO_NUMBER(IC.VAL))                               AS SALE_VAR_DFNT_SEQNO              -- 판매변수정의 일련번호 : 여러개가 적용되면, 그중 하나
+                         , EXP(SUM(LN(IC.SALE_VAR_VAL)))                        AS SALE_VAR_VAL                     -- 판매변수값 누적
+                         , LISTAGG(IC.VAL, ',') WITHIN GROUP (ORDER BY IC.VAL)  AS SALE_VAR_DFNT_SEQNO_LIST         -- 판매변수정의 일련번호 리스트
+                         , LISTAGG(IC.SALE_VAR_NAME
+                                   || '(' || TRIM(TO_CHAR(IC.SALE_VAR_VAL, '990.999'))
+                                   || ' : ' || CASE WHEN IC.LIQUOR_CODE = '!ALL' THEN '맥주/소주' WHEN IC.LIQUOR_CODE = '10' THEN '맥주' WHEN IC.LIQUOR_CODE = '20' THEN '소주' END
+                                            || ', ' || CASE WHEN IC.SALE_VAR_USAGE_CODE = '!ALL' THEN '전체 용도' ELSE NVL(ID.USAGE_NAME, IC.SALE_VAR_USAGE_CODE) END
+                                            || ', ' || CASE WHEN IC.SALE_VAR_ITEM_CODE = '!ALL' THEN '전체 제품' ELSE IC.SALE_VAR_ITEM_CODE END
+                                   || ' : ' || CASE WHEN IC.SALE_VAR_APL_DIF_TYPE = 'THIS_MONTH' THEN '당월' WHEN IC.SALE_VAR_APL_DIF_TYPE = 'NEXT_MONTH' THEN '차월' ELSE IC.SALE_VAR_APL_DIF_TYPE END || ')'
+                                   , ' + ') WITHIN GROUP (ORDER BY IC.VAL)
+                                                                                AS SALE_VAR_DESC_LIST               -- 판매변수설명 리스트
+                         , 1 - EXP(SUM(LN(CASE WHEN IC.SALE_VAR_APL_DIF_TYPE = 'THIS_MONTH' THEN IC.SALE_VAR_VAL ELSE 1 END)))
+                                                                                AS SALE_VAR_VAL_APL_DIF_THIS_MONTH  -- 판매변수로 적용해서 차이가 발생한 판매량을 당월로 옮기는 비율
+                         , 1 - EXP(SUM(LN(CASE WHEN IC.SALE_VAR_APL_DIF_TYPE = 'NEXT_MONTH' THEN IC.SALE_VAR_VAL ELSE 1 END)))
+                                                                                AS SALE_VAR_VAL_APL_DIF_NEXT_MONTH  -- 판매변수로 적용해서 차이가 발생한 판매량을 차월로 옮기는 비율
+                         
+                      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M            IA
+                      JOIN SCMU.W_SOP_VW_CALENDAR_M                 IB
+                        ON IB.YYYYMMDD BETWEEN IA.STD_YYYY || '0101' AND IA.STD_YYYY || '1231'
+                      JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M   IC
+                        ON IC.VER_CD             = IA.VER_CD
+                       AND IC.SALE_SET_TYPE_CODE = 'SALE_VAR' -- 판매변수(SALE_VAR)
+                       AND IB.YYYYMM             >= IC.SALE_VAR_APL_FR_YYYYMM
+                       AND IB.SCM_YYYYWW         >= IC.SALE_VAR_APL_FR_SCM_YYYYWW
+                       AND IB.YYYYMM             <= IC.SALE_VAR_APL_TO_YYYYMM
+                       AND IB.SCM_YYYYWW         <= IC.SALE_VAR_APL_TO_SCM_YYYYWW
+                      JOIN EDW.W_CM_TB_FG_ITEM_M                     ID
+                        ON ID.ITEM_TYPE       = 'FG'
+                       AND ID.LIQUOR_CODE     IN ('10', '20')
+                           -- 판매변수의 적용대상 체크
+                       AND (IC.LIQUOR_CODE = '!ALL' OR ID.LIQUOR_CODE = IC.LIQUOR_CODE)
+                       AND (IC.SALE_VAR_USAGE_CODE = '!ALL' OR ID.USAGE_CODE = IC.SALE_VAR_USAGE_CODE)
+                       AND (IC.SALE_VAR_ITEM_CODE = '!ALL' OR ID.ITEM_CODE = IC.SALE_VAR_ITEM_CODE)
+                     WHERE 1 = 1
+                       AND IA.VER_CD          = #{verCd, jdbcType=VARCHAR}
+                       AND IB.YYYYMMDD        > IA.STD_YYYYMMDD -- 계획기간만 적용
+                     GROUP BY IA.VER_CD, IB.YYYYMMDD, ID.ITEM_CODE
+               )                                I
+            ON I.YYYYMMDD  = EA.PERIOD_YYYYMMDD
+           AND I.ITEM_CODE = EA.ITEM_CODE
+         WHERE 1 = 1
+           AND EB.VER_CD      = #{verCd, jdbcType=VARCHAR}
+           AND EA.ITEM_TYPE   = 'FG'
+           AND EA.LIQUOR_CODE IN ('10', '20')
+           AND (EA.YYYY_TRG_SALE_CONV_QTY != 0 OR EA.ESPN_SALE_QTY != 0 OR EA.ACTUAL_SALE_QTY != 0)
+         GROUP BY EA.PERIOD_YYYYMM, EA.PERIOD_SCM_YYYYWW, EA.LIQUOR_CODE, EA.VESSEL_CODE
+)
+    SELECT A.VER_CD, C.LIQUOR_CODE
+         , D.YYYYMM         AS PERIOD_YYYYMM
+         , D.PERIOD_CODE    AS PERIOD_SCM_YYYYWW
+         , B.VESSEL_CODE
+         
+         , NVL(E.AF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY, 0) + NVL(J.APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY, 0)
+           + NVL(I.APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) * NVL(D.WORK_CNT, 0) / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, D.YYYYMM_WORK_CNT)
+                                                                AS USE_YYYY_TRG_SALE_CONV_QTY
+         , NVL(E.AF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY, 0) + NVL(J.APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0)
+           + NVL(I.APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) * NVL(D.WORK_CNT, 0) / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, D.YYYYMM_WORK_CNT)
+                                                                AS USE_ESPN_ACTUAL_SALE_CONV_QTY
+         
+         , NVL(E.YYYY_TRG_SALE_CONV_QTY, 0)                     AS BF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY
+         , NVL(E.ESPN_ACTUAL_SALE_CONV_QTY, 0)                  AS BF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY
+         
+         , NVL(E.AF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY, 0) + NVL(J.APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY, 0)
+           + NVL(I.APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) * NVL(D.WORK_CNT, 0) / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, D.YYYYMM_WORK_CNT)
+                                                                AS AF_SALE_VAR_APL_YYYY_TRG_SALE_CONV_QTY
+         , NVL(E.AF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY, 0) + NVL(J.APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0)
+           + NVL(I.APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) * NVL(D.WORK_CNT, 0) / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, D.YYYYMM_WORK_CNT)
+                                                                AS AF_SALE_VAR_APL_ESPN_ACTUAL_SALE_CONV_QTY
+         
+         , NVL(E.ACTUAL_SALE_CONV_QTY, 0) AS ACTUAL_SALE_CONV_QTY, NVL(E.YYYY_TRG_SALE_CONV_QTY, 0) AS YYYY_TRG_SALE_CONV_QTY, NVL(E.ESPN_SALE_CONV_QTY, 0) AS ESPN_SALE_CONV_QTY
+         , D.PERIOD_FR_YYYYMMDD AS PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD AS PERIOD_TO_YYYYMMDD
+         , CASE WHEN A.STD_YYYYMMDD >= D.PERIOD_TO_YYYYMMDD THEN 'Y' -- 기준일자는 주차의 종료일인 토요일만 허용되므로 가능
+                ELSE                                             'N'
+           END              AS ACTUAL_YN
+         , CASE WHEN F.PERIOD_SCM_YYYYWW IS NOT NULL THEN 'Y'
+                ELSE                                      'N'
+           END              AS ESPN_SALE_YN
+         , D.WORK_CNT       AS WORK_DCNT
+         , E.SALE_VAR_DFNT_SEQNO                                AS SALE_VAR_DFNT_SEQNO
+         , E.SALE_VAR_VAL                                       AS SALE_VAR_VAL
+         , E.SALE_VAR_DESC_LIST
+           || CASE WHEN NVL(J.APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) != 0 THEN ' + 연간목표 판매변수 당월 차이값(' || TRIM(TO_CHAR(NVL(J.APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY, 0), '9,999,999,999,990.0')) || ')' ELSE '' END
+           || CASE WHEN NVL(J.APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) != 0 THEN ' + 예상실적 판매변수 당월 차이값(' || TRIM(TO_CHAR(NVL(J.APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0), '9,999,999,999,990.0')) || ')' ELSE '' END
+           || CASE WHEN NVL(I.APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) != 0 THEN ' + 연간목표 판매변수 차월 차이값(' || TRIM(TO_CHAR(NVL(I.APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) * NVL(D.WORK_CNT, 0) / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, D.YYYYMM_WORK_CNT), '9,999,999,999,990.0')) || ')' ELSE '' END
+           || CASE WHEN NVL(I.APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) != 0 THEN ' + 예상실적 판매변수 차월 차이값(' || TRIM(TO_CHAR(NVL(I.APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) * NVL(D.WORK_CNT, 0) / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, D.YYYYMM_WORK_CNT), '9,999,999,999,990.0')) || ')' ELSE '' END
+                                                                AS RMKS -- 비고 : 판매변수 정보 표기
+         , NULL AS ATTRIBUTE1, NULL AS ATTRIBUTE2, NULL AS ATTRIBUTE3, NULL AS ATTRIBUTE4, NULL AS ATTRIBUTE5
+         , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+         
+--         , A.STD_YYYYMMDD       -- 기준일자(실적일자)
+--         , B.VESSEL_NAME, C.LIQUOR_DESC
+--         , D.PERIOD_TYPE, D.PERIOD_NAME
+--         , D.PERIOD_TYPE_SEQ, D.CALENDAR_WORK_CNT AS CALENDAR_WORK_CNT, D.YYYYMM_WORK_CNT
+
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M        A
+CROSS JOIN (    -- B. 용기 마스터
+                SELECT VESSEL_CODE, MAX(VESSEL_SORT) AS VESSEL_NAME
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1 = 1
+                   AND ITEM_TYPE = 'FG'
+                   AND ITEM_STATUS = 'Active'
+                   AND LIQUOR_CODE IN ('10', '20')
+                   AND VESSEL_CODE != '9' -- 기타(9)는 제외
+                 GROUP BY VESSEL_CODE
+           )                                    B
+      JOIN EDW.W_CM_TB_LIQUOR_M                 C
+        ON C.LIQUOR_CODE IN ('10', '20')
+ LEFT JOIN (    -- D. 버전의 유효기간에 해당하는 날짜 리스트(연주차)
+                SELECT DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                       END                  AS PERIOD_CODE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( SUBSTR(DA.YYYYMM, 1, 4) || '-' || SUBSTR(DA.YYYYMM, 5, 2) || '월' )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( SUBSTR(DA.SCM_YYYYWW, 1, 4) || '년 ' || SUBSTR(DA.SCM_YYYYWW, 5, 2) || '주차' ) || '(' || MIN(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || '~' || MAX(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || ')'
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX( TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') || ' (' || DA.DAY_OF_WEEK_DESC || ')' )
+                       END                  AS PERIOD_NAME
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX(DA.BUSINESS_DAY_FLAG)
+                       END                  AS BUSINESS_DAY_FLAG
+                     , MIN(DA.YYYYMMDD)     AS PERIOD_FR_YYYYMMDD
+                     , MAX(DA.YYYYMMDD)     AS PERIOD_TO_YYYYMMDD
+                     , MAX(DC.SEQ)          AS PERIOD_TYPE_SEQ
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( DA.YYYYMM_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( DA.SCM_YYYYWW_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN 1
+                       END                  AS CALENDAR_WORK_CNT -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                     , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END) AS WORK_CNT -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                     , CASE WHEN TO_CHAR(TO_DATE(MAX(DA.YYYYMMDD), 'YYYYMMDD'), 'D') = '7' THEN 'Y' ELSE 'N' END AS HAS_SAT_YN -- 주차내에 토요일 포함여부 : 소주의 6일 근무를 하는 경우가 있어서, 토요일 포함여부 체크
+                     , MAX(DA.YYYYMM_WORK_CNT)      AS YYYYMM_WORK_CNT      -- 년월의 영업일수(달력 기준)
+                     
+                  FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                    ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+            CROSS JOIN (
+                            SELECT 'YYYYWW'   AS PERIOD_TYPE, 2 AS SEQ FROM DUAL
+                       )                              DC
+                 WHERE 1 = 1
+                   AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                        , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                               WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                               WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                          END
+           )                                    D
+        ON D.VER_CD = A.VER_CD
+                -- E. 판매마트의 실적/연간목표/예상판매량 리스트
+      JOIN SALE_TBL                             E
+        ON E.PERIOD_YYYYMM     = D.YYYYMM
+       AND E.PERIOD_SCM_YYYYWW = D.PERIOD_CODE
+       AND E.LIQUOR_CODE       = C.LIQUOR_CODE
+       AND E.VESSEL_CODE       = B.VESSEL_CODE
+ LEFT JOIN (    -- F. 판매마트의 예상판매량 존재하는 기간 리스트
+                SELECT PERIOD_YYYYMM, PERIOD_SCM_YYYYWW
+                  FROM SALE_TBL
+                 WHERE 1 = 1
+                   AND NVL(ESPN_SALE_CONV_QTY, 0) != 0
+                 GROUP BY PERIOD_YYYYMM, PERIOD_SCM_YYYYWW
+           )                                    F
+        ON F.PERIOD_YYYYMM     = D.YYYYMM
+       AND F.PERIOD_SCM_YYYYWW = D.PERIOD_CODE
+ LEFT JOIN (    -- I. 판매변수에 따른 변경값 차이를 차월에 반영하는 리스트 : 각 주차의 영업일수 비율로 안분 예정
+                SELECT PERIOD_YYYYMM
+                     , TO_CHAR(ADD_MONTHS(TO_DATE(PERIOD_YYYYMM || '01', 'YYYYMMDD'), 1), 'YYYYMM') AS NEXT_MONTH_PERIOD_YYYYMM
+                     , LIQUOR_CODE, VESSEL_CODE
+                     , SUM(NVL(APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY, 0))       AS APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY
+                     , SUM(NVL(APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0))    AS APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY
+                  FROM SALE_TBL
+                 WHERE 1 = 1
+                   AND (NVL(APL_DIF_NEXT_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) != 0 OR NVL(APL_DIF_NEXT_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) != 0)
+                 GROUP BY PERIOD_YYYYMM, TO_CHAR(ADD_MONTHS(TO_DATE(PERIOD_YYYYMM || '01', 'YYYYMMDD'), 1), 'YYYYMM'), LIQUOR_CODE, VESSEL_CODE
+           )                                    I
+        ON I.NEXT_MONTH_PERIOD_YYYYMM = D.YYYYMM
+       AND I.LIQUOR_CODE              = C.LIQUOR_CODE
+       AND I.VESSEL_CODE              = B.VESSEL_CODE
+ LEFT JOIN (    -- J. 판매변수에 따른 변경값 차이를 당월에 반영하는 리스트
+                SELECT JA.YYYYMM, JB.SCM_YYYYWW
+                     , JA.LIQUOR_CODE, JA.VESSEL_CODE
+                     , SUM(
+                               CASE WHEN NVL(JB.YYYYMM_WORK_CNT, 0) - NVL(JC.SCM_YYYYWW_ACCU_WORK_CNT, 0) = 0 THEN 0 -- 남은 연주차가 없다는 의미
+                                    WHEN NVL(JB.WORK_CNT, 0)                                              = 0 THEN 0 -- 배분할 주차에 영업일수가 없다는 의미
+                                    ELSE NVL(JA.APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY, 0) * NVL(JB.WORK_CNT, 0) / (NVL(JB.YYYYMM_WORK_CNT, 0) - NVL(JC.SCM_YYYYWW_ACCU_WORK_CNT, 0))
+                               END
+                          )     AS APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY
+                     , SUM(
+                               CASE WHEN NVL(JB.YYYYMM_WORK_CNT, 0) - NVL(JC.SCM_YYYYWW_ACCU_WORK_CNT, 0) = 0 THEN 0 -- 남은 연주차가 없다는 의미
+                                    WHEN NVL(JB.WORK_CNT, 0)                                              = 0 THEN 0 -- 배분할 주차에 영업일수가 없다는 의미
+                                    ELSE NVL(JA.APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY, 0) * NVL(JB.WORK_CNT, 0) / (NVL(JB.YYYYMM_WORK_CNT, 0) - NVL(JC.SCM_YYYYWW_ACCU_WORK_CNT, 0))
+                               END
+                          )     AS APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY
+                --     , JB.YYYYMM_WORK_CNT, JB.SCM_YYYYWW_ACCU_WORK_CNT, JB.WORK_CNT
+                --     , JC.SCM_YYYYWW_ACCU_WORK_CNT
+                --     , JA.SCM_YYYYWW , JA.SCM_YYYYWW, JB.WORK_CNT
+                  FROM ( 
+                            -- JA. 당월의 변수적용 이후 구간에 반영할 차이 금액
+                            SELECT IC.SALE_VAR_APL_TO_YYYYMM AS YYYYMM, IC.SALE_VAR_APL_TO_SCM_YYYYWW AS SCM_YYYYWW -- 변수의 To 구간
+                                 , ID.LIQUOR_CODE, ID.VESSEL_CODE
+                                 , SUM(ID.YYYY_TRG_SALE_CONV_QTY * (1 - NVL(IC.SALE_VAR_VAL, 1)))
+                                                                                        AS APL_DIF_THIS_MONTH_YYYY_TRG_SALE_CONV_QTY
+                                 , SUM(ID.ESPN_SALE_QTY * ID.UOM_CONVERSION_VALUE * (1 - NVL(IC.SALE_VAR_VAL, 1)))
+                                                                                        AS APL_DIF_THIS_MONTH_ESPN_ACTUAL_SALE_CONV_QTY
+                                 , MAX(IB.YYYYMMDD) AS TO_YYYYMMDD
+                            --     , IA.VER_CD, IB.YYYYMM, IB.SCM_YYYYWW, IB.YYYYMMDD, ID.ITEM_CODE
+                            --     , 1 - NVL(IC.SALE_VAR_VAL, 0)                          AS SALE_VAR_VAL_APL_DIF_THIS_MONTH
+                              FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M            IA
+                              JOIN SCMU.W_SOP_VW_CALENDAR_M                 IB
+                                ON IB.YYYYMMDD BETWEEN IA.STD_YYYY || '0101' AND IA.STD_YYYY || '1231'
+                              JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_SET_M   IC
+                                ON IC.VER_CD             = IA.VER_CD
+                               AND IC.SALE_SET_TYPE_CODE = 'SALE_VAR' -- 판매변수(SALE_VAR)
+                               AND IB.YYYYMM             >= IC.SALE_VAR_APL_FR_YYYYMM
+                               AND IB.SCM_YYYYWW         >= IC.SALE_VAR_APL_FR_SCM_YYYYWW
+                               AND IB.YYYYMM             <= IC.SALE_VAR_APL_TO_YYYYMM
+                               AND IB.SCM_YYYYWW         <= IC.SALE_VAR_APL_TO_SCM_YYYYWW
+                              JOIN SCMU.M_SOP_TB_ITEM_SALE_F                ID
+                                ON ID.PERIOD_YYYYMMDD = IB.YYYYMMDD
+                               AND ID.ITEM_TYPE       = 'FG'
+                               AND ID.LIQUOR_CODE     IN ('10', '20')
+                               AND (ID.YYYY_TRG_SALE_CONV_QTY != 0 OR ID.ESPN_SALE_QTY != 0)
+                                   -- 판매변수의 적용대상 체크
+                               AND (IC.LIQUOR_CODE = '!ALL' OR ID.LIQUOR_CODE = IC.LIQUOR_CODE)
+                               AND (IC.SALE_VAR_USAGE_CODE = '!ALL' OR ID.USAGE_CODE = IC.SALE_VAR_USAGE_CODE)
+                               AND (IC.SALE_VAR_ITEM_CODE = '!ALL' OR ID.ITEM_CODE = IC.SALE_VAR_ITEM_CODE)
+                             WHERE 1 = 1
+                               AND IA.VER_CD                = #{verCd, jdbcType=VARCHAR}
+                               AND IB.YYYYMMDD              > IA.STD_YYYYMMDD -- 계획기간만 적용
+                               AND IC.SALE_VAR_APL_DIF_TYPE = 'THIS_MONTH' -- 차액반영을 당월에 하는 부분만 처리
+                             GROUP BY IC.SALE_VAR_APL_TO_YYYYMM, IC.SALE_VAR_APL_TO_SCM_YYYYWW, ID.LIQUOR_CODE, ID.VESSEL_CODE
+                       ) JA
+                  JOIN (    -- JB. 년월/연주차 리스트
+                            SELECT YYYYMM, SCM_YYYYWW
+                                 , CALENDAR_WORK_CNT, WORK_CNT, YYYYMM_WORK_CNT
+                                 , SUM(WORK_CNT) OVER (PARTITION BY YYYYMM ORDER BY SCM_YYYYWW) AS SCM_YYYYWW_ACCU_WORK_CNT -- 년월 기준으로, 연주차 누적 영업일수
+                              FROM (
+                                        SELECT DA.YYYYMM, DA.SCM_YYYYWW
+                                             , MAX(DA.SCM_YYYYWW_WORK_CNT)                                  AS CALENDAR_WORK_CNT    -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                                             , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END)  AS WORK_CNT             -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                                             , MAX(DA.YYYYMM_WORK_CNT)                                      AS YYYYMM_WORK_CNT      -- 년월의 영업일수(달력 기준)
+                                          FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                                          JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                                            ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+                                         WHERE 1 = 1
+                                           AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                                           --AND DA.YYYYMMDD              > DB.STD_YYYYMMDD -- 계획기간만 적용
+                                         GROUP BY DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+                                   )
+                             WHERE 1 = 1
+                       ) JB
+                    ON JB.YYYYMM     = JA.YYYYMM        -- 당월에 배정해야하므로, 동일 월
+                   AND JB.SCM_YYYYWW > JA.SCM_YYYYWW    -- 변수 적용 구간 이후 연주차에만 반영
+                  JOIN (    -- JC. 년월/연주차 리스트
+                            SELECT YYYYMM, SCM_YYYYWW
+                                 , CALENDAR_WORK_CNT, WORK_CNT, YYYYMM_WORK_CNT
+                                 , SUM(WORK_CNT) OVER (PARTITION BY YYYYMM ORDER BY SCM_YYYYWW) AS SCM_YYYYWW_ACCU_WORK_CNT -- 년월 기준으로, 연주차 누적 영업일수
+                              FROM (
+                                        SELECT DA.YYYYMM, DA.SCM_YYYYWW
+                                             , MAX(DA.SCM_YYYYWW_WORK_CNT)                                  AS CALENDAR_WORK_CNT    -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                                             , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END)  AS WORK_CNT             -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                                             , MAX(DA.YYYYMM_WORK_CNT)                                      AS YYYYMM_WORK_CNT      -- 년월의 영업일수(달력 기준)
+                                          FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                                          JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                                            ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+                                         WHERE 1 = 1
+                                           AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                                           --AND DA.YYYYMMDD              > DB.STD_YYYYMMDD -- 계획기간만 적용
+                                         GROUP BY DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+                                   )
+                             WHERE 1 = 1
+                       ) JC
+                    ON JC.YYYYMM     = JA.YYYYMM        -- 당월에 배정해야하므로, 동일 월
+                   AND JC.SCM_YYYYWW = JA.SCM_YYYYWW    -- 남은 영업일수 체크용
+                 WHERE 1 = 1
+                 GROUP BY JA.YYYYMM, JB.SCM_YYYYWW, JA.LIQUOR_CODE, JA.VESSEL_CODE
+           )                                    J
+        ON J.YYYYMM      = D.YYYYMM
+       AND J.SCM_YYYYWW  = D.PERIOD_CODE
+       AND J.LIQUOR_CODE = C.LIQUOR_CODE
+       AND J.VESSEL_CODE = B.VESSEL_CODE
+     WHERE 1 = 1
+       AND A.VER_CD      = #{verCd, jdbcType=VARCHAR}
+       AND C.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        ]]>
+    </update>
+    
+    <!-- 판매설정 - 판매량 초기화 : 삭제 -->
+    <delete id="deleteSale" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deleteSale */
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_F T
+ WHERE 1 = 1
+   AND T.VER_CD      = #{verCd, jdbcType=VARCHAR}
+   AND T.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+    </delete>
+
+
+
+
+    <!-- 결과설정의 그리드 조회 -->
+    <select id="searchResult" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M02030DaoMapper.searchResult */
+           A.VER_CD
+         , A.STD_YYYYMMDD       -- 기준일자(실적일자)
+         , C.LIQUOR_CODE, C.LIQUOR_DESC
+         , D.YYYYMM AS PERIOD_YYYYMM, D.PERIOD_TYPE, D.PERIOD_CODE, D.PERIOD_NAME
+        <![CDATA[
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYWW'   AND D.PERIOD_TO_YYYYMMDD <= A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_ACTUAL'
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   AND D.PERIOD_FR_YYYYMMDD >  A.STD_YYYYMMDD THEN D.PERIOD_TYPE || '_PLAN'
+                     ELSE                                                                            D.PERIOD_TYPE
+                END
+              ) AS "Def"    -- 트리그리드의 행별 속성 설정 : YYYYMM, YYYYWW
+        ]]>
+         , MAX(
+                CASE WHEN D.PERIOD_TYPE = 'YYYYMM'   THEN ''
+                     WHEN D.PERIOD_TYPE = 'YYYYWW'   THEN '    '
+                     ELSE                                 ''
+                END
+                || D.PERIOD_NAME
+              ) AS PERIOD_DESC  -- 기간유형에 따라서, 들여쓰기 처리
+         , D.PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD, D.PERIOD_TYPE_SEQ, MAX(D.CALENDAR_WORK_CNT) AS CALENDAR_WORK_CNT, MAX(D.WORK_CNT) AS WORK_CNT
+
+         , SUM(NVL(E.YYYY_TRG_SALE_CONV_QTY, 0))        AS YYYY_TRG_SALE_CONV_QTY           -- 연간 목표 판매 수량(환산c/s) : 판매설정의 사용 연간 목표 판매 수량 참고
+         , SUM(NVL(E.ESPN_ACTUAL_SALE_CONV_QTY, 0))     AS ESPN_ACTUAL_SALE_CONV_QTY        -- 예상실적 판매 수량(환산c/s) : 판매설정의 사용 예상실적 판매 수량 참고. 실적이 있는 구간은 실적. 실적이 없는데, 예상판매량이 있으면 예상판매량으로 처리
+         
+         , SUM(NVL(E.PRDT_PLAN_CONV_QTY, 0))            AS PRDT_PLAN_CONV_QTY               -- 생산 계획 수량(환산c/s)
+         , SUM(NVL(E.PRDT_ACTUAL_CONV_QTY, 0))          AS PRDT_ACTUAL_CONV_QTY             -- 생산 실적 수량(환산c/s)
+         
+         , CASE WHEN D.PERIOD_TYPE = 'YYYYMM' THEN SUM(CASE WHEN E.PERIOD_TO_YYYYMMDD = TO_CHAR(LAST_DAY(TO_DATE(D.YYYYMM || '01', 'YYYYMMDD')), 'YYYYMMDD') THEN NVL(E.STOCK_CONV_QTY, 0) ELSE 0 END)
+                WHEN D.PERIOD_TYPE = 'YYYYWW' THEN MAX(NVL(E.STOCK_CONV_QTY, 0))
+           END                                          AS STOCK_CONV_QTY                   -- 재고 수량(환산c/s) : 판매(예상실적 우선 사용 후, 경영목표 사용)와 생산(실적 우선 사용 후, 계획 사용)으로 계산
+         , CASE WHEN D.PERIOD_TYPE = 'YYYYMM' THEN SUM(CASE WHEN E.PERIOD_TO_YYYYMMDD = TO_CHAR(LAST_DAY(TO_DATE(D.YYYYMM || '01', 'YYYYMMDD')), 'YYYYMMDD') THEN NVL(E.BF_YYYY_STOCK_CONV_QTY, 0) ELSE 0 END)
+                WHEN D.PERIOD_TYPE = 'YYYYWW' THEN MAX(NVL(E.BF_YYYY_STOCK_CONV_QTY, 0))
+           END                                          AS BF_YYYY_STOCK_CONV_QTY           -- 전년동기 재고 수량(환산c/s)
+         
+         , MAX(NVL(E.YYYY_TRG_SALE_CONV_AVG_QTY, 0))    AS YYYY_TRG_SALE_CONV_AVG_QTY       -- 연간 목표 판매 일평균수량(환산c/s) : 연간 목표 판매 수량의 월단위 기준 일평균판매량
+         
+         , CASE WHEN D.PERIOD_TYPE = 'YYYYMM' THEN SUM(CASE WHEN E.PERIOD_TO_YYYYMMDD = TO_CHAR(LAST_DAY(TO_DATE(D.YYYYMM || '01', 'YYYYMMDD')), 'YYYYMMDD') THEN NVL(E.STOCK_CONV_QTY, 0) ELSE 0 END)
+                                                   / DECODE(MAX(NVL(E.YYYY_TRG_SALE_CONV_AVG_QTY, 0)), 0, NULL, MAX(NVL(E.YYYY_TRG_SALE_CONV_AVG_QTY, 0)))
+                WHEN D.PERIOD_TYPE = 'YYYYWW' THEN MAX(NVL(E.STOCK_DCNT, 0))
+           END                                          AS STOCK_DCNT                       -- 재고일수 : 재고 수량 / 일평균판매수량. 월간은 조회할 때 재계산
+         , CASE WHEN D.PERIOD_TYPE = 'YYYYMM' THEN (SUM(CASE WHEN E.PERIOD_TO_YYYYMMDD = TO_CHAR(LAST_DAY(TO_DATE(D.YYYYMM || '01', 'YYYYMMDD')), 'YYYYMMDD') THEN NVL(E.STOCK_CONV_QTY, 0) ELSE 0 END)
+                                                     - MAX(NVL(E.STRG_STOCK_CONV_QTY, 0))
+                                                   ) / DECODE(MAX(NVL(E.YYYY_TRG_SALE_CONV_AVG_QTY, 0)), 0, NULL, MAX(NVL(E.YYYY_TRG_SALE_CONV_AVG_QTY, 0)))
+                WHEN D.PERIOD_TYPE = 'YYYYWW' THEN MAX(NVL(E.AF_STRG_STOCK_DNCT, 0))
+           END                                          AS AF_STRG_STOCK_DNCT               -- 전략 반영 재고 일수 : (재고 수량 - 전략 재고 수량) / 일평균판매수량. 월간은 조회할 때 재계산
+
+         , MAX(NVL(E.STRG_STOCK_CONV_QTY, 0))           AS STRG_STOCK_CONV_QTY              -- 전략 재고 수량(환산c/s 단위) : 안전재고 참고
+
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M        A
+      JOIN EDW.W_CM_TB_LIQUOR_M                 C
+        ON C.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+ LEFT JOIN (    -- D. 버전의 유효기간에 해당하는 날짜 리스트(월, 연주차)
+                SELECT DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                       END                  AS PERIOD_CODE
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( SUBSTR(DA.YYYYMM, 1, 4) || '-' || SUBSTR(DA.YYYYMM, 5, 2) || '월' )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( SUBSTR(DA.SCM_YYYYWW, 1, 4) || '년 ' || SUBSTR(DA.SCM_YYYYWW, 5, 2) || '주차' ) || '(' || MIN(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || '~' || MAX(TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'MM/DD')) || ')'
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX( TO_CHAR(TO_DATE(DA.YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') || ' (' || DA.DAY_OF_WEEK_DESC || ')' )
+                       END                  AS PERIOD_NAME
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN TO_CHAR(NULL)
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN MAX(DA.BUSINESS_DAY_FLAG)
+                       END                  AS BUSINESS_DAY_FLAG
+                     , MIN(DA.YYYYMMDD)     AS PERIOD_FR_YYYYMMDD
+                     , MAX(DA.YYYYMMDD)     AS PERIOD_TO_YYYYMMDD
+                     , MAX(DC.SEQ)          AS PERIOD_TYPE_SEQ
+                     , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN MAX( DA.YYYYMM_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN MAX( DA.SCM_YYYYWW_WORK_CNT )
+                            WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN 1
+                       END                  AS CALENDAR_WORK_CNT -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                     , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END) AS WORK_CNT -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                     , CASE WHEN TO_CHAR(TO_DATE(MAX(DA.YYYYMMDD), 'YYYYMMDD'), 'D') = '7' THEN 'Y' ELSE 'N' END AS HAS_SAT_YN -- 주차내에 토요일 포함여부 : 소주의 6일 근무를 하는 경우가 있어서, 토요일 포함여부 체크
+                     
+                  FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                    ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+            CROSS JOIN (
+                            SELECT 'YYYYMM'   AS PERIOD_TYPE, 1 AS SEQ FROM DUAL UNION ALL
+                            SELECT 'YYYYWW'   AS PERIOD_TYPE, 2 AS SEQ FROM DUAL
+                       )                              DC
+                 WHERE 1 = 1
+                   AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY DB.VER_CD, DA.YYYYMM, DC.PERIOD_TYPE
+                        , CASE WHEN DC.PERIOD_TYPE = 'YYYYMM'   THEN DA.YYYYMM
+                               WHEN DC.PERIOD_TYPE = 'YYYYWW'   THEN DA.SCM_YYYYWW
+                               WHEN DC.PERIOD_TYPE = 'YYYYMMDD' THEN DA.YYYYMMDD
+                          END
+           )                                    D
+        ON D.VER_CD = A.VER_CD
+ LEFT JOIN (    -- E. 결과 조회
+                SELECT VER_CD, LIQUOR_CODE, PERIOD_YYYYMM, PERIOD_SCM_YYYYWW
+                     , SUM(YYYY_TRG_SALE_CONV_QTY) AS YYYY_TRG_SALE_CONV_QTY, SUM(ESPN_ACTUAL_SALE_CONV_QTY) AS ESPN_ACTUAL_SALE_CONV_QTY
+                     , SUM(YYYY_TRG_SALE_CONV_AVG_QTY) AS YYYY_TRG_SALE_CONV_AVG_QTY
+                     , SUM(PRDT_PLAN_CONV_QTY) AS PRDT_PLAN_CONV_QTY, SUM(PRDT_ACTUAL_CONV_QTY) AS PRDT_ACTUAL_CONV_QTY
+                     , SUM(STOCK_CONV_QTY) AS STOCK_CONV_QTY, SUM(BF_YYYY_STOCK_CONV_QTY) AS BF_YYYY_STOCK_CONV_QTY
+                     , NVL(SUM(STOCK_CONV_QTY) / DECODE(SUM(YYYY_TRG_SALE_CONV_AVG_QTY), 0, NULL, SUM(YYYY_TRG_SALE_CONV_AVG_QTY)), 0) AS STOCK_DCNT
+                     , NVL((SUM(STOCK_CONV_QTY) - SUM(STRG_STOCK_CONV_QTY)) / DECODE(SUM(YYYY_TRG_SALE_CONV_AVG_QTY), 0, NULL, SUM(YYYY_TRG_SALE_CONV_AVG_QTY)), 0) AS AF_STRG_STOCK_DNCT
+                     , SUM(STRG_STOCK_CONV_QTY) AS STRG_STOCK_CONV_QTY
+                     , MAX(PERIOD_FR_YYYYMMDD) AS PERIOD_FR_YYYYMMDD, MAX(PERIOD_TO_YYYYMMDD) AS PERIOD_TO_YYYYMMDD
+                  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_RESULT_F
+                 WHERE 1 = 1
+                   AND (    -- 용기 조건절
+                            (#{vesselCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                            OR
+                            (#{vesselCode, jdbcType=VARCHAR} = VESSEL_CODE)
+                       )
+                 GROUP BY VER_CD, LIQUOR_CODE, PERIOD_YYYYMM, PERIOD_SCM_YYYYWW
+           )                                    E
+        ON E.VER_CD          = A.VER_CD
+       AND E.LIQUOR_CODE     = C.LIQUOR_CODE
+       AND E.PERIOD_YYYYMM   = D.YYYYMM
+       AND (
+                (D.PERIOD_TYPE = 'YYYYWW' AND E.PERIOD_SCM_YYYYWW = D.PERIOD_CODE)
+                OR
+                (D.PERIOD_TYPE = 'YYYYMM' AND 1 = 1) -- 앞에서 년월을 조인해서, 여기선 불필요
+           )
+     WHERE 1 = 1
+       AND A.VER_CD = #{verCd, jdbcType=VARCHAR}
+     GROUP BY A.VER_CD, A.STD_YYYYMMDD, C.LIQUOR_CODE, C.LIQUOR_DESC, D.YYYYMM, D.PERIOD_TYPE, D.PERIOD_CODE, D.PERIOD_NAME, D.BUSINESS_DAY_FLAG, D.PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD, D.PERIOD_TYPE_SEQ
+     ORDER BY C.LIQUOR_CODE, D.PERIOD_FR_YYYYMMDD, D.PERIOD_TYPE_SEQ, D.PERIOD_CODE
+    </select>
+    
+    <!-- 결과설정 - 계산(생성=추가) : 설정된 판매/생산을 이용하여, 전체 산출 -->
+    <update id="updateResult" parameterType="map">
+        <![CDATA[
+INSERT /* com.hitejinro.snop.work.dao.M02030DaoMapper.updateResult */
+  INTO SCMU.W_SOP_TB_YLY_SCM_SIMUL_RESULT_F
+       (VER_CD, LIQUOR_CODE, PERIOD_YYYYMM, PERIOD_SCM_YYYYWW, VESSEL_CODE
+       , YYYY_TRG_SALE_CONV_QTY, ESPN_ACTUAL_SALE_CONV_QTY
+       , YYYY_TRG_SALE_CONV_AVG_QTY
+       , PRDT_PLAN_CONV_QTY, PRDT_ACTUAL_CONV_QTY
+       , STOCK_CONV_QTY, BF_YYYY_STOCK_CONV_QTY
+       , STOCK_DCNT, STRG_STOCK_CONV_QTY, AF_STRG_STOCK_DNCT
+       , PERIOD_FR_YYYYMMDD, PERIOD_TO_YYYYMMDD, ACTUAL_YN, ESPN_SALE_YN, WORK_DCNT
+       , RMKS
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+WITH STOCK_PRDT_TBL AS (
+    -- 속도향상용 : 미리 생산/재고 데이터를 집계
+    SELECT GC.YYYYMM AS PERIOD_YYYYMM, GC.SCM_YYYYWW AS PERIOD_SCM_YYYYWW, MAX(GC.PERIOD_TO_YYYYMMDD) AS PERIOD_TO_YYYYMMDD
+         , GD.LIQUOR_CODE, GD.VESSEL_CODE
+         , SUM(CASE WHEN GC.YYYYMM = GD.PERIOD_YYYYMM THEN NVL(GD.PRDT_ACTUAL_QTY * GD.UOM_CONVERSION_VALUE, 0) ELSE 0 END)
+                                                                        AS PRDT_ACTUAL_CONV_QTY
+         , SUM(CASE WHEN GD.PERIOD_YYYYMMDD = GC.PERIOD_TO_YYYYMMDD THEN NVL(GD.STOCK_QTY * GD.UOM_CONVERSION_VALUE, 0) ELSE 0 END)
+                                                                        AS STOCK_CONV_QTY           -- 당년도 재고. 재고는 기말만 체크
+         , SUM(CASE WHEN GD.PERIOD_YYYYMMDD = TO_CHAR(ADD_MONTHS(TO_DATE(GC.PERIOD_TO_YYYYMMDD, 'YYYYMMDD'), -12), 'YYYYMMDD') THEN NVL(GD.STOCK_QTY * GD.UOM_CONVERSION_VALUE, 0) ELSE 0 END)
+                                                                        AS BF_YYYY_STOCK_CONV_QTY   -- 전년도 재고. 재고는 기말만 체크
+      FROM (
+                SELECT GA.YYYYMM, GA.SCM_YYYYWW
+                     , MIN(GA.YYYYMMDD)             AS PERIOD_FR_YYYYMMDD
+                     , MAX(GA.YYYYMMDD)             AS PERIOD_TO_YYYYMMDD
+                     , MAX(GA.SCM_YYYYWW_WORK_CNT)  AS CALENDAR_WORK_CNT -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                     , SUM(CASE WHEN GA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END)
+                                                    AS WORK_CNT -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                     , MAX(GA.YYYYMM_WORK_CNT)      AS YYYYMM_WORK_CNT      -- 년월의 영업일수(달력 기준)
+                  FROM SCMU.W_SOP_VW_CALENDAR_M       GA
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  GB
+                    ON 1 = 1
+                   AND GA.YYYYMMDD BETWEEN GB.STD_YYYY || '0101' AND GB.STD_YYYY || '1231'
+                 WHERE 1 = 1
+                   AND GB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY GA.YYYYMM, GA.SCM_YYYYWW
+           )                               GC
+ LEFT JOIN SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F GD
+        ON (    -- 당년은 그대로, 전년은 동일 월일자로 조회
+                GD.PERIOD_YYYYMMDD BETWEEN GC.PERIOD_FR_YYYYMMDD AND GC.PERIOD_TO_YYYYMMDD
+                OR
+                GD.PERIOD_YYYYMMDD = TO_CHAR(ADD_MONTHS(TO_DATE(GC.PERIOD_TO_YYYYMMDD, 'YYYYMMDD'), -12), 'YYYYMMDD')
+           )
+     WHERE 1 = 1
+       AND GD.LIQUOR_CODE IN ('10', '20')
+       AND GD.ITEM_TYPE   = 'FG'
+       AND (GD.PRDT_ACTUAL_QTY != 0 OR GD.STOCK_QTY != 0)
+     GROUP BY GC.YYYYMM, GC.SCM_YYYYWW, GD.LIQUOR_CODE, GD.VESSEL_CODE
+)
+    SELECT A.VER_CD, C.LIQUOR_CODE
+         , D.YYYYMM                                     AS PERIOD_YYYYMM
+         , D.SCM_YYYYWW                                 AS PERIOD_SCM_YYYYWW
+         , B.VESSEL_CODE
+         
+         , NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)         AS YYYY_TRG_SALE_CONV_QTY
+         , NVL(E.USE_ESPN_ACTUAL_SALE_CONV_QTY, 0)      AS ESPN_ACTUAL_SALE_CONV_QTY
+         
+         , NVL(
+               SUM(NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, D.YYYYMM, B.VESSEL_CODE)
+               / DECODE(D.YYYYMM_WORK_CNT, 0, NULL, YYYYMM_WORK_CNT)
+               , 0)
+                                                        AS YYYY_TRG_SALE_CONV_AVG_QTY
+         
+         , CASE WHEN D.ACTUAL_YN = 'Y' THEN NVL(G.PRDT_ACTUAL_CONV_QTY, 0)
+                ELSE                        NVL(F.PRDT_PLAN_CONV_QTY, 0)
+           END                                          AS PRDT_PLAN_CONV_QTY
+         , CASE WHEN D.ACTUAL_YN = 'Y' THEN NVL(G.PRDT_ACTUAL_CONV_QTY, 0)
+                ELSE                        0
+           END                                          AS PRDT_ACTUAL_CONV_QTY
+         
+         , NVL(
+               CASE WHEN D.ACTUAL_YN = 'Y' THEN NVL(G.STOCK_CONV_QTY, 0)
+                    ELSE                        SUM( CASE WHEN A.STD_YYYYMMDD = D.PERIOD_TO_YYYYMMDD THEN NVL(G.STOCK_CONV_QTY, 0) ELSE 0 END
+                                                     + CASE WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD THEN NVL(F.PRDT_PLAN_CONV_QTY, 0) ELSE 0 END
+                                                     - CASE WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD AND D.PERIOD_TO_YYYYMMDD <= EB.PERIOD_TO_YYYYMMDD THEN NVL(E.USE_ESPN_ACTUAL_SALE_CONV_QTY, 0)
+                                                            WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD AND D.PERIOD_TO_YYYYMMDD >  EB.PERIOD_TO_YYYYMMDD THEN NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)
+                                                            ELSE 0 END
+                                                   ) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, B.VESSEL_CODE ORDER BY D.YYYYMM, D.SCM_YYYYWW)
+               END
+               , 0)                                     AS STOCK_CONV_QTY   -- 재고 계획 = 마지막 재고 실적 + 누적(생산 - 판매)
+         , NVL(G.BF_YYYY_STOCK_CONV_QTY, 0)             AS BF_YYYY_STOCK_CONV_QTY
+         
+         , NVL(
+               CASE WHEN D.ACTUAL_YN = 'Y' THEN NVL(G.STOCK_CONV_QTY, 0)
+                    ELSE                        SUM( CASE WHEN A.STD_YYYYMMDD = D.PERIOD_TO_YYYYMMDD THEN NVL(G.STOCK_CONV_QTY, 0) ELSE 0 END
+                                                     + CASE WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD THEN NVL(F.PRDT_PLAN_CONV_QTY, 0) ELSE 0 END
+                                                     - CASE WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD AND D.PERIOD_TO_YYYYMMDD <= EB.PERIOD_TO_YYYYMMDD THEN NVL(E.USE_ESPN_ACTUAL_SALE_CONV_QTY, 0)
+                                                            WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD AND D.PERIOD_TO_YYYYMMDD >  EB.PERIOD_TO_YYYYMMDD THEN NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)
+                                                            ELSE 0 END
+                                                   ) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, B.VESSEL_CODE ORDER BY D.YYYYMM, D.SCM_YYYYWW)
+               END
+               / CASE WHEN SUM(NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, D.YYYYMM, B.VESSEL_CODE) = 0 THEN NULL
+                      ELSE SUM(NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, D.YYYYMM, B.VESSEL_CODE)
+                 END
+               * DECODE(D.YYYYMM_WORK_CNT, 0, NULL, YYYYMM_WORK_CNT)
+               , 0)
+                                                        AS STOCK_DCNT
+         , NVL(I.STRG_STOCK_CONV_QTY, 0)                AS STRG_STOCK_CONV_QTY
+         , NVL(
+               (
+                   CASE WHEN D.ACTUAL_YN = 'Y' THEN NVL(G.STOCK_CONV_QTY, 0)
+                        ELSE                        SUM( CASE WHEN A.STD_YYYYMMDD = D.PERIOD_TO_YYYYMMDD THEN NVL(G.STOCK_CONV_QTY, 0) ELSE 0 END
+                                                         + CASE WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD THEN NVL(F.PRDT_PLAN_CONV_QTY, 0) ELSE 0 END
+                                                         - CASE WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD AND D.PERIOD_TO_YYYYMMDD <= EB.PERIOD_TO_YYYYMMDD THEN NVL(E.USE_ESPN_ACTUAL_SALE_CONV_QTY, 0)
+                                                                WHEN A.STD_YYYYMMDD < D.PERIOD_FR_YYYYMMDD AND D.PERIOD_TO_YYYYMMDD >  EB.PERIOD_TO_YYYYMMDD THEN NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)
+                                                                ELSE 0 END
+                                                       ) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, B.VESSEL_CODE ORDER BY D.YYYYMM, D.SCM_YYYYWW)
+                   END
+                   + NVL(I.STRG_STOCK_CONV_QTY, 0)
+               )
+               / CASE WHEN SUM(NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, D.YYYYMM, B.VESSEL_CODE) = 0 THEN NULL
+                      ELSE SUM(NVL(E.USE_YYYY_TRG_SALE_CONV_QTY, 0)) OVER (PARTITION BY A.VER_CD, C.LIQUOR_CODE, D.YYYYMM, B.VESSEL_CODE)
+                 END
+               * DECODE(D.YYYYMM_WORK_CNT, 0, NULL, YYYYMM_WORK_CNT)
+               , 0)
+                                                        AS AF_STRG_STOCK_DNCT
+         
+         , D.PERIOD_FR_YYYYMMDD AS PERIOD_FR_YYYYMMDD, D.PERIOD_TO_YYYYMMDD AS PERIOD_TO_YYYYMMDD
+         , D.ACTUAL_YN      AS ACTUAL_YN
+         , CASE WHEN D.PERIOD_TO_YYYYMMDD <= EB.PERIOD_TO_YYYYMMDD THEN 'Y'
+                ELSE                                                    'N'
+           END              AS ESPN_SALE_YN
+         , D.WORK_CNT       AS WORK_DCNT
+         , NULL             AS RMKS
+         , NULL AS ATTRIBUTE1, NULL AS ATTRIBUTE2, NULL AS ATTRIBUTE3, NULL AS ATTRIBUTE4, NULL AS ATTRIBUTE5
+         , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+
+      FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_M        A
+CROSS JOIN (    -- B. 용기 마스터
+                SELECT LIQUOR_CODE, VESSEL_CODE, MAX(VESSEL_SORT) AS VESSEL_NAME
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1 = 1
+                   AND ITEM_TYPE = 'FG'
+                   AND ITEM_STATUS = 'Active'
+                   AND LIQUOR_CODE IN ('10', '20')
+                   AND VESSEL_CODE != '9' -- 기타(9)는 제외
+                 GROUP BY LIQUOR_CODE, VESSEL_CODE
+           )                                    B
+      JOIN EDW.W_CM_TB_LIQUOR_M                 C
+        ON C.LIQUOR_CODE IN ('10', '20')
+       AND C.LIQUOR_CODE = B.LIQUOR_CODE
+ LEFT JOIN (    -- D. 버전의 유효기간에 해당하는 날짜 리스트(연주차)
+                SELECT DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+                     , MIN(DA.YYYYMMDD)             AS PERIOD_FR_YYYYMMDD
+                     , MAX(DA.YYYYMMDD)             AS PERIOD_TO_YYYYMMDD
+                     , MAX(DA.SCM_YYYYWW_WORK_CNT)  AS CALENDAR_WORK_CNT    -- 기간의 영업일수 : 실제 달력상의 영업일수(월의 시작/종료 주차에서 일자가 잘려도 무시 )
+                     , SUM(CASE WHEN DA.BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END)
+                                                    AS WORK_CNT             -- 기간의 영업일수 : 월의 시작/종료 주차의 경우, 해당 월에 포함된 날짜만 계산
+                     , MAX(DA.YYYYMM_WORK_CNT)      AS YYYYMM_WORK_CNT      -- 년월의 영업일수(달력 기준)
+                     , MAX(
+                            CASE WHEN DB.STD_YYYYMMDD >= DA.YYYYMMDD THEN 'Y'
+                                 ELSE                                     'N'
+                            END)                    AS ACTUAL_YN            -- 기준일자는 주차의 종료일인 토요일만 허용되므로 가능
+                  FROM SCMU.W_SOP_VW_CALENDAR_M       DA
+                  JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_M  DB
+                    ON DA.YYYYMMDD BETWEEN DB.STD_YYYY || '0101' AND DB.STD_YYYY || '1231'
+                 WHERE 1 = 1
+                   AND DB.VER_CD = #{verCd, jdbcType=VARCHAR}
+                 GROUP BY DB.VER_CD, DA.YYYYMM, DA.SCM_YYYYWW
+           )                                    D
+        ON D.VER_CD = A.VER_CD
+                -- E. 판매량 설정
+ LEFT JOIN SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_F   E
+        ON E.VER_CD            = A.VER_CD
+       AND E.LIQUOR_CODE       = C.LIQUOR_CODE
+       AND E.PERIOD_YYYYMM     = D.YYYYMM
+       AND E.PERIOD_SCM_YYYYWW = D.SCM_YYYYWW
+       AND E.VESSEL_CODE       = B.VESSEL_CODE
+ LEFT JOIN (    -- EB. 예상판매량이 존재하는 마지막 시점 체크
+                SELECT VER_CD
+                     , MAX(PERIOD_YYYYMM) AS PERIOD_YYYYMM, MAX(PERIOD_SCM_YYYYWW) AS PERIOD_SCM_YYYYWW
+                     , MAX(PERIOD_TO_YYYYMMDD) AS PERIOD_TO_YYYYMMDD
+                  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_SALE_F
+                 WHERE 1 = 1
+                   AND VER_CD = #{verCd, jdbcType=VARCHAR}
+                   AND ESPN_SALE_CONV_QTY != 0
+                 GROUP BY VER_CD
+           )                                    EB
+        ON EB.VER_CD            = A.VER_CD
+ LEFT JOIN (    -- F. 생산 계획
+                SELECT VER_CD, LIQUOR_CODE, PERIOD_YYYYMM, PERIOD_CODE AS PERIOD_SCM_YYYYWW, VESSEL_CODE
+                     , SUM(NVL(AVL_HR * MAX_CONV_QTY_PER_HR, 0)) AS PRDT_PLAN_CONV_QTY
+                  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_PRDT_F
+                 WHERE 1 = 1
+                   AND VER_CD      = #{verCd, jdbcType=VARCHAR}
+                   AND PERIOD_TYPE = 'YYYYWW'
+                 GROUP BY VER_CD, LIQUOR_CODE, PERIOD_YYYYMM, PERIOD_CODE, VESSEL_CODE
+           )                                    F
+        ON F.VER_CD            = A.VER_CD
+       AND F.LIQUOR_CODE       = C.LIQUOR_CODE
+       AND F.PERIOD_YYYYMM     = D.YYYYMM
+       AND F.PERIOD_SCM_YYYYWW = D.SCM_YYYYWW
+       AND F.VESSEL_CODE       = B.VESSEL_CODE
+                -- G. 당년도 생산/재고 실적, 전년도 재고
+ LEFT JOIN STOCK_PRDT_TBL                       G
+        ON G.LIQUOR_CODE       = C.LIQUOR_CODE
+       AND G.PERIOD_YYYYMM     = D.YYYYMM
+       AND G.PERIOD_SCM_YYYYWW = D.SCM_YYYYWW
+       AND G.VESSEL_CODE       = B.VESSEL_CODE
+LEFT JOIN (     -- I. 안전재고에 설정된 전략재고수량
+                SELECT IB.PERIOD_YYYYMM, IB.LIQUOR_CODE
+                     , CASE WHEN IC.VESSEL_CODE IS NOT NULL THEN IC.VESSEL_CODE
+                            WHEN ID.CODE IS NOT NULL        THEN ID.SEGMENT4
+                       END                                  AS VESSEL_CODE
+                     , SUM(NVL(IB.STRG_STOCK_CONV_QTY, 0))  AS STRG_STOCK_CONV_QTY
+                  FROM SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F  IB
+             LEFT JOIN EDW.W_CM_TB_FG_ITEM_M            IC
+                    ON IC.ITEM_CODE = IB.ITEM_CODE
+             LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         ID
+                    ON ID.GROUP_CODE = 'LIQUOR_VESSEL_LIST'
+                   AND ID.CODE       = IB.ITEM_CODE
+                 WHERE 1 = 1
+                   AND NVL(IB.STRG_STOCK_CONV_QTY, 0) != 0
+                 GROUP BY IB.PERIOD_YYYYMM, IB.LIQUOR_CODE
+                         , CASE WHEN IC.VESSEL_CODE IS NOT NULL THEN IC.VESSEL_CODE
+                                WHEN ID.CODE IS NOT NULL        THEN ID.SEGMENT4
+                           END
+          )                                     I
+        ON I.PERIOD_YYYYMM = D.YYYYMM
+       AND I.LIQUOR_CODE   = C.LIQUOR_CODE
+       AND I.VESSEL_CODE   = B.VESSEL_CODE
+
+     WHERE 1 = 1
+       AND A.VER_CD      = #{verCd, jdbcType=VARCHAR}
+       AND C.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        ]]>
+    </update>
+    
+    <!-- 결과설정 - 초기화 : 삭제 -->
+    <delete id="deleteResult" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M02030DaoMapper.deleteResult */
+  FROM SCMU.W_SOP_TB_YLY_SCM_SIMUL_RESULT_F T
+ WHERE 1 = 1
+   AND T.VER_CD      = #{verCd, jdbcType=VARCHAR}
+   AND T.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+    </delete>
+
+</mapper>

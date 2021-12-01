@@ -1,0 +1,487 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 당일 용기회수량 예측 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03010DaoMapper">
+
+	<!-- 기간 조회 -->
+	<select id="searchPeriod" parameterType="map" resultType="map">
+		WITH DATE_TBL AS /* com.hitejinro.snop.work.dao.M03010DaoMapper.searchPeriod */
+		(
+		    SELECT
+		          #{endDate, jdbcType=VARCHAR} AS END_YYYYMMDD
+		        , TO_CHAR(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD') 
+		          - TO_CHAR(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD'), 'D') - 6 - 7 * 11, 'YYYYMMDD') AS START_WEEK_YYYYMMDD
+		        , TO_CHAR(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD')
+		          - TO_CHAR(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD'), 'D'), 'YYYYMMDD')              AS END_WEEK_YYYYMMDD
+		
+		        , TO_CHAR(ADD_MONTHS(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD'), - 1), 'YYYYMMDD')     AS PRE_MONTH_YYYYMMDD
+		        , TO_CHAR(ADD_MONTHS(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD'), - 12), 'YYYYMMDD')    AS PRE_YEAR_YYYYMMDD
+		    FROM DUAL
+		)
+		
+		SELECT
+		      T1.START_WEEK_YYYYMMDD, T1.END_WEEK_YYYYMMDD, T1.PRE_START_WEEK_YYYYMMDD, T1.PRE_END_WEEK_YYYYMMDD
+		    , T2.PRE_DAY_YYYYMMDD
+		    , TO_CHAR(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD') - 7, 'YYYYMMDD') AS PRE_WEEK_YYYYMMDD
+		    , T3.PRE_MONTH_YYYYMMDD
+		    , T4.PRE_YEAR_YYYYMMDD
+		    , T5.CRITERIA_YYYYMMDD
+		    , NVL(T6.RECENT_HHMMSS, '06:30:00') AS RECENT_HHMMSS
+		    , (CASE WHEN T6.RECENT_HHMMSS IS NULL THEN NULL
+		    		ELSE '최종 동기화 시간 : '
+		    			|| TO_CHAR(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD'), 'YYYY-MM-DD') 
+		    			|| ' ' 
+		    			|| NVL(T6.RECENT_HHMMSS, '06:00:00')
+		    		END) AS LAST_SYNC_TIME 
+		FROM
+		(
+		    -- 동기간(주차별) 시작일자, 종료일자 산출
+		    SELECT
+		          MAX(A.START_WEEK_YYYYMMDD)    AS START_WEEK_YYYYMMDD
+		        , MAX(A.END_WEEK_YYYYMMDD)      AS END_WEEK_YYYYMMDD
+		        , MIN(B.YYYYMMDD)               AS PRE_START_WEEK_YYYYMMDD
+		        , MAX(B.YYYYMMDD)               AS PRE_END_WEEK_YYYYMMDD
+		    FROM
+		    (
+		        SELECT
+		              MAX(T1.START_WEEK_YYYYMMDD)   AS START_WEEK_YYYYMMDD
+		            , MAX(T1.END_WEEK_YYYYMMDD)     AS END_WEEK_YYYYMMDD
+		            , MIN(T2.SCM_YYYYWW)            AS START_WEEK
+		            , MAX(T2.SCM_YYYYWW)            AS END_WEEK
+		        FROM DATE_TBL T1
+		
+		        INNER JOIN SCMU.W_SOP_VW_CALENDAR_M T2 ON T2.YYYYMMDD BETWEEN T1.START_WEEK_YYYYMMDD AND T1.END_WEEK_YYYYMMDD
+		    ) A
+		    INNER JOIN SCMU.W_SOP_VW_CALENDAR_M B ON B.SCM_YYYYWW BETWEEN SUBSTR(A.START_WEEK, 0, 4) - 1 || SUBSTR(A.START_WEEK, 5, 2)
+		                                                              AND SUBSTR(A.END_WEEK, 0, 4) - 1 || SUBSTR(A.END_WEEK, 5, 2)
+		) T1
+		LEFT JOIN
+		(
+		    -- 영업일 기준 최근일자
+		    SELECT MAX(YYYYMMDD) AS PRE_DAY_YYYYMMDD
+		    FROM DATE_TBL A
+		
+		    INNER JOIN SCMU.W_SOP_VW_CALENDAR_M B ON B.YYYYMMDD BETWEEN TO_CHAR(TO_DATE(A.END_YYYYMMDD, 'YYYYMMDD') - 30, 'YYYYMMDD')
+		                                                            AND TO_CHAR(TO_DATE(A.END_YYYYMMDD, 'YYYYMMDD') - 1, 'YYYYMMDD')
+		    WHERE 1 = 1
+		        AND B.BUSINESS_DAY_FLAG = 'Y'
+		) T2 ON 1 = 1
+		LEFT JOIN
+		(
+		    -- 전월 동기
+		    -- 해당일자가 영업일이 아닌경우 전월의 마지막 영업일을 산출
+		    SELECT
+		        MIN(CASE WHEN B.YYYYMMDD = A.PRE_MONTH_YYYYMMDD AND B.BUSINESS_DAY_FLAG = 'Y'                        THEN B.YYYYMMDD
+		                 WHEN B.YYYYMMDD = TO_CHAR(LAST_DAY(TO_DATE(A.PRE_MONTH_YYYYMMDD, 'YYYYMMDD')), 'YYYYMMDD')  THEN B.YYYYMMDD
+		                 ELSE NULL
+		                 END) AS PRE_MONTH_YYYYMMDD
+		    FROM DATE_TBL A
+		    
+		    INNER JOIN SCMU.W_SOP_VW_CALENDAR_M B ON B.YYYYMM = SUBSTR(A.PRE_MONTH_YYYYMMDD, 0, 6)
+		    WHERE 1 = 1
+		    	AND B.BUSINESS_DAY_FLAG = 'Y'
+		) T3 ON 1 = 1
+		LEFT JOIN
+		(
+		    -- 전년 동기
+		    -- 해당일자가 영업일이 아닌경우 전년도 해당월의 마지막 영업일을 산출
+		    SELECT
+		        MIN(CASE WHEN B.YYYYMMDD = A.PRE_YEAR_YYYYMMDD AND B.BUSINESS_DAY_FLAG = 'Y'                        THEN B.YYYYMMDD
+		                 WHEN B.YYYYMMDD = TO_CHAR(LAST_DAY(TO_DATE(A.PRE_YEAR_YYYYMMDD, 'YYYYMMDD')), 'YYYYMMDD')  THEN B.YYYYMMDD
+		                 ELSE NULL
+		                 END) AS PRE_YEAR_YYYYMMDD
+		    FROM DATE_TBL A
+		
+		    INNER JOIN SCMU.W_SOP_VW_CALENDAR_M B ON B.YYYYMM = SUBSTR(A.PRE_YEAR_YYYYMMDD, 0, 6)
+			WHERE 1 = 1
+		    	AND B.BUSINESS_DAY_FLAG = 'Y'
+		) T4 ON 1 = 1
+		LEFT JOIN
+		(
+			-- 예측기준 날짜 산출(영업일 기준 N일 전 날짜)
+			SELECT A.YYYYMMDD AS CRITERIA_YYYYMMDD
+			FROM
+			(
+				SELECT T2.YYYYMMDD, ROW_NUMBER() OVER (ORDER BY T2.YYYYMMDD DESC) - 1 AS CNT
+				FROM DATE_TBL T1
+				
+				INNER JOIN SCMU.W_SOP_VW_CALENDAR_M T2 ON T2.YYYYMMDD BETWEEN TO_CHAR(TO_DATE(T1.END_YYYYMMDD, 'YYYYMMDD') - 90, 'YYYYMMDD') AND T1.END_YYYYMMDD
+				WHERE 1 = 1
+					AND BUSINESS_DAY_FLAG = 'Y'
+			) A
+			WHERE 1 = 1
+				AND CNT = DECODE(#{criteria, jdbcType=VARCHAR}, 'RECENT_40DAYS', 40, 'RECENT_20DAYS', 20, 10)
+		) T5 ON 1 = 1
+		LEFT JOIN
+		(
+			-- 최근 집계 일시
+			SELECT MAX(HHMMSS) AS RECENT_HHMMSS
+            FROM DATE_TBL A
+            
+            INNER JOIN EDW.W_OM_TB_RESULT_DETAIL_TIME_F B ON B.SALES_DATE = A.END_YYYYMMDD
+            WHERE 1 = 1
+			    AND B.HHMMSS IN
+			    (
+			          '06:30:00', '07:00:00', '08:00:00', '09:00:00', '10:00:00', '11:00:00', '12:00:00', '13:00:00', '14:00:00'
+			        , '15:00:00', '16:00:00', '17:00:00', '23:00:00', '23:30:00'
+			    )
+                AND B.ORDERED_QTY != 0
+		) T6 ON 1 = 1
+	</select>
+	
+	<!--  차트 데이터 -->
+	<select id="searchChart" parameterType="map" resultType="map">
+		WITH VESSEL_TBL AS ( /* com.hitejinro.snop.work.dao.M03010DaoMapper.searchChart */
+			-- 타사매각 = 자사용기 타사매각량 + 타사용기 타사매각량
+			SELECT
+			      AB.PERIOD_SCM_YYYYWW
+			    , SUM(CASE WHEN AB.TRANSACTION_TYPE_CODE = '정상입고' AND AA.COMPANY_TYPE = 'OWNER' THEN AB.QTY 
+			               ELSE 0
+			               END) AS INPUT_QTY
+			    , SUM(CASE WHEN AB.TRANSACTION_TYPE_CODE = '정상입고' AND AA.COMPANY_TYPE = 'OWNER' THEN AB.QTY / GREATEST(NVL(AA.PBOX_PACKING_UNIT, 1), 1) 
+			               ELSE 0
+			               END) AS INPUT_CS_QTY
+			    , SUM(CASE WHEN AB.TRANSACTION_TYPE_CODE = '타사매입' AND AA.COMPANY_TYPE = 'OWNER' THEN AB.QTY 
+			               ELSE 0
+			               END) AS OTHER_PURCHASE_QTY
+			    , SUM(CASE WHEN AB.TRANSACTION_TYPE_CODE = '타사매입' AND AA.COMPANY_TYPE = 'OWNER' THEN AB.QTY / GREATEST(NVL(AA.PBOX_PACKING_UNIT, 1), 1)  
+			               ELSE 0
+			               END) AS OTHER_PURCHASE_CS_QTY
+			    , SUM(CASE WHEN AB.TRANSACTION_TYPE_CODE = '타사매각' THEN AB.QTY 
+			               ELSE 0
+			               END) AS OTHER_SALES_QTY
+			    , SUM(CASE WHEN AB.TRANSACTION_TYPE_CODE = '타사매각' THEN AB.QTY / GREATEST(NVL(AA.PBOX_PACKING_UNIT, 1), 1) 
+			               ELSE 0
+			               END) AS OTHER_SALES_CS_QTY
+			FROM SCMU.W_SOP_TB_VESSEL_M AA
+			             
+			INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE 
+			WHERE 1 = 1
+				AND AA.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}           
+			    AND AA.VESSEL_CODE = #{vesselCode, jdbcType=VARCHAR}
+			    AND AA.VOLUME_VALUE IN		        
+				<foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+		            #{i, jdbcType=VARCHAR}
+				</foreach>
+		        AND AA.USE_YN = 'Y'
+			
+				AND (
+						AB.PERIOD_YYYYMMDD BETWEEN #{START_WEEK_YYYYMMDD, jdbcType=VARCHAR} AND #{END_WEEK_YYYYMMDD, jdbcType=VARCHAR}
+			            OR
+			            AB.PERIOD_YYYYMMDD BETWEEN #{PRE_START_WEEK_YYYYMMDD, jdbcType=VARCHAR} AND #{PRE_END_WEEK_YYYYMMDD, jdbcType=VARCHAR}
+			        )
+				AND AB.TRANSACTION_TYPE_CODE IN ('정상입고', '타사매입', '타사매각')
+			GROUP BY AB.PERIOD_SCM_YYYYWW
+		)
+		SELECT
+		      SUBSTR(T1.PERIOD_SCM_YYYYWW, 0, 4) || '년 ' || LTRIM(SUBSTR(T1.PERIOD_SCM_YYYYWW, 5, 2), '0') || '주차'			AS PERIOD_SCM_YYYYWW
+			, SUBSTR(T1.PRE_PERIOD_SCM_YYYYWW, 0, 4) || '년 ' || LTRIM(SUBSTR(T1.PRE_PERIOD_SCM_YYYYWW, 5, 2), '0') || '주차' 	AS PRE_PERIOD_SCM_YYYYWW
+			, T1.INPUT_QTY
+			, T1.OTHER_PURCHASE_QTY
+			, T1.OTHER_SALES_QTY
+			, T1.BUSINESS_DAY_CNT
+			, ROUND((CASE WHEN T1.BUSINESS_DAY_CNT = 0                THEN 0
+			              WHEN #{includeYN, jdbcType=VARCHAR} = 'Y'   THEN (T1.INPUT_QTY + T1.OTHER_PURCHASE_QTY - T1.OTHER_SALES_QTY) / T1.BUSINESS_DAY_CNT
+			        	  WHEN #{includeYN, jdbcType=VARCHAR} = 'N'   THEN T1.INPUT_QTY / T1.BUSINESS_DAY_CNT
+			        	  ELSE 0
+			        	  END), 0) AS AVG_RETURN_QTY
+				
+			, NVL(T2.PRE_INPUT_QTY, 0)                  AS PRE_INPUT_QTY
+			, NVL(T2.PRE_OTHER_PURCHASE_QTY, 0)         AS PRE_OTHER_PURCHASE_QTY
+			, NVL(T2.PRE_OTHER_SALES_QTY, 0)            AS PRE_OTHER_SALES_QTY
+			, NVL(T2.PRE_BUSINESS_DAY_CNT, 0)           AS PRE_BUSINESS_DAY_CNT
+			, ROUND((CASE WHEN NVL(T2.PRE_BUSINESS_DAY_CNT, 0) = 0  THEN 0
+			        	  WHEN #{includeYN, jdbcType=VARCHAR} = 'Y' THEN (NVL(T2.PRE_INPUT_QTY, 0) + NVL(T2.PRE_OTHER_PURCHASE_QTY, 0) - NVL(T2.PRE_OTHER_SALES_QTY, 0)) / NVL(T2.PRE_BUSINESS_DAY_CNT, 0)
+			        	  WHEN #{includeYN, jdbcType=VARCHAR} = 'N' THEN NVL(T2.PRE_INPUT_QTY, 0) / NVL(T2.PRE_BUSINESS_DAY_CNT, 0)
+			        	  ELSE 0
+			        	  END), 0) AS PRE_AVG_RETURN_QTY
+		FROM
+		(
+			-- 해당 주차
+		    -- A : 용기 마스터
+		    -- B : 용기마트
+		    -- C : 대상기간의 주차 및 영업일수 계산
+		    SELECT
+		          A.PERIOD_SCM_YYYYWW, B.PRE_PERIOD_SCM_YYYYWW
+		        , NVL(B.BUSINESS_DAY_CNT, 0) AS BUSINESS_DAY_CNT
+		        , DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.INPUT_QTY, A.INPUT_CS_QTY) 					AS INPUT_QTY
+		        , DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.OTHER_PURCHASE_QTY, A.OTHER_PURCHASE_CS_QTY) AS OTHER_PURCHASE_QTY
+		        , DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.OTHER_SALES_QTY, A.OTHER_SALES_CS_QTY) 		AS OTHER_SALES_QTY 
+		    FROM VESSEL_TBL A
+		
+		    INNER JOIN
+		    (
+		        SELECT 
+		              SCM_YYYYWW AS PERIOD_SCM_YYYYWW
+		            , SUBSTR(SCM_YYYYWW, 0, 4) - 1 || SUBSTR(SCM_YYYYWW, 5, 2)  AS PRE_PERIOD_SCM_YYYYWW
+		            , SUM(DECODE(BUSINESS_DAY_FLAG, 'Y', 1, 0))                 AS BUSINESS_DAY_CNT
+		        FROM SCMU.W_SOP_VW_CALENDAR_M
+		        WHERE 1 = 1
+		            AND YYYYMMDD BETWEEN #{START_WEEK_YYYYMMDD, jdbcType=VARCHAR} AND #{END_WEEK_YYYYMMDD, jdbcType=VARCHAR}
+		        GROUP BY SCM_YYYYWW
+		    ) B ON B.PERIOD_SCM_YYYYWW = A.PERIOD_SCM_YYYYWW
+		) T1
+		LEFT JOIN
+		(
+			-- 전년 동기
+		    -- A : 용기 마스터
+		    -- B : 용기마트
+		    -- C : 대상기간의 주차 및 영업일수 계산
+		    SELECT
+		          B.PERIOD_SCM_YYYYWW, NVL(B.BUSINESS_DAY_CNT, 0) AS PRE_BUSINESS_DAY_CNT
+		        , DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.INPUT_QTY, A.INPUT_CS_QTY) 					AS PRE_INPUT_QTY
+		        , DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.OTHER_PURCHASE_QTY, A.OTHER_PURCHASE_CS_QTY) AS PRE_OTHER_PURCHASE_QTY
+		        , DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.OTHER_SALES_QTY, A.OTHER_SALES_CS_QTY) 		AS PRE_OTHER_SALES_QTY
+		    FROM VESSEL_TBL A
+		
+		    INNER JOIN
+		    (
+		        SELECT 
+		              SCM_YYYYWW                                AS PERIOD_SCM_YYYYWW
+		            , SUM(DECODE(BUSINESS_DAY_FLAG, 'Y', 1, 0)) AS BUSINESS_DAY_CNT
+		        FROM SCMU.W_SOP_VW_CALENDAR_M
+		        WHERE 1 = 1
+		            AND YYYYMMDD BETWEEN #{PRE_START_WEEK_YYYYMMDD, jdbcType=VARCHAR} AND #{PRE_END_WEEK_YYYYMMDD, jdbcType=VARCHAR}
+		        GROUP BY SCM_YYYYWW
+		    ) B ON B.PERIOD_SCM_YYYYWW = A.PERIOD_SCM_YYYYWW
+		) T2 ON T2.PERIOD_SCM_YYYYWW = T1.PRE_PERIOD_SCM_YYYYWW
+		ORDER BY T1.PERIOD_SCM_YYYYWW
+	</select>
+	
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03010DaoMapper.searchHeader */
+		      T2.YYYYMMDD 																				AS SALES_DATE
+    		, 'COL' || (ROW_NUMBER() OVER (ORDER BY T2.YYYYMMDD) -1) 									AS NAME
+			, 'numeric' 																				AS DEF
+		    , TO_CHAR(TO_DATE(T2.YYYYMMDD, 'YYYYMMDD'), 'FMMM/DD') || '(' || T2.DAY_OF_WEEK_DESC || ')' AS HEADER1_DESC
+		FROM
+		(
+			SELECT TO_CHAR(TO_DATE(#{startDate, jdbcType=VARCHAR}, 'YYYYMMDD') + LEVEL - 1, 'YYYYMMDD') AS PERIOD_YYYYMMDD
+			FROM DUAL
+			CONNECT BY LEVEL <![CDATA[ <= ]]> TRUNC(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD')) 
+			                                - TRUNC(TO_DATE(#{startDate, jdbcType=VARCHAR}, 'YYYYMMDD')) + 1
+		) T1
+		INNER JOIN SCMU.W_SOP_VW_CALENDAR_M T2 ON T2.DAY_OF_WEEK != 1
+		                                      AND T2.YYYYMMDD    = T1.PERIOD_YYYYMMDD
+		ORDER BY T2.YYYYMMDD
+	</select>
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+        WITH RETURN_TBL AS /* com.hitejinro.snop.work.dao.M03010DaoMapper.search */
+        (
+        	-- 2021-08-13 마트로직 수정 이후 최종일시가 23:00:00에서 23:30:00으로 변경
+        	-- 그 이전 데이터와 그 이후 데이터의 최종일자를 23:30:00으로 통합
+			SELECT
+			      AB.SALES_DATE
+			    , (CASE WHEN AB.HHMMSS IN ('23:00:00', '23:30:00') THEN '23:30:00'
+			            ELSE AB.HHMMSS
+			            END) AS HHMMSS
+
+			    , SUM(CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_BULK_QTY' THEN AB.ORDERED_QTY * -1
+			    		   ELSE (AB.ORDERED_QTY * -1) / GREATEST(NVL(AA.PBOX_PACKING_UNIT, 1), 1)
+			    		   END) AS ORDERED_QTY
+			FROM SCMU.W_SOP_TB_VESSEL_M AA
+			
+			INNER JOIN EDW.W_OM_TB_RESULT_DETAIL_TIME_F AB ON AB.ITEM_CODE = AA.ITEM_CODE
+			
+			LEFT JOIN EDW.W_CM_TB_CUSTOMER_M AC ON AC.SITE_CODE = AB.SITE_CODE
+			WHERE 1 = 1 
+			    AND AA.LIQUOR_CODE  = #{liquorCode, jdbcType=VARCHAR}
+			    AND AA.VESSEL_CODE  = #{vesselCode, jdbcType=VARCHAR}
+                AND AA.VOLUME_VALUE IN
+		        <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+		            #{i, jdbcType=VARCHAR}
+		        </foreach>
+			    AND AA.USE_YN       = 'Y'
+			    AND AA.COMPANY_TYPE = 'OWNER'
+			    
+				-- 속도 향상을 위해 조회하는 시간대 고정 : 누적 개념이므로, 해당 시간대만 조회
+			    AND AB.HHMMSS       IN
+			    (
+			          '06:30:00', '07:00:00', '08:00:00', '09:00:00', '10:00:00', '11:00:00', '12:00:00', '13:00:00', '14:00:00'
+			        , '15:00:00', '16:00:00', '17:00:00', '23:00:00', '23:30:00'
+			    )
+			    AND AB.OU_CODE      = 'HJ0'
+                AND
+                (
+                    AB.SALES_DATE BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR} -- 조회기간
+                    OR
+                    AB.SALES_DATE = #{PRE_DAY_YYYYMMDD, jdbcType=VARCHAR} -- 전일
+                    OR
+                    AB.SALES_DATE = #{PRE_WEEK_YYYYMMDD, jdbcType=VARCHAR} -- 전주
+                    OR
+                    AB.SALES_DATE = #{PRE_MONTH_YYYYMMDD, jdbcType=VARCHAR} -- 전월동기
+                    OR
+                    AB.SALES_DATE = #{PRE_YEAR_YYYYMMDD, jdbcType=VARCHAR} -- 전년동기
+                    OR
+                    AB.SALES_DATE BETWEEN #{CRITERIA_YYYYMMDD, jdbcType=VARCHAR} AND #{PRE_DAY_YYYYMMDD, jdbcType=VARCHAR} -- 예측기준
+                )
+                AND
+                (
+                    (#{includeYN, jdbcType=VARCHAR} = 'Y' AND 1 = 1)
+                    OR
+                    (#{includeYN, jdbcType=VARCHAR} = 'N' AND AC.CUSTOMER_TYPE != 'RC') 
+                )
+                
+			    AND AB.ORDERED_QTY  != 0
+			GROUP BY AB.SALES_DATE, (CASE WHEN AB.HHMMSS IN ('23:00:00', '23:30:00') THEN '23:30:00' ELSE AB.HHMMSS END)
+        )
+        
+        SELECT
+        	  T1.TYPE
+        	, (CASE WHEN T1.TYPE = '일계' THEN 'TOTAL'
+        			ELSE NULL
+        			END) AS "Def"
+		<foreach collection="header" item="list" index="i">
+			, ${list.NAME}
+		</foreach>
+			, (CASE WHEN T1.TYPE IN ('일계', '주단위 일평균') THEN NULL
+					ELSE T1.PRE_DAY_DIFF_QTY
+					END) AS PRE_DAY_DIFF_QTY
+			, (CASE WHEN T1.TYPE IN ('일계', '주단위 일평균') THEN NULL
+					ELSE T1.PRE_WEEK_DIFF_QTY
+					END) AS PRE_WEEK_DIFF_QTY
+			, (CASE WHEN T1.TYPE IN ('일계', '주단위 일평균') THEN NULL
+					ELSE T1.PRE_MONTH_DIFF_QTY
+					END) AS PRE_MONTH_DIFF_QTY
+			, (CASE WHEN T1.TYPE IN ('일계', '주단위 일평균') THEN NULL
+					ELSE T1.PRE_YEAR_DIFF_QTY
+					END) AS PRE_YEAR_DIFF_QTY
+        FROM
+        (
+	        SELECT
+	              (CASE WHEN T1.TYPE = '06:30:00' THEN '6시 이하'
+	                    WHEN T1.TYPE = '23:30:00' THEN '18시 이상'
+	                    WHEN T1.TYPE > '06:30:00' AND T1.TYPE <![CDATA[ < ]]> '23:30:00' THEN LTRIM(SUBSTR(T1.TYPE, 0, 2), '0') || '시' 
+	                    ELSE T1.TYPE
+	                    END) AS TYPE
+ 				, MAX(T1.TYPE_SEQ)	AS TYPE_SEQ
+	        <foreach collection="header" item="list" index="i">
+				, SUM(CASE WHEN T1.SALES_DATE = #{list.SALES_DATE, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+						   ELSE 0
+						   END) AS ${list.NAME}
+			</foreach>
+	        	-- 전일 대비 증감
+				, SUM(CASE WHEN T1.SALES_DATE = #{endDate, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+						   ELSE 0
+						   END)
+				  -
+				  SUM(CASE WHEN T1.SALES_DATE = #{PRE_DAY_YYYYMMDD, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+				  		   ELSE 0
+				  		   END) AS PRE_DAY_DIFF_QTY
+				
+				-- 전주 동일날짜 대비 증감
+				, SUM(CASE WHEN T1.SALES_DATE = #{endDate, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+						   ELSE 0
+						   END)
+				  -
+				  SUM(CASE WHEN T1.SALES_DATE = #{PRE_WEEK_YYYYMMDD, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+				  		   ELSE 0
+				  		   END) AS PRE_WEEK_DIFF_QTY
+				
+				-- 전월 동기 대비 증감
+				, SUM(CASE WHEN T1.SALES_DATE = #{endDate, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+						   ELSE 0
+						   END)
+				  -
+				  SUM(CASE WHEN T1.SALES_DATE = #{PRE_MONTH_YYYYMMDD, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+				  		   ELSE 0
+				  		   END) AS PRE_MONTH_DIFF_QTY
+	
+				-- 전년 동기 대비 증감
+				, SUM(CASE WHEN T1.SALES_DATE = #{endDate, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+						   ELSE 0
+						   END)
+				  -
+				  SUM(CASE WHEN T1.SALES_DATE = #{PRE_YEAR_YYYYMMDD, jdbcType=VARCHAR} THEN T1.ORDERED_QTY
+				  		   ELSE 0
+				  		   END) AS PRE_YEAR_DIFF_QTY
+	        FROM
+	        (
+	            -- 일자, 시간대별
+	            SELECT 
+	            	  A.SALES_DATE, A.HHMMSS AS TYPE
+	            	, ROW_NUMBER() OVER (PARTITION BY A.SALES_DATE ORDER BY A.SALES_DATE, A.HHMMSS) AS TYPE_SEQ
+	            	, A.ORDERED_QTY
+	            FROM RETURN_TBL A
+	            
+	            -- 일자별 최종 회수량(일계)
+	            -- 종료일자의 일계는 예측회수량으로 대체
+	            UNION ALL
+	            SELECT
+	            	  A.SALES_DATE
+	            	, '일계' 	AS TYPE
+	            	, 999 		AS TYPE_SEQ
+	            	, A.ORDERED_QTY
+	            FROM RETURN_TBL A
+	            WHERE 1 = 1
+	                AND A.SALES_DATE != #{endDate, jdbcType=VARCHAR}
+	                AND A.HHMMSS      = '23:30:00' 
+	
+	            -- 주차별 일평균
+	            UNION ALL
+	            SELECT
+	            	  A.SALES_DATE
+	            	, '주단위 일평균' 	AS TYPE
+	            	, 1000 				AS TYPE_SEQ
+	            	, A.ORDERED_QTY
+	            FROM
+	            (
+	                SELECT 
+	                      A.SCM_YYYYWW
+	                    , MAX(B.SALES_DATE)  AS SALES_DATE
+	                    , (CASE WHEN SUM(DECODE(NVL(A.BUSINESS_DAY_FLAG, 'N'), 'Y', 1, 0)) = 0 THEN 0
+	                            ELSE SUM(B.ORDERED_QTY) / SUM(DECODE(NVL(A.BUSINESS_DAY_FLAG, 'N'), 'Y', 1, 0))
+	                            END) AS ORDERED_QTY
+	                FROM SCMU.W_SOP_VW_CALENDAR_M A
+	
+	                INNER JOIN RETURN_TBL B ON B.HHMMSS     = '23:30:00'
+	                                       AND B.SALES_DATE = A.YYYYMMDD
+	                GROUP BY A.SCM_YYYYWW
+	            ) A
+	            
+	            -- 예측회수량
+	            -- 예측기간 중 동일 시간대 회수량 차이가 제일 적은 날짜 산출
+	            -- 해당 날짜의 최종 회수량(23:30:00)을 종료일자의 일계 항목에 보여줌
+	            UNION ALL
+	            SELECT
+	                  #{endDate, jdbcType=VARCHAR} 	AS SALES_DATE
+	                , '일계'            			AS TYPE
+	                , 999 							AS TYPE_SEQ
+	                , B.ORDERED_QTY     			AS ORDERED_QTY
+	            FROM
+	            (
+	            	-- 예측기간 중 동일 시간대 회수량 차이 산출
+	                SELECT
+	                      T1.SALES_DATE, T1.HHMMSS, T1.ORDERED_QTY
+	                    , NVL(T2.END_DATE_ORDERED_QTY, 0) 													 	AS END_DATE_ORDERED_QTY
+	                    , ABS(T1.ORDERED_QTY - NVL(T2.END_DATE_ORDERED_QTY, 0)) 								AS GAP_ORDERED_QTY
+	                    , ROW_NUMBER() OVER (ORDER BY ABS(T1.ORDERED_QTY - NVL(T2.END_DATE_ORDERED_QTY, 0))) 	AS RN
+	                FROM RETURN_TBL T1
+	                
+	                LEFT JOIN
+	                (
+	                	-- 종료일자의 최종 회수량 산출
+	                    SELECT HHMMSS, ORDERED_QTY AS END_DATE_ORDERED_QTY
+	                    FROM RETURN_TBL
+	                    WHERE 1 = 1
+	                        AND SALES_DATE = #{endDate, jdbcType=VARCHAR}
+	                        AND HHMMSS     = #{RECENT_HHMMSS, jdbcType=VARCHAR}
+	                ) T2 ON T2.HHMMSS = T1.HHMMSS
+	                WHERE 1 = 1
+	                    AND T1.SALES_DATE BETWEEN #{CRITERIA_YYYYMMDD, jdbcType=VARCHAR} AND #{PRE_DAY_YYYYMMDD, jdbcType=VARCHAR}
+	                    AND T1.HHMMSS     = #{RECENT_HHMMSS, jdbcType=VARCHAR}
+	            ) A
+	            INNER JOIN RETURN_TBL B ON B.SALES_DATE = A.SALES_DATE
+	                                   AND B.HHMMSS     = '23:30:00'
+	            WHERE 1 = 1
+	                AND A.RN = 1
+	        ) T1
+	        GROUP BY T1.TYPE
+        ) T1
+        ORDER BY T1.TYPE_SEQ, T1.TYPE
+	</select>
+</mapper>

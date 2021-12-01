@@ -1,0 +1,689 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 용기지표(용기현황 Index) -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03050DaoMapper">
+
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03050DaoMapper.searchHeader */
+		      A.BRAND_CODE, A.BRAND_NAME, A.BRAND_SEQ
+		    , B.TRANSACTION_TYPE_CODE, B.TRANSACTION_TYPE_NAME, B.TRANSACTION_TYPE_SEQ, B.INCLUDE_YN
+		    
+			, 'COL' || (ROW_NUMBER() OVER (ORDER BY A.BRAND_SEQ, B.TRANSACTION_TYPE_SEQ) -1) AS NAME
+            , (CASE WHEN B.TRANSACTION_TYPE_CODE IN ('RETURN_SALES_RATE', 'RETURN_TOTAL_RATE') THEN 'percent,total'
+                    ELSE 'numeric'
+                    END) AS DEF
+			, (CASE WHEN #{includeYN, jdbcType=VARCHAR} = 'N' THEN '1'
+            		WHEN #{includeYN, jdbcType=VARCHAR} = 'Y' AND B.TRANSACTION_TYPE_CODE IN ('ACTUAL_QTY', 'TOTAL_INPUT_QTY', 'RETURN_TOTAL_RATE') THEN '1'
+            		ELSE '0'
+            		END) AS VISIBLE
+		    
+		    , (CASE WHEN B.TRANSACTION_TYPE_SEQ = '1' AND A.BRAND_CODE = 'B1030' AND #{liquorCode, jdbcType=VARCHAR} = '10' AND #{vesselCode, jdbcType=VARCHAR} = '5' THEN '스텐통(테라+맥스)' -- 생통의 맥스는 테라도 포함해서 사용하므로, 텍스트 변경
+                    WHEN B.TRANSACTION_TYPE_SEQ = '1'                                                                         THEN A.BRAND_NAME
+                    ELSE NULL
+		            END) AS HEADER1_DESC
+		    , (CASE WHEN B.TRANSACTION_TYPE_SEQ = '1' THEN COUNT(1) OVER (PARTITION BY A.BRAND_CODE)
+		            ELSE NULL
+		            END) AS HEADER1_SPAN
+		            
+		    , B.TRANSACTION_TYPE_NAME AS HEADER2_DESC
+            , (CASE WHEN #{includeYN, jdbcType=VARCHAR} = 'Y' AND B.TRANSACTION_TYPE_CODE = 'TOTAL_INPUT_QTY' THEN '5'
+                    ELSE NULL
+                    END) AS HEADER2_EXPAND
+		FROM
+		(
+		    SELECT DISTINCT
+                  DECODE(GROUPING_ID(T1.BRAND_CODE), 1, 'TOTAL', T1.BRAND_CODE)     AS BRAND_CODE
+                , DECODE(GROUPING_ID(T1.BRAND_CODE), 1, '합계', T2.NAME)       		AS BRAND_NAME
+                , DECODE(GROUPING_ID(T1.BRAND_CODE), 1, -1, T2.SEQ)            		AS BRAND_SEQ
+		    FROM SCMU.W_SOP_TB_VESSEL_M T1
+		
+		    LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                         AND T2.USE_YN     = 'Y'
+		                                         AND T2.CODE       = T1.BRAND_CODE
+		    WHERE 1 = 1
+		        AND T1.LIQUOR_CODE  = #{liquorCode, jdbcType=VARCHAR}
+		        AND T1.BRAND_CODE	IN
+				<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+		        AND T1.VESSEL_CODE  = #{vesselCode, jdbcType=VARCHAR}
+		        AND T1.COMPANY_TYPE = 'OWNER'
+		        AND T1.USE_YN		= 'Y'
+		    GROUP BY GROUPING SETS((T1.BRAND_CODE, T2.NAME, T2.SEQ), ())
+		) A
+		
+		CROSS JOIN
+		(
+		    SELECT 'ACTUAL_QTY'         AS TRANSACTION_TYPE_CODE, '판매'               AS TRANSACTION_TYPE_NAME, '!ALL'    AS INCLUDE_YN, '1' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'TOTAL_INPUT_QTY'    AS TRANSACTION_TYPE_CODE, '회수\n(합계)'        AS TRANSACTION_TYPE_NAME, 'Y'      AS INCLUDE_YN, '2' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'INPUT_QTY'          AS TRANSACTION_TYPE_CODE, '회수\n(정상입고)'    AS TRANSACTION_TYPE_NAME, '!ALL'    AS INCLUDE_YN, '3' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'OTHER_PURCHASE_QTY' AS TRANSACTION_TYPE_CODE, '타사 매입'           AS TRANSACTION_TYPE_NAME, 'Y'       AS INCLUDE_YN, '4' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'OTHER_SALES_QTY'    AS TRANSACTION_TYPE_CODE, '타사 매각'           AS TRANSACTION_TYPE_NAME, 'Y'       AS INCLUDE_YN, '5' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'RETURN_SALES_RATE'  AS TRANSACTION_TYPE_CODE, '회수율'      		AS TRANSACTION_TYPE_NAME, '!ALL'    AS INCLUDE_YN, '6' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'RETURN_TOTAL_RATE'  AS TRANSACTION_TYPE_CODE, '회수율\n(합계)'      AS TRANSACTION_TYPE_NAME, 'Y'       AS INCLUDE_YN, '7' AS TRANSACTION_TYPE_SEQ FROM DUAL
+		) B
+		WHERE 1 = 1
+		    AND A.BRAND_CODE != '-'
+		    AND B.INCLUDE_YN IN ('!ALL', #{includeYN, jdbcType=VARCHAR})
+		ORDER BY A.BRAND_SEQ, B.TRANSACTION_TYPE_SEQ
+	</select>
+	
+	<!-- 연간 조회 -->
+	<select id="searchYearly" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03050DaoMapper.searchYearly */
+			  T1.PERIOD_YYYYMMDD
+			, T1.LIQUOR_CODE
+			, MAX(T2.LIQUOR_DESC) 				AS LIQUOR_DESC
+			, T1.VESSEL_CODE
+			, MAX(NVL(T3.VESSEL_SORT, T4.NAME)) AS VESSEL_SORT
+			, T1.VOLUME_VALUE
+		<foreach collection="header" item="list" index="i">
+			, SUM(CASE WHEN T1.BRAND_CODE = #{list.BRAND_CODE, jdbcType=VARCHAR} THEN T1.${list.TRANSACTION_TYPE_CODE}
+					   ELSE 0
+					   END) AS ${list.NAME}
+		</foreach>
+		FROM
+		(
+			SELECT
+				  D.PERIOD_YYYYMMDD, D.LIQUOR_CODE, D.VESSEL_CODE, D.VOLUME_VALUE, D.BRAND_CODE
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.INPUT_CS_QTY, D.INPUT_QTY) 					AS INPUT_QTY 			-- 정상입고
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.OTHER_PURCHASE_CS_QTY, D.OTHER_PURCHASE_QTY) 	AS OTHER_PURCHASE_QTY 	-- 타사매입
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.OTHER_SALES_CS_QTY, D.OTHER_SALES_QTY) 		AS OTHER_SALES_QTY 		-- 타사매각
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.TOTAL_INPUT_CS_QTY, D.TOTAL_INPUT_QTY) 		AS TOTAL_INPUT_QTY 		-- 회수(총계)
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.ACTUAL_CS_QTY, D.ACTUAL_QTY) 					AS ACTUAL_QTY 			-- 판매
+				
+				, (CASE WHEN D.ACTUAL_QTY = 0 THEN 0
+						ELSE D.INPUT_QTY / D.ACTUAL_QTY
+						END) AS RETURN_SALES_RATE -- 회수율(영업)
+				, (CASE WHEN D.ACTUAL_QTY = 0 THEN 0
+						ELSE D.TOTAL_INPUT_QTY / D.ACTUAL_QTY
+						END) AS RETURN_TOTAL_RATE -- 회수율(합계)
+			FROM
+			(
+				SELECT
+				      C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE
+				    , DECODE(GROUPING_ID(C.BRAND_CODE), 1, 'TOTAL', C.BRAND_CODE) AS BRAND_CODE
+				    
+				    -- 정상입고
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.QTY
+				               ELSE 0
+				               END) AS INPUT_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS INPUT_CS_QTY
+				
+				    -- 타사매입
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.QTY
+				               ELSE 0
+				               END) AS OTHER_PURCHASE_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS OTHER_PURCHASE_CS_QTY
+				               
+				    -- 타사매각
+				    -- 타사 매각량 브랜드 매핑 + 당사 고병 매각량
+				    -- 생통은 타사 매입매각 X
+				    -- PBOX/PALLET는 타사매입을 위해서 당사 용기 매각 필요
+				    , SUM(CASE WHEN C.TRANSACTION_TYPE_CODE = '타사매각' THEN C.QTY
+				               ELSE 0
+				               END) AS OTHER_SALES_QTY
+				    , SUM(CASE WHEN C.TRANSACTION_TYPE_CODE = '타사매각' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS OTHER_SALES_CS_QTY
+				
+				    -- 회수(총계) = 정상입고 + 타사매입 - 타사매각
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.QTY
+				               WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.QTY
+				               WHEN C.TRANSACTION_TYPE_CODE = '타사매각' 						      THEN C.QTY * -1
+				               ELSE 0
+				               END) AS TOTAL_INPUT_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.CS_QTY
+				               WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.CS_QTY
+				               WHEN C.TRANSACTION_TYPE_CODE = '타사매각' 							  THEN C.CS_QTY * -1
+				               ELSE 0
+				               END) AS TOTAL_INPUT_CS_QTY
+				    
+				    -- 판매
+				    -- 팔레트의 판매량 = 용기마트 판매출고 + 유상출고
+				    -- 그 외 용기 판매량 = 판매마트
+                    , SUM(CASE WHEN C.VESSEL_CODE = 'PALLET' AND C.TRANSACTION_TYPE_CODE IN ('판매출고', '유상출고') AND C.COMPANY_TYPE = 'OWNER' THEN C.QTY
+                               WHEN C.VESSEL_CODE != 'PALLET' AND C.TRANSACTION_TYPE_CODE = '판매수량'                                            THEN C.QTY
+                               ELSE 0
+                               END) AS ACTUAL_QTY
+                    , SUM(CASE WHEN C.VESSEL_CODE = 'PALLET' AND C.TRANSACTION_TYPE_CODE IN ('판매출고', '유상출고') AND C.COMPANY_TYPE = 'OWNER' THEN C.CS_QTY
+                               WHEN C.VESSEL_CODE != 'PALLET' AND C.TRANSACTION_TYPE_CODE = '판매수량'                                            THEN C.CS_QTY
+                               ELSE 0
+                               END) AS ACTUAL_CS_QTY
+				FROM
+				(
+					-- 단순 C/S 계산
+					-- 사업부문/용기/용량/브랜드별 포장단위는 UNIQUE
+					-- 타사 용기 타사매각 건은 브랜드 매핑된 당사 용기의 포장단위로 단순 C/S를 계산
+					SELECT
+						  CA.PERIOD_YYYYMMDD, CA.LIQUOR_CODE, CA.VESSEL_CODE, CA.VOLUME_VALUE, CA.BRAND_CODE
+						, CA.TRANSACTION_TYPE_CODE, CA.COMPANY_TYPE
+						
+						, CA.QTY
+						, CA.QTY / GREATEST(NVL(CB.PBOX_PACKING_UNIT, 1), 1) AS CS_QTY
+					FROM
+					(
+					    -- 용기마트
+					    -- 연별 입고 데이터 추출
+					    -- 판매 데이터가 존재하더라도, 입고 데이터가 존재하지 않는 경우 존재
+					    -- 해당 경우 누락을 방지하기 위하여 LEFT JOIN 대신 UNION ALL 활용
+					    SELECT
+					          SUBSTR(AB.PERIOD_YYYYMMDD, 0, 4) AS PERIOD_YYYYMMDD
+					        , AA.LIQUOR_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.TRANSACTION_TYPE_CODE, AA.COMPANY_TYPE
+					        , SUM(AB.QTY)   AS QTY
+					
+					    FROM SCMU.W_SOP_TB_VESSEL_M AA
+					
+					    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE
+					
+					    WHERE 1 = 1
+					        AND AA.LIQUOR_CODE  = #{liquorCode, jdbcType=VARCHAR}
+					        AND AA.VESSEL_CODE  = #{vesselCode, jdbcType=VARCHAR}
+							AND AA.BRAND_CODE 	IN
+						<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+				            AND AA.VOLUME_VALUE IN
+		                <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+					        AND AA.USE_YN       = 'Y'
+					        
+					        AND AB.PERIOD_YYYYMMDD       BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+					        AND AB.TRANSACTION_TYPE_CODE IN ('정상입고', '타사매입', '타사매각', '유상출고', '판매출고')
+					        AND AB.QTY != 0
+					    GROUP BY SUBSTR(AB.PERIOD_YYYYMMDD, 0, 4), AA.LIQUOR_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.TRANSACTION_TYPE_CODE, AA.COMPANY_TYPE
+					
+					    -- 판매마트
+					    -- 브랜드 매핑
+					    UNION ALL
+						SELECT 
+						      SUBSTR(BA.PERIOD_YYYYMMDD, 0, 4) AS PERIOD_YYYYMMDD
+						    , BA.LIQUOR_CODE, BA.VESSEL_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE AS BRAND_CODE
+						    , '판매수량' 	AS TRANSACTION_TYPE_CODE
+						    , 'OWNER'		AS COMPANY_TYPE
+						    , SUM((BA.ACTUAL_SALE_QTY + BA.ACTUAL_DONATE_QTY) * NVL(BB.PACKING_UNIT, 1)) AS ACTUAL_SALE_QTY
+						FROM SCMU.M_SOP_TB_ITEM_SALE_F BA
+						
+						INNER JOIN EDW.W_CM_TB_FG_ITEM_M BB ON BB.ITEM_CODE = BA.ITEM_CODE
+						
+						INNER JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M BC ON BC.BRAND_CODE   = BA.BRAND_CODE
+						                                              AND BC.VOLUME_VALUE = BA.VOLUME_VALUE
+						WHERE 1 = 1
+						    AND BA.PERIOD_YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+						    AND BA.ITEM_TYPE IN ('FG', 'PH') -- 본 단위 반품 포함(PH)
+						    AND BA.MARKET_TYPE = 'D' -- 내수
+						    AND (BA.ACTUAL_SALE_QTY + BA.ACTUAL_DONATE_QTY) != 0
+						    
+						    AND BA.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+						    AND BA.VESSEL_CODE = #{vesselCode, jdbcType=VARCHAR}
+						    AND BA.VOLUME_VALUE IN
+						<foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+	                    	#{i, jdbcType=VARCHAR}
+	                	</foreach>
+							AND BC.VESSEL_BRAND_CODE IN
+						<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+						GROUP BY SUBSTR(BA.PERIOD_YYYYMMDD, 0, 4), BA.LIQUOR_CODE, BA.VESSEL_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE
+					) CA
+					LEFT JOIN
+					(
+						SELECT
+                              LIQUOR_CODE, VESSEL_CODE, VOLUME_VALUE, BRAND_CODE
+                            , MAX(NVL(PBOX_PACKING_UNIT, 1)) AS PBOX_PACKING_UNIT
+                        FROM SCMU.W_SOP_TB_VESSEL_M
+                        WHERE 1 = 1
+                            AND USE_YN = 'Y'
+                            AND COMPANY_TYPE = 'OWNER'
+                        GROUP BY LIQUOR_CODE, VESSEL_CODE, VOLUME_VALUE, BRAND_CODE
+					) CB ON CB.LIQUOR_CODE 	= CA.LIQUOR_CODE
+						AND CB.VESSEL_CODE 	= CA.VESSEL_CODE
+						AND CB.VOLUME_VALUE = CA.VOLUME_VALUE
+						AND CB.BRAND_CODE 	= CA.BRAND_CODE 
+					WHERE 1 = 1
+						AND CA.QTY != 0
+				) C
+				WHERE 1 = 1
+				GROUP BY GROUPING SETS(
+				                          (C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE, C.BRAND_CODE)
+				                        , (C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE)
+				                      )
+			) D
+		) T1
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M T2 ON T2.LIQUOR_CODE = T1.LIQUOR_CODE
+		
+		LEFT JOIN
+		(
+			SELECT DISTINCT VESSEL_CODE, VESSEL_SORT
+			FROM EDW.W_CM_TB_FG_ITEM_M
+		) T3 ON T3.VESSEL_CODE = T1.VESSEL_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T4 ON T4.GROUP_CODE = 'OTHER_VESSEL_LIST'
+											 AND T4.USE_YN	   = 'Y'
+											 AND T4.CODE	   = T1.VESSEL_CODE
+											 
+		GROUP BY T1.PERIOD_YYYYMMDD, T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.VOLUME_VALUE
+		ORDER BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.PERIOD_YYYYMMDD, T1.VOLUME_VALUE
+	</select>
+	
+	<!-- 월간 조회 -->
+	<select id="searchMonthly" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03050DaoMapper.searchMonthly */
+			  TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMM'), 'YYYY-MM') AS PERIOD_YYYYMMDD
+			, T1.LIQUOR_CODE
+			, MAX(T2.LIQUOR_DESC) 				AS LIQUOR_DESC
+			, T1.VESSEL_CODE
+			, MAX(NVL(T3.VESSEL_SORT, T4.NAME)) AS VESSEL_SORT
+			, T1.VOLUME_VALUE
+		<foreach collection="header" item="list" index="i">
+			, SUM(CASE WHEN T1.BRAND_CODE = #{list.BRAND_CODE, jdbcType=VARCHAR} THEN T1.${list.TRANSACTION_TYPE_CODE}
+					   ELSE 0
+					   END) AS ${list.NAME}
+		</foreach>
+		FROM
+		(
+			SELECT
+				  D.PERIOD_YYYYMMDD, D.LIQUOR_CODE, D.VESSEL_CODE, D.VOLUME_VALUE, D.BRAND_CODE
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.INPUT_CS_QTY, D.INPUT_QTY) 					AS INPUT_QTY 			-- 정상입고
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.OTHER_PURCHASE_CS_QTY, D.OTHER_PURCHASE_QTY) 	AS OTHER_PURCHASE_QTY 	-- 타사매입
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.OTHER_SALES_CS_QTY, D.OTHER_SALES_QTY) 		AS OTHER_SALES_QTY 		-- 타사매각
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.TOTAL_INPUT_CS_QTY, D.TOTAL_INPUT_QTY) 		AS TOTAL_INPUT_QTY 		-- 회수(총계)
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.ACTUAL_CS_QTY, D.ACTUAL_QTY) 					AS ACTUAL_QTY 			-- 판매
+				
+				, (CASE WHEN D.ACTUAL_QTY = 0 THEN 0
+						ELSE D.INPUT_QTY / D.ACTUAL_QTY
+						END) AS RETURN_SALES_RATE -- 회수율(영업)
+				, (CASE WHEN D.ACTUAL_QTY = 0 THEN 0
+						ELSE D.TOTAL_INPUT_QTY / D.ACTUAL_QTY
+						END) AS RETURN_TOTAL_RATE -- 회수율(합계)
+			FROM
+			(
+				SELECT
+				      C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE
+				    , DECODE(GROUPING_ID(C.BRAND_CODE), 1, 'TOTAL', C.BRAND_CODE) AS BRAND_CODE
+				    
+				    -- 정상입고
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.QTY
+				               ELSE 0
+				               END) AS INPUT_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS INPUT_CS_QTY
+				
+				    -- 타사매입
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.QTY
+				               ELSE 0
+				               END) AS OTHER_PURCHASE_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS OTHER_PURCHASE_CS_QTY
+				               
+				    -- 타사매각
+				    -- 타사 매각량 브랜드 매핑 + 당사 고병 매각량
+				    -- 생통은 타사 매입매각 X
+				    -- PBOX/PALLET는 타사매입을 위해서 당사 용기 매각 필요
+				    , SUM(CASE WHEN C.TRANSACTION_TYPE_CODE = '타사매각' THEN C.QTY
+				               ELSE 0
+				               END) AS OTHER_SALES_QTY
+				    , SUM(CASE WHEN C.TRANSACTION_TYPE_CODE = '타사매각' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS OTHER_SALES_CS_QTY
+				
+				    -- 회수(총계) = 정상입고 + 타사매입 - 타사매각
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.QTY
+				               WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.QTY
+				               WHEN C.TRANSACTION_TYPE_CODE = '타사매각' 						      THEN C.QTY * -1
+				               ELSE 0
+				               END) AS TOTAL_INPUT_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.CS_QTY
+				               WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.CS_QTY
+				               WHEN C.TRANSACTION_TYPE_CODE = '타사매각' 							  THEN C.CS_QTY * -1
+				               ELSE 0
+				               END) AS TOTAL_INPUT_CS_QTY
+				    
+				    -- 판매
+				    -- 팔레트의 판매량 = 용기마트 판매출고 + 유상출고
+				    -- 그 외 용기 판매량 = 판매마트
+                    , SUM(CASE WHEN C.VESSEL_CODE = 'PALLET' AND C.TRANSACTION_TYPE_CODE IN ('판매출고', '유상출고') AND C.COMPANY_TYPE = 'OWNER' THEN C.QTY
+                               WHEN C.VESSEL_CODE != 'PALLET' AND C.TRANSACTION_TYPE_CODE = '판매수량'                                            THEN C.QTY
+                               ELSE 0
+                               END) AS ACTUAL_QTY
+                    , SUM(CASE WHEN C.VESSEL_CODE = 'PALLET' AND C.TRANSACTION_TYPE_CODE IN ('판매출고', '유상출고') AND C.COMPANY_TYPE = 'OWNER' THEN C.CS_QTY
+                               WHEN C.VESSEL_CODE != 'PALLET' AND C.TRANSACTION_TYPE_CODE = '판매수량'                                            THEN C.CS_QTY
+                               ELSE 0
+                               END) AS ACTUAL_CS_QTY
+				FROM
+				(
+					-- 단순 C/S 계산
+					-- 사업부문/용기/용량/브랜드별 포장단위는 UNIQUE
+					-- 타사 용기 타사매각 건은 브랜드 매핑된 당사 용기의 포장단위로 단순 C/S를 계산
+					SELECT
+						  CA.PERIOD_YYYYMMDD, CA.LIQUOR_CODE, CA.VESSEL_CODE, CA.VOLUME_VALUE, CA.BRAND_CODE
+						, CA.TRANSACTION_TYPE_CODE, CA.COMPANY_TYPE
+						
+						, CA.QTY
+						, CA.QTY / GREATEST(NVL(CB.PBOX_PACKING_UNIT, 1), 1) AS CS_QTY 
+					FROM
+					(
+					    -- 용기마트
+					    -- 월별 입고 데이터 추출
+					    -- 판매 데이터가 존재하더라도, 입고 데이터가 존재하지 않는 경우 존재
+					    -- 해당 경우 누락을 방지하기 위하여 LEFT JOIN 대신 UNION ALL 활용
+					    SELECT
+					          SUBSTR(AB.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+					        , AA.LIQUOR_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.TRANSACTION_TYPE_CODE, AA.COMPANY_TYPE
+					        , SUM(AB.QTY)   AS QTY
+					
+					    FROM SCMU.W_SOP_TB_VESSEL_M AA
+					
+					    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE
+					
+					    WHERE 1 = 1
+					        AND AA.LIQUOR_CODE  = #{liquorCode, jdbcType=VARCHAR}
+					        AND AA.VESSEL_CODE  = #{vesselCode, jdbcType=VARCHAR}
+							AND AA.BRAND_CODE 	IN
+						<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+				            AND AA.VOLUME_VALUE IN
+		                <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+					        AND AA.USE_YN       = 'Y'
+					        
+					        AND AB.PERIOD_YYYYMMDD       BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+					        AND AB.TRANSACTION_TYPE_CODE IN ('정상입고', '타사매입', '타사매각', '유상출고', '판매출고')
+					        AND AB.QTY != 0
+					    GROUP BY SUBSTR(AB.PERIOD_YYYYMMDD, 0, 6), AA.LIQUOR_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.TRANSACTION_TYPE_CODE, AA.COMPANY_TYPE
+					
+					    -- 판매마트
+					    -- 브랜드 매핑
+					    UNION ALL
+						SELECT 
+						      SUBSTR(BA.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+						    , BA.LIQUOR_CODE, BA.VESSEL_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE AS BRAND_CODE
+						    , '판매수량' 	AS TRANSACTION_TYPE_CODE
+						    , 'OWNER'		AS COMPANY_TYPE
+						    , SUM((BA.ACTUAL_SALE_QTY + BA.ACTUAL_DONATE_QTY) * NVL(BB.PACKING_UNIT, 1)) AS ACTUAL_SALE_QTY
+						FROM SCMU.M_SOP_TB_ITEM_SALE_F BA
+						
+						INNER JOIN EDW.W_CM_TB_FG_ITEM_M BB ON BB.ITEM_CODE = BA.ITEM_CODE
+						
+						INNER JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M BC ON BC.BRAND_CODE   = BA.BRAND_CODE
+						                                              AND BC.VOLUME_VALUE = BA.VOLUME_VALUE
+						WHERE 1 = 1
+						    AND BA.PERIOD_YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+						    AND BA.ITEM_TYPE IN ('FG', 'PH') -- 본 단위 반품 포함(PH)
+						    AND BA.MARKET_TYPE = 'D' -- 내수
+						    AND (BA.ACTUAL_SALE_QTY + BA.ACTUAL_DONATE_QTY) != 0
+						    
+						    AND BA.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+						    AND BA.VESSEL_CODE = #{vesselCode, jdbcType=VARCHAR}
+						    AND BA.VOLUME_VALUE IN
+						<foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+	                    	#{i, jdbcType=VARCHAR}
+	                	</foreach>
+							AND BC.VESSEL_BRAND_CODE IN
+						<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+						GROUP BY SUBSTR(BA.PERIOD_YYYYMMDD, 0, 6), BA.LIQUOR_CODE, BA.VESSEL_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE
+					) CA
+					LEFT JOIN
+					(
+						SELECT
+                              LIQUOR_CODE, VESSEL_CODE, VOLUME_VALUE, BRAND_CODE
+                            , MAX(NVL(PBOX_PACKING_UNIT, 1)) AS PBOX_PACKING_UNIT
+                        FROM SCMU.W_SOP_TB_VESSEL_M
+                        WHERE 1 = 1
+                            AND USE_YN = 'Y'
+                            AND COMPANY_TYPE = 'OWNER'
+                        GROUP BY LIQUOR_CODE, VESSEL_CODE, VOLUME_VALUE, BRAND_CODE
+					) CB ON CB.LIQUOR_CODE 	= CA.LIQUOR_CODE
+						AND CB.VESSEL_CODE 	= CA.VESSEL_CODE
+						AND CB.VOLUME_VALUE = CA.VOLUME_VALUE
+						AND CB.BRAND_CODE 	= CA.BRAND_CODE 
+					WHERE 1 = 1
+						AND CA.QTY != 0
+				) C
+				GROUP BY GROUPING SETS(
+				                          (C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE, C.BRAND_CODE)
+				                        , (C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE)
+				                      )
+			) D
+		) T1
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M T2 ON T2.LIQUOR_CODE = T1.LIQUOR_CODE
+		
+		LEFT JOIN
+		(
+			SELECT DISTINCT VESSEL_CODE, VESSEL_SORT
+			FROM EDW.W_CM_TB_FG_ITEM_M
+		) T3 ON T3.VESSEL_CODE = T1.VESSEL_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T4 ON T4.GROUP_CODE = 'OTHER_VESSEL_LIST'
+											 AND T4.USE_YN	   = 'Y'
+											 AND T4.CODE	   = T1.VESSEL_CODE
+											 
+		GROUP BY T1.PERIOD_YYYYMMDD, T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.VOLUME_VALUE
+		ORDER BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.PERIOD_YYYYMMDD, T1.VOLUME_VALUE
+	</select>
+	
+	<!-- 일간 조회 -->
+	<select id="searchDaily" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03050DaoMapper.searchDaily */
+			  TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS PERIOD_YYYYMMDD
+			, T1.LIQUOR_CODE
+			, MAX(T2.LIQUOR_DESC) 				AS LIQUOR_DESC
+			, T1.VESSEL_CODE
+			, MAX(NVL(T3.VESSEL_SORT, T4.NAME)) AS VESSEL_SORT
+			, T1.VOLUME_VALUE
+		<foreach collection="header" item="list" index="i">
+			, SUM(CASE WHEN T1.BRAND_CODE = #{list.BRAND_CODE, jdbcType=VARCHAR} THEN T1.${list.TRANSACTION_TYPE_CODE}
+					   ELSE 0
+					   END) AS ${list.NAME}
+		</foreach>
+		FROM
+		(
+			SELECT
+				  D.PERIOD_YYYYMMDD, D.LIQUOR_CODE, D.VESSEL_CODE, D.VOLUME_VALUE, D.BRAND_CODE
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.INPUT_CS_QTY, D.INPUT_QTY) 					AS INPUT_QTY 			-- 정상입고
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.OTHER_PURCHASE_CS_QTY, D.OTHER_PURCHASE_QTY) 	AS OTHER_PURCHASE_QTY 	-- 타사매입
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.OTHER_SALES_CS_QTY, D.OTHER_SALES_QTY) 		AS OTHER_SALES_QTY 		-- 타사매각
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.TOTAL_INPUT_CS_QTY, D.TOTAL_INPUT_QTY) 		AS TOTAL_INPUT_QTY 		-- 회수(총계)
+				, DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_CS_QTY', D.ACTUAL_CS_QTY, D.ACTUAL_QTY) 					AS ACTUAL_QTY 			-- 판매
+				
+				, (CASE WHEN D.ACTUAL_QTY = 0 THEN 0
+						ELSE D.INPUT_QTY / D.ACTUAL_QTY
+						END) AS RETURN_SALES_RATE -- 회수율(영업)
+				, (CASE WHEN D.ACTUAL_QTY = 0 THEN 0
+						ELSE D.TOTAL_INPUT_QTY / D.ACTUAL_QTY
+						END) AS RETURN_TOTAL_RATE -- 회수율(합계)
+			FROM
+			(
+				SELECT
+				      C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE
+				    , DECODE(GROUPING_ID(C.BRAND_CODE), 1, 'TOTAL', C.BRAND_CODE) AS BRAND_CODE
+				    
+				    -- 정상입고
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.QTY
+				               ELSE 0
+				               END) AS INPUT_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS INPUT_CS_QTY
+				
+				    -- 타사매입
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.QTY
+				               ELSE 0
+				               END) AS OTHER_PURCHASE_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS OTHER_PURCHASE_CS_QTY
+				               
+				    -- 타사매각
+				    -- 타사 매각량 브랜드 매핑 + 당사 고병 매각량
+				    -- 생통은 타사 매입매각 X
+				    -- PBOX/PALLET는 타사매입을 위해서 당사 용기 매각 필요
+				    , SUM(CASE WHEN C.TRANSACTION_TYPE_CODE = '타사매각' THEN C.QTY
+				               ELSE 0
+				               END) AS OTHER_SALES_QTY
+				    , SUM(CASE WHEN C.TRANSACTION_TYPE_CODE = '타사매각' THEN C.CS_QTY
+				               ELSE 0
+				               END) AS OTHER_SALES_CS_QTY
+				
+				    -- 회수(총계) = 정상입고 + 타사매입 - 타사매각
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.QTY
+				               WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.QTY
+				               WHEN C.TRANSACTION_TYPE_CODE = '타사매각' 						      THEN C.QTY * -1
+				               ELSE 0
+				               END) AS TOTAL_INPUT_QTY
+				    , SUM(CASE WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '정상입고' THEN C.CS_QTY
+				               WHEN C.COMPANY_TYPE = 'OWNER' AND C.TRANSACTION_TYPE_CODE = '타사매입' THEN C.CS_QTY
+				               WHEN C.TRANSACTION_TYPE_CODE = '타사매각' 							  THEN C.CS_QTY * -1
+				               ELSE 0
+				               END) AS TOTAL_INPUT_CS_QTY
+				    
+				    -- 판매
+				    -- 팔레트의 판매량 = 용기마트 판매출고 + 유상출고
+				    -- 그 외 용기 판매량 = 판매마트
+                    , SUM(CASE WHEN C.VESSEL_CODE = 'PALLET' AND C.TRANSACTION_TYPE_CODE IN ('판매출고', '유상출고') AND C.COMPANY_TYPE = 'OWNER' THEN C.QTY
+                               WHEN C.VESSEL_CODE != 'PALLET' AND C.TRANSACTION_TYPE_CODE = '판매수량'                                            THEN C.QTY
+                               ELSE 0
+                               END) AS ACTUAL_QTY
+                    , SUM(CASE WHEN C.VESSEL_CODE = 'PALLET' AND C.TRANSACTION_TYPE_CODE IN ('판매출고', '유상출고') AND C.COMPANY_TYPE = 'OWNER' THEN C.CS_QTY
+                               WHEN C.VESSEL_CODE != 'PALLET' AND C.TRANSACTION_TYPE_CODE = '판매수량'                                            THEN C.CS_QTY
+                               ELSE 0
+                               END) AS ACTUAL_CS_QTY
+				FROM
+				(
+					-- 단순 C/S 계산
+					-- 사업부문/용기/용량/브랜드별 포장단위는 UNIQUE
+					-- 타사 용기 타사매각 건은 브랜드 매핑된 당사 용기의 포장단위로 단순 C/S를 계산
+					SELECT
+						  CA.PERIOD_YYYYMMDD, CA.LIQUOR_CODE, CA.VESSEL_CODE, CA.VOLUME_VALUE, CA.BRAND_CODE
+						, CA.TRANSACTION_TYPE_CODE, CA.COMPANY_TYPE
+						
+						, CA.QTY
+						, CA.QTY / GREATEST(NVL(CB.PBOX_PACKING_UNIT, 1), 1) AS CS_QTY 
+					FROM
+					(
+					    -- 용기마트
+					    -- 연별 입고 데이터 추출
+					    -- 판매 데이터가 존재하더라도, 입고 데이터가 존재하지 않는 경우 존재
+					    -- 해당 경우 누락을 방지하기 위하여 LEFT JOIN 대신 UNION ALL 활용
+					    SELECT
+					          AB.PERIOD_YYYYMMDD
+					        , AA.LIQUOR_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.TRANSACTION_TYPE_CODE, AA.COMPANY_TYPE
+					        , SUM(AB.QTY)   AS QTY
+					
+					    FROM SCMU.W_SOP_TB_VESSEL_M AA
+					
+					    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE
+					
+					    WHERE 1 = 1
+					        AND AA.LIQUOR_CODE  = #{liquorCode, jdbcType=VARCHAR}
+					        AND AA.VESSEL_CODE  = #{vesselCode, jdbcType=VARCHAR}
+							AND AA.BRAND_CODE 	IN
+						<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+				            AND AA.VOLUME_VALUE IN
+		                <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+					        AND AA.USE_YN       = 'Y'
+					        
+					        AND AB.PERIOD_YYYYMMDD       BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+					        AND AB.TRANSACTION_TYPE_CODE IN ('정상입고', '타사매입', '타사매각', '유상출고', '판매출고')
+					        AND AB.QTY != 0
+					    GROUP BY AB.PERIOD_YYYYMMDD, AA.LIQUOR_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.TRANSACTION_TYPE_CODE, AA.COMPANY_TYPE
+					
+						-- 판매마트
+					    -- 브랜드 매핑
+					    UNION ALL
+						SELECT 
+						      BA.PERIOD_YYYYMMDD
+						    , BA.LIQUOR_CODE, BA.VESSEL_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE AS BRAND_CODE
+						    , '판매수량' 	AS TRANSACTION_TYPE_CODE
+						    , 'OWNER'		AS COMPANY_TYPE
+						    , SUM((BA.ACTUAL_SALE_QTY + BA.ACTUAL_DONATE_QTY) * NVL(BB.PACKING_UNIT, 1)) AS ACTUAL_SALE_QTY
+						FROM SCMU.M_SOP_TB_ITEM_SALE_F BA
+						
+						INNER JOIN EDW.W_CM_TB_FG_ITEM_M BB ON BB.ITEM_CODE = BA.ITEM_CODE
+						
+						INNER JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M BC ON BC.BRAND_CODE   = BA.BRAND_CODE
+						                                              AND BC.VOLUME_VALUE = BA.VOLUME_VALUE
+						WHERE 1 = 1
+						    AND BA.PERIOD_YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+						    AND BA.ITEM_TYPE IN ('FG', 'PH') -- 본 단위 반품 포함(PH)
+						    AND BA.MARKET_TYPE = 'D' -- 내수
+						    AND (BA.ACTUAL_SALE_QTY + BA.ACTUAL_DONATE_QTY) != 0
+						    
+						    AND BA.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+						    AND BA.VESSEL_CODE = #{vesselCode, jdbcType=VARCHAR}
+						    AND BA.VOLUME_VALUE IN
+						<foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+	                    	#{i, jdbcType=VARCHAR}
+	                	</foreach>
+							AND BC.VESSEL_BRAND_CODE IN
+						<foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+		                    #{i, jdbcType=VARCHAR}
+		                </foreach>
+						GROUP BY BA.PERIOD_YYYYMMDD, BA.LIQUOR_CODE, BA.VESSEL_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE
+					) CA
+					LEFT JOIN
+					(
+						SELECT
+                              LIQUOR_CODE, VESSEL_CODE, VOLUME_VALUE, BRAND_CODE
+                            , MAX(NVL(PBOX_PACKING_UNIT, 1)) AS PBOX_PACKING_UNIT
+                        FROM SCMU.W_SOP_TB_VESSEL_M
+                        WHERE 1 = 1
+                            AND USE_YN = 'Y'
+                            AND COMPANY_TYPE = 'OWNER'
+                        GROUP BY LIQUOR_CODE, VESSEL_CODE, VOLUME_VALUE, BRAND_CODE
+					) CB ON CB.LIQUOR_CODE 	= CA.LIQUOR_CODE
+						AND CB.VESSEL_CODE 	= CA.VESSEL_CODE
+						AND CB.VOLUME_VALUE = CA.VOLUME_VALUE
+						AND CB.BRAND_CODE 	= CA.BRAND_CODE 
+					WHERE 1 = 1
+						AND CA.QTY != 0
+				) C
+				WHERE 1 = 1
+				GROUP BY GROUPING SETS(
+				                          (C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE, C.BRAND_CODE)
+				                        , (C.PERIOD_YYYYMMDD, C.LIQUOR_CODE, C.VESSEL_CODE, C.VOLUME_VALUE)
+				                      )
+			) D
+		) T1
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M T2 ON T2.LIQUOR_CODE = T1.LIQUOR_CODE
+		
+		LEFT JOIN
+		(
+			SELECT DISTINCT VESSEL_CODE, VESSEL_SORT
+			FROM EDW.W_CM_TB_FG_ITEM_M
+		) T3 ON T3.VESSEL_CODE = T1.VESSEL_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T4 ON T4.GROUP_CODE = 'OTHER_VESSEL_LIST'
+											 AND T4.USE_YN	   = 'Y'
+											 AND T4.CODE	   = T1.VESSEL_CODE
+											 
+		GROUP BY T1.PERIOD_YYYYMMDD, T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.VOLUME_VALUE
+		ORDER BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.PERIOD_YYYYMMDD, T1.VOLUME_VALUE
+	</select>
+</mapper>

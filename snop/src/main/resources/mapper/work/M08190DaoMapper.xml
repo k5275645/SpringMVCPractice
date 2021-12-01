@@ -1,0 +1,550 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 용기 관리 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08190DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.search */
+           A.ITEM_CODE
+         , '[' || A.ITEM_CODE || '] ' || B.DESCRIPTION AS ITEM_CODE_NAME
+         , A.LIQUOR_CODE                        -- 사업부문코드 : EDW.W_CM_TB_LIQUOR_M.LIQUOR_CODE 참고. 10(맥주), 20(소주), 00(공통)
+         -- TreeGrid의 Enum값이 '-'는 제대로 처리되지 않아서, '"-"'로 변경해서 처리
+         , DECODE(A.BRAND_CODE, '-', '"-"', A.BRAND_CODE)       AS BRAND_CODE   -- 브랜드코드 : EDW.W_CM_TB_BRAND_M.BRAND_CODE 참고
+         , DECODE(A.VOLUME_VALUE, '-', '"-"', A.VOLUME_VALUE)   AS VOLUME_VALUE -- 용량 : EDW.W_CM_TB_FG_ITEM_M.VOLUME_VALUE 참고
+         , DECODE(A.VESSEL_CODE, '-', '"-"', A.VESSEL_CODE)     AS VESSEL_CODE  -- 용기코드 : 기존 제품의 용기코드(EDW.W_CM_TB_FG_ITEM_M.VESSEL_CODE)에 공통그룹코드(OTHER_VESSEL_LIST) 추가
+         , DECODE(A.BOTL_TYPE, '-', '"-"', A.BOTL_TYPE)         AS BOTL_TYPE    -- 병유형 : 공통그룹코드(BOTL_TYPE) 참고. OLD(고병), NEW(신병), FAULTY(불병), -(N/A)
+         , DECODE(A.KEG_TYPE, '-', '"-"', A.KEG_TYPE)           AS KEG_TYPE     -- 생통 유형 : 공통그룹코드(KEG_TYPE) 참고. COMMON(일반), PAINT(도색), -(N/A)
+         , DECODE(A.COMPANY_TYPE, '-', '"-"', A.COMPANY_TYPE)   AS COMPANY_TYPE -- 회사유형 : 공통그룹코드(COMPANY_TYPE)
+         , A.USE_YN
+         , B.SEGMENT1, B.SEGMENT2, B.SEGMENT3   -- 폼목 대/중/소분류명
+         , A.PBOX_PACKING_UNIT                                                  -- P-BOX 포장단위 : 공병 대상으로 P-BOX에 담을 때의 포장단위 개수(본을 P-BOX 단순c/s로 변경하기 위한 단위). 공병만 대상.
+         , C.ASSET_BRAND_VOLUME_LIST                                            -- 용기코드에 매핑된 용기자산 리스트
+         , A.ABBR_ITEM_NAME                                                     -- 약어
+         
+      FROM SCMU.W_SOP_TB_VESSEL_M A -- 용기 마스터 : SnOP에서 사용하는 용기만 관리
+ LEFT JOIN EDW.W_WS_TB_RI_ITEM_M  B -- 제품 마스터 중 용기만
+        ON B.ITEM_CODE = A.ITEM_CODE
+ LEFT JOIN (    -- C. 용기코드에 매핑된 용기자산 리스트
+                SELECT VESSEL_ITEM_CODE
+                     , LISTAGG(ASSET_BRAND_NAME || '-' || ASSET_VOLUME_NAME, ';') WITHIN GROUP(ORDER BY SEQNO) AS ASSET_BRAND_VOLUME_LIST
+                  FROM SCMU.W_SOP_TB_VESSEL_ASSET_MAP_M
+                 WHERE 1 = 1
+                 GROUP BY VESSEL_ITEM_CODE
+           )                      C
+        ON C.VESSEL_ITEM_CODE = A.ITEM_CODE
+        
+     WHERE 1 = 1
+       AND (
+                (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{liquorCode, jdbcType=VARCHAR} = A.LIQUOR_CODE)
+           )
+     ORDER BY A.LIQUOR_CODE
+            , CASE WHEN B.SEGMENT3 = '회수공병'  THEN 1
+                   WHEN B.SEGMENT3 = '생맥주통'  THEN 2
+                   WHEN B.SEGMENT3 = 'P-BOX'     THEN 3
+                   WHEN B.SEGMENT3 = 'PALLET'    THEN 4
+                   WHEN B.SEGMENT3 = '타사공병'  THEN 5
+                   WHEN B.SEGMENT3 = '타사P-BOX' THEN 6
+                   ELSE                               999
+              END
+            , B.SEGMENT3, B.DESCRIPTION, A.ITEM_CODE
+    </select>
+    
+    <!-- 용기 제품마스터 조회 -->
+    <select id="selectRiItemList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.selectRiItemList */
+       ITEM_CODE, DESCRIPTION AS ITEM_NAME
+     , '[' || ITEM_CODE || '] ' || DESCRIPTION AS ITEM_CODE_NAME
+     , ITEM_TYPE, ITEM_STATUS, PRIMARY_UOM_CODE
+     , LIQUOR_CODE
+     , VESSEL_CODE, VESSEL_SORT
+     , VOLUME_VALUE
+     , SEGMENT1, SEGMENT2, SEGMENT3
+  FROM EDW.W_WS_TB_RI_ITEM_M
+ WHERE 1 = 1
+   AND ITEM_STATUS = 'Active'
+   AND SEGMENT2    = '회수용기'
+ ORDER BY DECODE(SEGMENT3, '회수공병', -1, 1), SEGMENT3, ITEM_NAME, ITEM_CODE
+    </select>
+    
+    <!-- 용기관리용 용기 리스트 조회 -->
+    <select id="selectVesselList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.selectVesselList */
+       CODE, NAME
+  FROM (    -- 1. 제품마스터의 용기 리스트
+            SELECT VESSEL_CODE                                  AS CODE
+                 , MAX(VESSEL_SORT)                             AS NAME
+                 , 10000 + TO_NUMBER(MAX(VESSEL_SORT_ORDER))    AS SEQ
+              FROM EDW.W_CM_TB_FG_ITEM_M
+             WHERE ITEM_TYPE = 'FG'
+               AND ITEM_STATUS = 'Active'
+               AND LIQUOR_CODE IN ('10', '20')
+             GROUP BY VESSEL_CODE
+             UNION ALL
+            -- 2. 용기관리에서 추가로 사용하는 용기 리스트(공통그룹코드=OTHER_VESSEL_LIST)
+            SELECT CODE, NAME, 20000 + SEQ AS SEQ
+              FROM SCMU.W_SOP_TB_COM_CODE_M
+             WHERE 1 = 1
+               AND GROUP_CODE = 'OTHER_VESSEL_LIST'
+               AND USE_YN     = 'Y'
+       )
+ WHERE 1 = 1
+ ORDER BY SEQ, NAME
+    </select>
+    
+    <!-- 데이터 저장 : 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+WITH TBL AS ( /* com.hitejinro.snop.work.dao.M08190DaoMapper.validate */
+    -- TreeGrid의 Enum값이 '-'는 제대로 처리되지 않아서, '"-"'로 변경해서 처리
+        <foreach collection="saveData" item="list" separator="UNION ALL" index="i">
+    SELECT #{list.ITEM_CODE, jdbcType=VARCHAR}                                                                  AS ITEM_CODE
+         , #{list.LIQUOR_CODE, jdbcType=VARCHAR}                                                                AS LIQUOR_CODE
+         , DECODE(#{list.BRAND_CODE, jdbcType=VARCHAR}, '"-"', '-', #{list.BRAND_CODE, jdbcType=VARCHAR})       AS BRAND_CODE
+         , DECODE(#{list.VOLUME_VALUE, jdbcType=VARCHAR}, '"-"', '-', #{list.VOLUME_VALUE, jdbcType=VARCHAR})   AS VOLUME_VALUE
+         , DECODE(#{list.VESSEL_CODE, jdbcType=VARCHAR}, '"-"', '-', #{list.VESSEL_CODE, jdbcType=VARCHAR})     AS VESSEL_CODE
+         , DECODE(#{list.BOTL_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.BOTL_TYPE, jdbcType=VARCHAR})         AS BOTL_TYPE
+         , DECODE(#{list.KEG_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.KEG_TYPE, jdbcType=VARCHAR})           AS KEG_TYPE
+         , DECODE(#{list.COMPANY_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.COMPANY_TYPE, jdbcType=VARCHAR})   AS COMPANY_TYPE
+         , DECODE(#{list.USE_YN, jdbcType=VARCHAR}, '"-"', '-', #{list.USE_YN, jdbcType=VARCHAR})               AS USE_YN
+         , #{list.ABBR_ITEM_NAME, jdbcType=VARCHAR}                                                             AS ABBR_ITEM_NAME
+         
+         , #{list.action, jdbcType=VARCHAR}                                                                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+         , ROWNUM                                                                                               AS RNUM
+      FROM DUAL
+        </foreach>
+)
+SELECT COUNT(1)                                                     AS ERR_CNT
+     , LISTAGG('- 용기코드=' || ITEM_CODE || ' : ' || SUBSTR(ERR_MSG_DELETE || ERR_MSG_UPDATE || ERR_MSG_INSERT, 3)
+               , '\r\n') WITHIN GROUP (ORDER BY RNUM, ITEM_CODE)    AS ERR_MSG
+  FROM (
+            SELECT X.RNUM, X.ITEM_CODE
+                 , CASE WHEN X.ROW_ACTION IN ('delete') AND A.ITEM_CODE IS NULL             THEN ', ' || '존재하지 않는 용기 삭제' END AS ERR_MSG_DELETE -- 삭제 기본 체크
+                 , CASE WHEN X.ROW_ACTION IN ('update') AND A.ITEM_CODE IS NULL             THEN ', ' || '존재하지 않는 용기 수정' END AS ERR_MSG_UPDATE -- 수정 기본 체크
+                 , CASE WHEN X.ROW_ACTION IN ('insert') AND A.ITEM_CODE IS NOT NULL AND (SELECT COUNT(1) FROM TBL WHERE ROW_ACTION = 'delete' AND ITEM_CODE = X.ITEM_CODE) = 0
+                                                                                            THEN ', ' || '존재하는 용기 추가'
+                        WHEN X.ROW_ACTION IN ('insert') AND A.ITEM_CODE IS NULL AND B.ITEM_CODE IS NULL
+                                                                                            THEN ', ' || '허용되지 않는 용기 추가' END AS ERR_MSG_INSERT -- 신규 기본 체크
+              FROM TBL                      X
+         LEFT JOIN SCMU.W_SOP_TB_VESSEL_M   A   -- 중복 체크
+                ON A.ITEM_CODE = X.ITEM_CODE
+         LEFT JOIN EDW.W_WS_TB_RI_ITEM_M    B   -- 제품마스터 체크
+                ON B.ITEM_CODE = X.ITEM_CODE
+         LEFT JOIN EDW.W_CM_TB_LIQUOR_M     C   -- 사업부문 체크
+                ON C.LIQUOR_CODE = X.LIQUOR_CODE
+         LEFT JOIN EDW.W_CM_TB_BRAND_M      D   -- 브랜드 체크
+                ON D.OU_CODE    = 'HJ0'
+               AND D.BRAND_CODE = X.BRAND_CODE
+         LEFT JOIN (
+                        SELECT VOLUME_VALUE
+                          FROM EDW.W_CM_TB_FG_ITEM_M
+                         WHERE 1 = 1
+                           AND ITEM_TYPE   = 'FG'
+                           AND ITEM_STATUS = 'Active'
+                         GROUP BY VOLUME_VALUE
+                   )                        E   -- 용량 체크
+                ON E.VOLUME_VALUE = X.VOLUME_VALUE
+         LEFT JOIN (
+                        SELECT VESSEL_CODE, MAX(VESSEL_SORT) AS VESSEL_NAME
+                          FROM EDW.W_CM_TB_FG_ITEM_M
+                         WHERE 1 = 1
+                           AND ITEM_TYPE   = 'FG'
+                           AND ITEM_STATUS = 'Active'
+                         GROUP BY VESSEL_CODE
+                   )                        FA  -- 용기 체크 : 기본 용기
+                ON FA.VESSEL_CODE = X.VESSEL_CODE
+         LEFT JOIN (
+                        SELECT CODE AS VESSEL_CODE, NAME AS VESSEL_NAME
+                          FROM SCMU.W_SOP_TB_COM_CODE_M
+                         WHERE 1 = 1
+                           AND GROUP_CODE = 'OTHER_VESSEL_LIST' -- 추가 용기 리스트
+                           AND USE_YN     = 'Y'
+                   )                        FB   -- 용기 체크 : 추가 용기(P-BOX, PALLET)
+                ON FB.VESSEL_CODE = X.VESSEL_CODE
+         LEFT JOIN (
+                        SELECT CODE AS BOTL_TYPE, NAME AS BOTL_TYPE_DESC
+                          FROM SCMU.W_SOP_TB_COM_CODE_M
+                         WHERE 1 = 1
+                           AND GROUP_CODE = 'BOTL_TYPE' -- 병 유형
+                           AND USE_YN     = 'Y'
+                   )                        G   -- 병유형
+                ON G.BOTL_TYPE = X.BOTL_TYPE
+         LEFT JOIN (
+                        SELECT CODE AS COMPANY_TYPE, NAME AS COMPANY_TYPE_DESC
+                          FROM SCMU.W_SOP_TB_COM_CODE_M
+                         WHERE 1 = 1
+                           AND GROUP_CODE = 'COMPANY_TYPE' -- 회사 유형
+                           AND USE_YN     = 'Y'
+                   )                        H   -- 회사유형
+                ON H.COMPANY_TYPE = X.COMPANY_TYPE
+         LEFT JOIN (
+                        SELECT CODE AS KEG_TYPE, NAME AS KEG_TYPE_DESC
+                          FROM SCMU.W_SOP_TB_COM_CODE_M
+                         WHERE 1 = 1
+                           AND GROUP_CODE = 'KEG_TYPE' -- 생통 유형
+                           AND USE_YN     = 'Y'
+                   )                        I   -- 생통유형
+                ON I.KEG_TYPE = X.KEG_TYPE
+       )
+ WHERE 1 = 1
+   AND ERR_MSG_DELETE || ERR_MSG_UPDATE || ERR_MSG_INSERT IS NOT NULL
+    </select>
+    
+    <!-- 데이터 저장 : 삭제 -->
+    <delete id="delete" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08190DaoMapper.delete */
+  FROM SCMU.W_SOP_TB_VESSEL_M T
+ WHERE 1 = 1
+   AND T.ITEM_CODE IN (
+        <foreach collection="deleteList" item="list" separator=", " index="i">
+#{list.ITEM_CODE, jdbcType=VARCHAR}
+        </foreach>
+            )
+    </delete>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+MERGE INTO /* com.hitejinro.snop.work.dao.M08190DaoMapper.update */
+           SCMU.W_SOP_TB_VESSEL_M T
+     USING (
+    -- TreeGrid의 Enum값이 '-'는 제대로 처리되지 않아서, '"-"'로 변경해서 처리
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    SELECT #{list.ITEM_CODE, jdbcType=VARCHAR}                                                                  AS ITEM_CODE
+         , #{list.LIQUOR_CODE, jdbcType=VARCHAR}                                                                AS LIQUOR_CODE
+         , DECODE(#{list.BRAND_CODE, jdbcType=VARCHAR}, '"-"', '-', #{list.BRAND_CODE, jdbcType=VARCHAR})       AS BRAND_CODE
+         , DECODE(#{list.VOLUME_VALUE, jdbcType=VARCHAR}, '"-"', '-', #{list.VOLUME_VALUE, jdbcType=VARCHAR})   AS VOLUME_VALUE
+         , DECODE(#{list.VESSEL_CODE, jdbcType=VARCHAR}, '"-"', '-', #{list.VESSEL_CODE, jdbcType=VARCHAR})     AS VESSEL_CODE
+         , DECODE(#{list.BOTL_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.BOTL_TYPE, jdbcType=VARCHAR})         AS BOTL_TYPE
+         , DECODE(#{list.KEG_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.KEG_TYPE, jdbcType=VARCHAR})           AS KEG_TYPE
+         , DECODE(#{list.COMPANY_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.COMPANY_TYPE, jdbcType=VARCHAR})   AS COMPANY_TYPE
+         , DECODE(#{list.USE_YN, jdbcType=VARCHAR}, '"-"', '-', #{list.USE_YN, jdbcType=VARCHAR})               AS USE_YN
+         , #{list.ABBR_ITEM_NAME, jdbcType=VARCHAR}                                                             AS ABBR_ITEM_NAME
+         , (
+                SELECT MAX(A.PACKING_UNIT) AS PBOX_PACKING_UNIT -- P-BOX 포장단위
+                     --, B.SEGMENT4 AS BOTL_BRAND_CODE, A.BRAND_CODE, A.BRAND_NAME, A.VESSEL_CODE, A.VESSEL_SORT, A.VOLUME_VALUE
+                  FROM EDW.W_CM_TB_FG_ITEM_M    A
+                  JOIN SCMU.W_SOP_TB_COM_CODE_M B
+                    ON B.GROUP_CODE = 'BOTL_BRAND_DTL_LIST'
+                   AND B.CODE       = A.BRAND_CODE
+                   AND B.USE_YN     = 'Y'
+                 WHERE 1 = 1
+                   AND A.ITEM_TYPE    = 'FG'
+                   AND A.ITEM_STATUS  = 'Active'
+                   AND A.VESSEL_CODE  = '1'         -- 병(1)만 대상
+                   AND A.PACKING_CODE = '2'         -- P-BOX
+                   AND B.SEGMENT4     IS NOT NULL   -- 용기 브랜드가 정의된 것만 대상
+                   -- 동일 용기브랜드, 동일 볼륨, 용기=병, 회사구분=당사 만 대상
+                   AND B.SEGMENT4     = DECODE(#{list.BRAND_CODE, jdbcType=VARCHAR}, '"-"', '-', #{list.BRAND_CODE, jdbcType=VARCHAR})
+                   AND A.VOLUME_VALUE = DECODE(#{list.VOLUME_VALUE, jdbcType=VARCHAR}, '"-"', '-', #{list.VOLUME_VALUE, jdbcType=VARCHAR})
+                   AND '1'            = DECODE(#{list.VESSEL_CODE, jdbcType=VARCHAR}, '"-"', '-', #{list.VESSEL_CODE, jdbcType=VARCHAR})
+                   AND 'OWNER'        = DECODE(#{list.COMPANY_TYPE, jdbcType=VARCHAR}, '"-"', '-', #{list.COMPANY_TYPE, jdbcType=VARCHAR})
+                 --GROUP BY B.SEGMENT4, A.BRAND_CODE, A.BRAND_NAME, A.VESSEL_CODE, A.VESSEL_SORT, A.VOLUME_VALUE
+           )                                                                                                    AS PBOX_PACKING_UNIT -- P-BOX 포장단위
+         , #{list.action, jdbcType=VARCHAR}                                                                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+         , ROWNUM                                                                                               AS RNUM
+      FROM DUAL
+        </foreach>
+           ) S
+        ON (T.ITEM_CODE = S.ITEM_CODE)
+        
+      WHEN MATCHED THEN
+        UPDATE SET T.LIQUOR_CODE        = S.LIQUOR_CODE
+                 , T.BRAND_CODE         = S.BRAND_CODE
+                 , T.VOLUME_VALUE       = S.VOLUME_VALUE
+                 , T.VESSEL_CODE        = S.VESSEL_CODE
+                 , T.BOTL_TYPE          = S.BOTL_TYPE
+                 , T.KEG_TYPE           = S.KEG_TYPE
+                 , T.COMPANY_TYPE       = S.COMPANY_TYPE
+                 , T.USE_YN             = S.USE_YN
+                 , T.PBOX_PACKING_UNIT  = S.PBOX_PACKING_UNIT
+                 , T.ABBR_ITEM_NAME     = S.ABBR_ITEM_NAME
+                 , T.LAST_UPDATED_BY    = #{userId, jdbcType=VARCHAR}
+                 , T.LAST_UPDATE_DATE   = SYSDATE
+
+      WHEN NOT MATCHED THEN
+        INSERT (T.ITEM_CODE, T.ABBR_ITEM_NAME, T.LIQUOR_CODE, T.BRAND_CODE, T.VOLUME_VALUE, T.VESSEL_CODE, T.BOTL_TYPE, T.KEG_TYPE, T.COMPANY_TYPE, T.USE_YN, T.PBOX_PACKING_UNIT, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+        VALUES (S.ITEM_CODE, S.ABBR_ITEM_NAME, S.LIQUOR_CODE, S.BRAND_CODE, S.VOLUME_VALUE, S.VESSEL_CODE, S.BOTL_TYPE, S.KEG_TYPE, S.COMPANY_TYPE, S.USE_YN, S.PBOX_PACKING_UNIT, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+    
+    
+    <!-- 용기자산 브랜드/볼륨 리스트 조회 -->
+    <select id="selectVesselAssetBrandVolumeList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.selectVesselAssetBrandVolumeList */
+       DISTINCT
+       ASSET_BRAND_NAME || '-' || ASSET_VOLUME_NAME                     AS CODE
+     , '브랜드=' || ASSET_BRAND_NAME || ', 용량=' || ASSET_VOLUME_NAME  AS NAME
+     , ASSET_BRAND_NAME, ASSET_VOLUME_NAME
+  FROM SCMU.M_SOP_TB_VESSEL_ASSET_F
+ WHERE 1 = 1
+   AND BOOK_TYPE_CODE = 'HJ_CORP'
+ ORDER BY ASSET_BRAND_NAME
+        , CASE WHEN INSTR(ASSET_VOLUME_NAME, '파렛트') > 0 THEN 4
+               WHEN INSTR(ASSET_VOLUME_NAME, 'P')      > 0 THEN 3
+               WHEN INSTR(ASSET_VOLUME_NAME, 'L')      > 0 THEN 2
+               WHEN INSTR(ASSET_VOLUME_NAME, 'ml')     > 0 THEN 1
+               ELSE                                             99
+          END
+        , ASSET_VOLUME_NAME
+    </select>
+    
+    <!-- 데이터 저장 : 용기코드의 용기자산 브랜드/볼륨 매핑 추가(전체 삭제 후 추가 방식) -->
+    <update id="insertVesselAssetBrandVolume" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08190DaoMapper.insertVesselAssetBrandVolume */
+  INTO SCMU.W_SOP_TB_VESSEL_ASSET_MAP_M
+       (VESSEL_ITEM_CODE, SEQNO
+       , ASSET_BRAND_NAME, ASSET_VOLUME_NAME
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+    SELECT A.VESSEL_ITEM_CODE
+         , ROW_NUMBER() OVER (PARTITION BY A.VESSEL_ITEM_CODE ORDER BY B.ASSET_BRAND_NAME
+                                                                     , CASE WHEN INSTR(B.ASSET_VOLUME_NAME, '파렛트') > 0 THEN 4
+                                                                            WHEN INSTR(B.ASSET_VOLUME_NAME, 'P')      > 0 THEN 3
+                                                                            WHEN INSTR(B.ASSET_VOLUME_NAME, 'L')      > 0 THEN 2
+                                                                            WHEN INSTR(B.ASSET_VOLUME_NAME, 'ml')     > 0 THEN 1
+                                                                            ELSE                                               99
+                                                                       END
+                                                                     , B.ASSET_VOLUME_NAME) AS SEQNO
+         , B.ASSET_BRAND_NAME
+         , B.ASSET_VOLUME_NAME
+         , NULL AS ATTRIBUTE1, NULL AS SEGMENT2, NULL AS SEGMENT3, NULL AS SEGMENT4, NULL AS SEGMENT5
+         , #{userId, jdbcType=VARCHAR} AS CREATED_BY, SYSDATE AS CREATION_DATE, #{userId, jdbcType=VARCHAR} AS LAST_UPDATED_BY, SYSDATE AS LAST_UPDATE_DATE
+      FROM (
+                SELECT #{ITEM_CODE, jdbcType=VARCHAR} AS VESSEL_ITEM_CODE
+                     , REGEXP_SUBSTR(#{ASSET_BRAND_VOLUME_LIST, jdbcType=VARCHAR}, '[^;]+', 1, LEVEL) AS ASSET_BRAND_VOLUME_CODE
+                  FROM DUAL
+               CONNECT BY REGEXP_SUBSTR(#{ASSET_BRAND_VOLUME_LIST, jdbcType=VARCHAR}, '[^;]+', 1, LEVEL) IS NOT NULL
+           ) A
+      JOIN (
+                SELECT DISTINCT
+                       ASSET_BRAND_NAME || '-' || ASSET_VOLUME_NAME AS ASSET_BRAND_VOLUME_CODE
+                     , ASSET_BRAND_NAME, ASSET_VOLUME_NAME
+                  FROM SCMU.M_SOP_TB_VESSEL_ASSET_F
+                 WHERE 1 = 1
+                   AND BOOK_TYPE_CODE = 'HJ_CORP'
+           ) B
+        ON B.ASSET_BRAND_VOLUME_CODE = A.ASSET_BRAND_VOLUME_CODE
+     WHERE 1 = 1
+    </update>
+    
+    <!-- 데이터 저장 : 용기코드의 용기자산 브랜드/볼륨 매핑 삭제(전체 삭제 후 추가 방식) -->
+    <delete id="deleteVesselAssetBrandVolume" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08190DaoMapper.deleteVesselAssetBrandVolume */
+  FROM SCMU.W_SOP_TB_VESSEL_ASSET_MAP_M
+ WHERE 1 = 1
+   AND VESSEL_ITEM_CODE = #{ITEM_CODE, jdbcType=VARCHAR}
+    </delete>
+
+
+
+    
+    <!-- 데이터 조회 : 용기브랜드 -->
+    <select id="searchVesselBrand" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.searchVesselBrand */
+       A.SEGMENT2       AS LIQUOR_CODE
+     , A.CODE           AS VESSEL_BRAND_CODE
+     , A.NAME           AS VESSEL_BRAND_NAME
+     , A.SEQ            AS VESSEL_BRAND_SEQ
+     , A.USE_YN         AS VESSEL_BRAND_USE_YN
+     , (
+                SELECT LISTAGG(B.CODE, ';') WITHIN GROUP(ORDER BY C.BRAND_SEQ, C.BRAND_NAME, B.SEQ) AS BRAND_LIST
+                  FROM SCMU.W_SOP_TB_COM_CODE_M B
+             LEFT JOIN (
+                            SELECT LIQUOR_CODE, BRAND_CODE, MAX(BRAND_NAME) AS BRAND_NAME, MAX(BRAND_SORT_ORDER) AS BRAND_SEQ
+                                 , MAX(CASE WHEN ITEM_STATUS = 'Active' THEN 'Y' ELSE 'N' END) AS USE_YN
+                              FROM EDW.W_CM_TB_FG_ITEM_M
+                             WHERE 1 = 1
+                               AND ITEM_TYPE  = 'FG'
+                               AND BRAND_CODE IS NOT NULL
+                             GROUP BY LIQUOR_CODE, BRAND_CODE
+                       )                        C
+                    ON C.BRAND_CODE = B.CODE
+                 WHERE 1 = 1
+                   AND B.GROUP_CODE = 'BOTL_BRAND_DTL_LIST' -- 용기 브랜드의 상세 리스트
+                   AND B.USE_YN     = 'Y'
+                   AND B.SEGMENT4 = A.CODE
+       )                AS BRAND_LIST
+  FROM SCMU.W_SOP_TB_COM_CODE_M A
+ WHERE 1 = 1
+   AND A.GROUP_CODE = 'BOTL_BRAND_LIST' -- 용기 브랜드 리스트
+ ORDER BY A.SEGMENT2, A.SEQ, A.CODE
+    </select>
+    
+    <!-- 제품 브랜드 리스트 조회 -->
+    <select id="selectItemBrandList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.selectItemBrandList */
+       LIQUOR_CODE, BRAND_CODE, MAX(BRAND_NAME) AS BRAND_NAME, MAX(BRAND_SORT_ORDER) AS BRAND_SEQ
+     , MAX(CASE WHEN ITEM_STATUS = 'Active' THEN 'Y' ELSE 'N' END) AS USE_YN
+  FROM EDW.W_CM_TB_FG_ITEM_M
+ WHERE 1 = 1
+   AND ITEM_TYPE  = 'FG'
+   AND BRAND_CODE IS NOT NULL
+ GROUP BY LIQUOR_CODE, BRAND_CODE
+ ORDER BY BRAND_SEQ, BRAND_NAME
+    </select>
+    
+    <!-- 데이터 저장 : 용기브랜드 추가 -->
+    <update id="insertVesselBrand" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08190DaoMapper.insertVesselBrand */
+  INTO SCMU.W_SOP_TB_COM_CODE_M
+       (GROUP_CODE
+       , CODE, NAME, DESCRIPTION, SEQ, USE_YN
+       , SEGMENT1, SEGMENT2
+       , SEGMENT3, SEGMENT4, SEGMENT5, SEGMENT6, SEGMENT7, SEGMENT8, SEGMENT9, SEGMENT10
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+VALUES ('BOTL_BRAND_LIST'
+       , #{VESSEL_BRAND_CODE, jdbcType=VARCHAR}, #{VESSEL_BRAND_NAME, jdbcType=VARCHAR}, #{VESSEL_BRAND_NAME, jdbcType=VARCHAR}, #{VESSEL_BRAND_SEQ, jdbcType=VARCHAR}, #{VESSEL_BRAND_USE_YN, jdbcType=VARCHAR}
+       , '사업부문', #{LIQUOR_CODE, jdbcType=VARCHAR}
+       , NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+       , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+       )
+    </update>
+    
+    <!-- 데이터 저장 : 용기브랜드 수정 -->
+    <update id="updateVesselBrand" parameterType="map">
+UPDATE /* com.hitejinro.snop.work.dao.M08190DaoMapper.updateVesselBrand */
+       SCMU.W_SOP_TB_COM_CODE_M
+   SET NAME             = #{VESSEL_BRAND_NAME, jdbcType=VARCHAR}
+     , DESCRIPTION      = #{VESSEL_BRAND_NAME, jdbcType=VARCHAR}
+     , SEQ              = #{VESSEL_BRAND_SEQ, jdbcType=VARCHAR}
+     , USE_YN           = #{VESSEL_BRAND_USE_YN, jdbcType=VARCHAR}
+     , LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+     , LAST_UPDATE_DATE = SYSDATE
+ WHERE 1 = 1
+   AND GROUP_CODE = 'BOTL_BRAND_LIST'
+   AND CODE       = #{VESSEL_BRAND_CODE, jdbcType=VARCHAR}
+    </update>
+    
+    <!-- 데이터 저장 : 용기브랜드 삭제 -->
+    <delete id="deleteVesselBrand" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08190DaoMapper.deleteVesselBrand */
+  FROM SCMU.W_SOP_TB_COM_CODE_M
+ WHERE 1 = 1
+   AND GROUP_CODE = 'BOTL_BRAND_LIST'
+   AND CODE       = #{VESSEL_BRAND_CODE, jdbcType=VARCHAR}
+    </delete>
+    
+    <!-- 데이터 저장 : 용기브랜드의 상세(제품 브랜드) 추가(전체 삭제 후 추가 방식) -->
+    <update id="insertVesselBrandDtl" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08190DaoMapper.insertVesselBrandDtl */
+  INTO SCMU.W_SOP_TB_COM_CODE_M
+       (GROUP_CODE
+       , CODE, NAME, DESCRIPTION, SEQ, USE_YN
+       , SEGMENT1, SEGMENT2
+       , SEGMENT3, SEGMENT4
+       , SEGMENT5, SEGMENT6, SEGMENT7, SEGMENT8, SEGMENT9, SEGMENT10
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+    SELECT 'BOTL_BRAND_DTL_LIST'    AS GROUP_CODE
+         , A.ITEM_BRAND_CODE        AS CODE
+         , B.BRAND_NAME             AS NAME
+         , B.BRAND_NAME             AS DESCRIPTION
+         , TO_NUMBER(B.BRAND_SEQ)   AS SEQ
+         , 'Y'                      AS USE_YN
+         , '사업부문'               AS SEGMENT1
+         , A.LIQUOR_CODE            AS SEGMENT2
+         , '용기 브랜드'            AS SEGMENT3
+         , A.VESSEL_BRAND_CODE      AS SEGMENT4
+         , NULL AS SEGMENT5, NULL AS SEGMENT6, NULL AS SEGMENT7, NULL AS SEGMENT8, NULL AS SEGMENT9, NULL AS SEGMENT10
+         , #{userId, jdbcType=VARCHAR} AS CREATED_BY, SYSDATE AS CREATION_DATE, #{userId, jdbcType=VARCHAR} AS LAST_UPDATED_BY, SYSDATE AS LAST_UPDATE_DATE
+      FROM (
+                SELECT #{LIQUOR_CODE, jdbcType=VARCHAR} AS LIQUOR_CODE
+                     , #{VESSEL_BRAND_CODE, jdbcType=VARCHAR} AS VESSEL_BRAND_CODE
+                     , #{VESSEL_BRAND_NAME, jdbcType=VARCHAR} AS VESSEL_BRAND_NAME
+                     , #{VESSEL_BRAND_SEQ, jdbcType=VARCHAR} AS VESSEL_BRAND_SEQ
+                     , #{VESSEL_BRAND_USE_YN, jdbcType=VARCHAR} AS VESSEL_BRAND_USE_YN
+                     , REGEXP_SUBSTR(#{BRAND_LIST, jdbcType=VARCHAR}, '[^;]+', 1, LEVEL) AS ITEM_BRAND_CODE
+                  FROM DUAL
+               CONNECT BY REGEXP_SUBSTR(#{BRAND_LIST, jdbcType=VARCHAR}, '[^;]+', 1, LEVEL) IS NOT NULL
+           ) A
+ LEFT JOIN (
+                SELECT LIQUOR_CODE, BRAND_CODE, MAX(BRAND_NAME) AS BRAND_NAME
+                     --, MAX(BRAND_SORT_ORDER) AS BRAND_SEQ -- 브랜드의 정렬순서에는 글자가 들어가서, 별도로 순번 생성
+                     , ROW_NUMBER() OVER (ORDER BY MAX(BRAND_SORT_ORDER)) AS BRAND_SEQ
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1 = 1
+                   AND ITEM_TYPE  = 'FG'
+                   AND BRAND_CODE IS NOT NULL
+                 GROUP BY LIQUOR_CODE, BRAND_CODE
+           ) B
+        ON B.BRAND_CODE = A.ITEM_BRAND_CODE
+     WHERE 1 = 1
+    </update>
+    
+    <!-- 데이터 저장 : 용기브랜드의 상세(제품 브랜드) 삭제(전체 삭제 후 추가 방식) -->
+    <delete id="deleteVesselBrandDtl" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08190DaoMapper.deleteVesselBrandDtl */
+  FROM SCMU.W_SOP_TB_COM_CODE_M
+ WHERE 1 = 1
+   AND GROUP_CODE = 'BOTL_BRAND_DTL_LIST'
+   AND SEGMENT4   = #{VESSEL_BRAND_CODE, jdbcType=VARCHAR}
+    </delete>
+    
+	<!-- 제품 브랜드 매핑 조회 -->
+    <select id="searchItemBrandMap" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.selectItemBrandList.searchItemBrandMap */
+	  A.BRAND_CODE, A.BRAND_NAME, A.VOLUME_VALUE
+    , NVL(B.VESSEL_BRAND_CODE, 'NA') AS VESSEL_BRAND_CODE
+FROM
+(
+    SELECT
+          AA.BRAND_CODE, AA.VOLUME_VALUE
+        , MAX(AA.BRAND_NAME) AS BRAND_NAME
+    FROM EDW.W_CM_TB_FG_ITEM_M AA
+    WHERE 1 = 1
+        AND AA.LIQUOR_CODE  IN ('10', '20')
+        AND AA.ITEM_TYPE    IN ('FG', 'PH') -- PH : 본단위 반품
+        AND AA.VESSEL_CODE  != '9' -- 기타 제외
+        AND AA.BRAND_CODE IS NOT NULL
+        AND AA.VOLUME_VALUE IS NOT NULL
+    GROUP BY AA.BRAND_CODE, AA.VOLUME_VALUE
+) A
+
+LEFT JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M B ON B.BRAND_CODE    = A.BRAND_CODE
+                                            AND B.VOLUME_VALUE  = A.VOLUME_VALUE
+                                            
+ORDER BY DECODE(B.VESSEL_BRAND_CODE, NULL, '9', '1'), A.BRAND_CODE, TO_NUMBER(A.VOLUME_VALUE)
+    </select>
+    
+    <!-- 제품 브랜드 매핑 삭제 -->
+    <delete id="deleteItemBrandMap" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08190DaoMapper.deleteItemBrandMap */
+FROM SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M
+WHERE 1 = 1
+	AND BRAND_CODE 	 = #{BRAND_CODE, jdbcType=VARCHAR}
+	AND VOLUME_VALUE = #{VOLUME_VALUE, jdbcType=VARCHAR}
+    </delete>
+    
+    <!-- 제품 브랜드 매핑 수정,추가 -->
+	<update id="updateItemBrandMap">
+MERGE INTO SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M T /* com.hitejinro.snop.work.dao.M08190DaoMapper.updateItemBrandMap */
+USING
+(
+	SELECT
+		  #{BRAND_CODE, jdbcType=VARCHAR} 			AS BRAND_CODE
+		, #{VOLUME_VALUE, jdbcType=VARCHAR} 		AS VOLUME_VALUE
+		, #{VESSEL_BRAND_CODE, jdbcType=VARCHAR}	AS VESSEL_BRAND_CODE
+		, #{userId, jdbcType=VARCHAR}				AS USERID
+	FROM DUAL
+) S ON (
+				T.BRAND_CODE 	= S.BRAND_CODE
+			AND T.VOLUME_VALUE 	= S.VOLUME_VALUE
+		)
+WHEN MATCHED THEN
+UPDATE SET
+	  T.VESSEL_BRAND_CODE = S.VESSEL_BRAND_CODE
+	, T.LAST_UPDATED_BY	  = S.USERID
+	, T.LAST_UPDATE_DATE  = SYSDATE
+WHEN NOT MATCHED THEN
+INSERT
+(
+	  T.BRAND_CODE, T.VOLUME_VALUE, T.VESSEL_BRAND_CODE
+	, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+)
+VALUES
+(
+	  S.BRAND_CODE, S.VOLUME_VALUE, S.VESSEL_BRAND_CODE
+	, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+)
+	</update>
+</mapper>

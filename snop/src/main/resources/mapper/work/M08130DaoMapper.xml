@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 판매변수 정의(코로나, 명절, 휴가 등) -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08130DaoMapper">
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M08130DaoMapper.selectVesselList */
+    		  T1.SALE_VAR_DFNT_SEQNO															AS SALE_VAR_DFNT_SEQNO
+ 			, TO_CHAR(TO_DATE(T1.VLD_STR_DT, 'YYYYMMDD'), 'YYYY-MM-DD')							AS VLD_STR_DT
+    		, TO_CHAR(TO_DATE(T1.VLD_END_DT, 'YYYYMMDD'), 'YYYY-MM-DD') 						AS VLD_END_DT
+    		, TO_CHAR(TO_DATE(T1.VLD_STR_DT, 'YYYYMMDD'), 'YYYY-MM')							AS VLD_STR_MONTH
+    		, T1.SALE_VAR_TYPE																	AS SALE_VAR_TYPE
+    		, T1.SALE_VAR_NAME																	AS SALE_VAR_NAME
+    		, T1.LIQUOR_CODE																	AS LIQUOR_CODE
+    		, T1.USAGE_CODE																		AS USAGE_CODE
+    		, DECODE(T1.ITEM_CODE, '!ALL', '전체', '['|| T1.ITEM_CODE ||'] ' || T2.DESCRIPTION) AS ITEM_CODE_DESCRIPTION
+    		, T1.ITEM_CODE																		AS ITEM_CODE
+    		, T1.VAR_VAL																		AS VAR_VAL
+    		, TO_CHAR(TO_DATE(T1.CALC_STR_DT, 'YYYYMMDD'), 'YYYY-MM-DD')						AS CALC_STR_DT
+    		, TO_CHAR(TO_DATE(T1.CALC_END_DT, 'YYYYMMDD'), 'YYYY-MM-DD')						AS CALC_END_DT
+    		, T1.RMKS																			AS RMKS
+    		, T1.ATTRIBUTE1																		AS USE_YN
+    	FROM SCMU.W_SOP_TB_SALE_VAR_DFNT_F T1
+    	
+    	LEFT JOIN EDW.W_CM_TB_FG_ITEM_M T2 ON T2.ITEM_CODE = T1.ITEM_CODE
+    	
+    	WHERE 1 = 1
+    		AND #{year, jdbcType=VARCHAR} BETWEEN SUBSTR(T1.VLD_STR_DT, 1, 4) AND SUBSTR(T1.VLD_END_DT, 1, 4)
+    		AND T1.ATTRIBUTE1 = DECODE(#{useYn, jdbcType=VARCHAR}, '!ALL', T1.ATTRIBUTE1, #{useYn, jdbcType=VARCHAR})
+		ORDER BY T1.SALE_VAR_DFNT_SEQNO
+    </select>
+    
+    <!-- 아이템리스트 조회 : 모제품매핑의 To기준을 우선 표현 -->
+    <select id="getMappingItemList" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M08130DaoMapper.getItemList */
+              T.ITEM_CODE 
+            , T.DESCRIPTION
+            , '[' || T.ITEM_CODE || '] ' || T.DESCRIPTION AS ITEM_CODE_DESCRIPTION
+            
+        FROM EDW.W_CM_TB_FG_ITEM_M T
+   LEFT JOIN (
+                SELECT DISTINCT TO_ITEM_CODE
+                  FROM SCMU.W_SOP_TB_ITEM_MAP_M
+                 WHERE 1 = 1
+             ) B
+            ON B.TO_ITEM_CODE = T.ITEM_CODE
+        WHERE 1 = 1
+            AND T.ITEM_TYPE   = 'FG'
+            AND T.ITEM_STATUS = 'Active'
+            AND T.LIQUOR_CODE = NVL(DECODE(#{LIQUOR_CODE, jdbcType=VARCHAR}, '00', T.LIQUOR_CODE, #{LIQUOR_CODE, jdbcType=VARCHAR}), T.LIQUOR_CODE)
+            AND T.USAGE_CODE  = NVL(DECODE(#{USAGE_CODE, jdbcType=VARCHAR}, '!ALL', T.USAGE_CODE, #{USAGE_CODE, jdbcType=VARCHAR}), T.USAGE_CODE)
+        ORDER BY (CASE WHEN B.TO_ITEM_CODE IS NULL THEN 1 ELSE -1 END), T.BRAND_SORT_ORDER, T.BRAND_NAME, T.DESCRIPTION, T.ITEM_CODE
+    </select>
+    
+    <!-- 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH UPDATE_TBL AS /*com.hitejinro.snop.work.dao.M08130DaoMapper.validate */
+    	(
+    		SELECT
+    			  A.SALE_VAR_DFNT_SEQNO
+    			, A.IDX
+    			, MAX(A.ACTION)				  AS ACTION
+    		  	, MAX(A.VLD_STR_DT)           AS VLD_STR_DT         
+		        , MAX(A.VLD_END_DT)           AS VLD_END_DT      
+		        , MAX(A.SALE_VAR_TYPE)        AS SALE_VAR_TYPE    
+		        , MAX(A.SALE_VAR_NAME)        AS SALE_VAR_NAME
+		        , MAX(A.LIQUOR_CODE)          AS LIQUOR_CODE    
+		        , MAX(A.USAGE_CODE)           AS USAGE_CODE     
+		        , MAX(A.ITEM_CODE)            AS ITEM_CODE         
+		        , MAX(A.CALC_STR_DT)          AS CALC_STR_DT       
+		        , MAX(A.CALC_END_DT)          AS CALC_END_DT     
+		
+		        , SUM(CASE WHEN B.BUSINESS_DAY_FLAG = 'Y' AND B.YYYYMMDD BETWEEN A.VLD_STR_DT AND A.VLD_END_DT THEN 1 ELSE 0
+		                    END) AS VLD_BUSINESS_DAY_CNT 
+		
+		        , SUM(CASE WHEN B.BUSINESS_DAY_FLAG = 'Y' AND B.YYYYMMDD BETWEEN A.CALC_STR_DT AND A.CALC_END_DT THEN 1 ELSE 0
+		                    END) AS CALC_BUSINESS_DAY_CNT 
+    		FROM
+    		(
+	    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+	    			SELECT
+	    				  #{list.action, jdbcType=VARCHAR}								AS ACTION
+	    				, #{i, jdbcType=VARCHAR}										AS IDX
+	    				, #{list.SALE_VAR_DFNT_SEQNO, jdbcType=VARCHAR}					AS SALE_VAR_DFNT_SEQNO
+	    				, REPLACE(#{list.VLD_STR_DT, jdbcType=VARCHAR}, '-')			AS VLD_STR_DT
+	                    , REPLACE(#{list.VLD_END_DT, jdbcType=VARCHAR}, '-')			AS VLD_END_DT
+	    				, #{list.SALE_VAR_TYPE, jdbcType=VARCHAR}						AS SALE_VAR_TYPE
+	    				, #{list.SALE_VAR_NAME, jdbcType=VARCHAR}						AS SALE_VAR_NAME
+	    				, #{list.LIQUOR_CODE, jdbcType=VARCHAR}							AS LIQUOR_CODE
+	    				, #{list.USAGE_CODE, jdbcType=VARCHAR}							AS USAGE_CODE
+	    				, #{list.ITEM_CODE, jdbcType=VARCHAR}							AS ITEM_CODE
+	    				, REPLACE(#{list.CALC_STR_DT, jdbcType=VARCHAR}, '-')			AS CALC_STR_DT
+	                    , REPLACE(#{list.CALC_END_DT, jdbcType=VARCHAR}, '-')			AS CALC_END_DT
+	    			FROM DUAL
+	    		</foreach>
+    		) A
+    		LEFT JOIN SCMU.W_SOP_VW_CALENDAR_M B ON B.YYYYMMDD BETWEEN LEAST(A.VLD_STR_DT, A.CALC_STR_DT) AND GREATEST(A.VLD_END_DT, A.CALC_END_DT)
+    		
+			GROUP BY A.SALE_VAR_DFNT_SEQNO, A.IDX
+    	) 
+		        												   
+    	SELECT
+    		  A.SALE_VAR_DFNT_SEQNO
+    		, A.IDX || '번째 행에 오류 : ' || SUBSTR(A.VLD_STR_DT_ERR || A.VLD_END_DT_ERR || A.SAVE_VAR_TYPE_ERR || A.SALE_VAR_NAME_ERR 
+    				|| A.LIQUOR_CODE_ERR || A.USAGE_CODE_ERR || A.ITEM_CODE_ERR || A.CALC_STR_DT_ERR || A.CALC_END_DT_ERR, 3) AS ERR_MSG
+    	FROM
+    	(
+    		SELECT
+				  T1.SALE_VAR_DFNT_SEQNO
+    			, T1.IDX
+    			, (CASE WHEN T1.VLD_STR_DT IS NULL THEN ', 유효시작일자는 필수값'
+    					WHEN SCMU.FN_SOP_IS_DATE(T1.VLD_STR_DT, 'YYYYMMDD') = 0 THEN ', 유효시작일자 형식 오류'
+    					WHEN T1.VLD_STR_DT <![CDATA[ > ]]> T1.VLD_END_DT THEN ', 유효시작일자가 유효종료일자보다 큽니다'
+    					WHEN T1.VLD_BUSINESS_DAY_CNT = 0 THEN ', 유효기간중 영업일수가 존재하지 않습니다'
+    					ELSE ''
+    			   END) AS VLD_STR_DT_ERR
+    			   
+    			, (CASE WHEN T1.VLD_END_DT IS NULL THEN ', 유효종료일자는 필수값'
+    					WHEN SCMU.FN_SOP_IS_DATE(T1.VLD_END_DT, 'YYYYMMDD') = 0 THEN ', 유효종료일자 형식 오류'
+    					ELSE ''
+    			   END) AS VLD_END_DT_ERR
+    			   
+    			, (CASE WHEN T1.SALE_VAR_TYPE IS NULL THEN ', 판매변수유형은 필수값'
+    					ELSE ''
+    			   END) AS SAVE_VAR_TYPE_ERR
+    			   
+    			, (CASE WHEN T1.SALE_VAR_NAME IS NULL THEN ', 판매변수명칭은 필수값'
+    					ELSE ''
+    			   END) AS SALE_VAR_NAME_ERR
+    			   
+    			, (CASE WHEN T1.LIQUOR_CODE IS NULL THEN ', 사업부문코드는 필수값'
+    					ELSE ''
+    			   END) AS LIQUOR_CODE_ERR
+    			   
+    			, (CASE WHEN T1.USAGE_CODE IS NULL THEN ', 용도코드는 필수값'
+    					ELSE ''
+    			   END) AS USAGE_CODE_ERR
+    			   
+    			, (CASE WHEN T1.ITEM_CODE IS NULL THEN ', 제품코드는 필수값'
+    					ELSE ''
+    			   END) AS ITEM_CODE_ERR
+    			   
+    			, (CASE WHEN T1.CALC_STR_DT IS NULL THEN ', 계산시작일자는 필수값'
+    					WHEN SCMU.FN_SOP_IS_DATE(T1.CALC_STR_DT, 'YYYYMMDD') = 0 THEN ', 계산시작일자 형식 오류'
+    					WHEN T1.CALC_STR_DT <![CDATA[ > ]]> T1.CALC_END_DT THEN ', 계산시작일자가 계산종료일자보다 큽니다.'
+    					WHEN T1.CALC_BUSINESS_DAY_CNT = 0 THEN ', 계산기간중 영업일수가 존재하지 않습니다'
+    					ELSE ''
+    			   END) AS CALC_STR_DT_ERR
+    			   
+    			, (CASE WHEN T1.CALC_END_DT IS NULL THEN ', 계산종료일자는 필수값'
+    					WHEN SCMU.FN_SOP_IS_DATE(T1.CALC_END_DT, 'YYYYMMDD') = 0 THEN ', 계산종료일자 형식 오류'
+    					ELSE ''
+    			   END) AS CALC_END_DT_ERR
+    			   
+    		FROM UPDATE_TBL T1
+    	) A
+    	WHERE 1 = 1
+    		AND SUBSTR(A.VLD_STR_DT_ERR || A.VLD_END_DT_ERR || A.SAVE_VAR_TYPE_ERR || A.SALE_VAR_NAME_ERR || A.LIQUOR_CODE_ERR 
+    				|| A.USAGE_CODE_ERR || A.ITEM_CODE_ERR || A.CALC_STR_DT_ERR || A.CALC_END_DT_ERR, 3) IS NOT NULL
+    	ORDER BY A.IDX
+    </select>
+    
+    <!-- 삭제 -->
+    <delete id="delete" parameterType="map">
+    	DELETE /*com.hitejinro.snop.work.dao.M08130DaoMapper.delete */
+    	FROM SCMU.W_SOP_TB_SALE_VAR_DFNT_F T
+    	WHERE 1 = 1
+    		AND T.SALE_VAR_DFNT_SEQNO
+    		IN
+    		(
+    			<foreach collection="deleteList" item="list" separator="," index="i">
+    				#{list.SALE_VAR_DFNT_SEQNO, jdbcType=VARCHAR}
+    			</foreach>
+    		)
+    </delete>
+    
+    <!-- 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_SALE_VAR_DFNT_F T /*com.hitejinro.snop.work.dao.M08130DaoMapper.update */
+    	USING
+    	(	
+    		SELECT
+    			  S1.SALE_VAR_DFNT_SEQNO
+    			, S1.IDX
+    			, MAX(S1.VLD_STR_DT)          		AS VLD_STR_DT         
+		        , MAX(S1.VLD_END_DT)          		AS VLD_END_DT      
+		        , MAX(S1.SALE_VAR_TYPE)          	AS SALE_VAR_TYPE    
+		        , MAX(S1.SALE_VAR_NAME)          	AS SALE_VAR_NAME
+		        , MAX(S1.LIQUOR_CODE)          		AS LIQUOR_CODE    
+		        , MAX(S1.USAGE_CODE)          		AS USAGE_CODE     
+		        , MAX(S1.ITEM_CODE)              	AS ITEM_CODE         
+		        , MAX(S1.CALC_STR_DT)          		AS CALC_STR_DT       
+		        , MAX(S1.CALC_END_DT)          		AS CALC_END_DT     
+		        , MAX(S1.RMKS)                  	AS RMKS
+		        , MAX(S1.USE_YN)                  	AS USE_YN
+		        , MAX(S1.VLD_BUSINESS_DAY_CNT) 		AS VLD_BUSINESS_DAY_CNT
+		        , MAX(S1.CALC_BUSINESS_DAY_CNT) 	AS CALC_BUSINESS_DAY_CNT
+		
+		        , SUM(CASE WHEN C.PERIOD_YYYYMMDD BETWEEN S1.VLD_STR_DT AND S1.VLD_END_DT THEN C.ACTUAL_SALE_QTY * C.UOM_CONVERSION_VALUE 
+		        		   ELSE 0
+		                   END) AS VLD_UOM_ACTUAL_SALE_QTY
+		
+		        , SUM(CASE WHEN C.PERIOD_YYYYMMDD BETWEEN S1.CALC_STR_DT AND S1.CALC_END_DT THEN C.ACTUAL_SALE_QTY * C.UOM_CONVERSION_VALUE 
+		        		   ELSE 0
+		                   END) AS CALC_UOM_ACTUAL_SALE_QTY
+    		FROM
+    		(
+    			SELECT
+					  A.SALE_VAR_DFNT_SEQNO
+					, A.IDX
+    				, MAX(A.VLD_STR_DT)           AS VLD_STR_DT         
+		            , MAX(A.VLD_END_DT)           AS VLD_END_DT      
+		            , MAX(A.SALE_VAR_TYPE)        AS SALE_VAR_TYPE    
+		            , MAX(A.SALE_VAR_NAME)        AS SALE_VAR_NAME
+		            , MAX(A.LIQUOR_CODE)          AS LIQUOR_CODE    
+		            , MAX(A.USAGE_CODE)           AS USAGE_CODE     
+		            , MAX(A.ITEM_CODE)            AS ITEM_CODE         
+		            , MAX(A.CALC_STR_DT)          AS CALC_STR_DT       
+		            , MAX(A.CALC_END_DT)          AS CALC_END_DT     
+		            , MAX(A.RMKS)                 AS RMKS
+		            , MAX(A.USE_YN)               AS USE_YN
+		
+		            , SUM(CASE WHEN B.BUSINESS_DAY_FLAG = 'Y' AND B.YYYYMMDD BETWEEN A.VLD_STR_DT AND A.VLD_END_DT THEN 1 
+		            		   ELSE 0
+		                       END) AS VLD_BUSINESS_DAY_CNT
+		
+		            , SUM(CASE WHEN B.BUSINESS_DAY_FLAG = 'Y' AND B.YYYYMMDD BETWEEN A.CALC_STR_DT AND A.CALC_END_DT THEN 1 
+		            		   ELSE 0
+		                       END) AS CALC_BUSINESS_DAY_CNT
+    			FROM
+    			(
+    				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+		    			SELECT
+						  	  #{list.SALE_VAR_DFNT_SEQNO, jdbcType=VARCHAR}					AS SALE_VAR_DFNT_SEQNO
+						  	, #{i, jdbcType=VARCHAR}										AS IDX
+		    				, REPLACE(#{list.VLD_STR_DT, jdbcType=VARCHAR}, '-')			AS VLD_STR_DT
+	                   		, REPLACE(#{list.VLD_END_DT, jdbcType=VARCHAR}, '-')			AS VLD_END_DT
+		    				, #{list.SALE_VAR_TYPE, jdbcType=VARCHAR}						AS SALE_VAR_TYPE
+		    				, #{list.SALE_VAR_NAME, jdbcType=VARCHAR}						AS SALE_VAR_NAME
+		    				, #{list.LIQUOR_CODE, jdbcType=VARCHAR}							AS LIQUOR_CODE
+		    				, #{list.USAGE_CODE, jdbcType=VARCHAR}    						AS USAGE_CODE
+		    				, #{list.ITEM_CODE, jdbcType=VARCHAR}							AS ITEM_CODE
+		    				, #{list.VAR_VAL, jdbcType=VARCHAR}								AS VAR_VAL
+		    				, REPLACE(#{list.CALC_STR_DT, jdbcType=VARCHAR}, '-')			AS CALC_STR_DT
+	                    	, REPLACE(#{list.CALC_END_DT, jdbcType=VARCHAR}, '-')			AS CALC_END_DT
+		    				, #{list.RMKS, jdbcType=VARCHAR}								AS RMKS
+		    				, #{list.USE_YN, jdbcType=VARCHAR}								AS USE_YN
+		    			FROM DUAL
+    				</foreach>
+    			) A
+    			
+    			JOIN SCMU.W_SOP_VW_CALENDAR_M B ON B.YYYYMMDD BETWEEN LEAST(A.VLD_STR_DT, A.CALC_STR_DT) AND GREATEST(A.VLD_END_DT, A.CALC_END_DT)
+    															  
+				GROUP BY A.SALE_VAR_DFNT_SEQNO, A.IDX
+    			
+    		) S1
+    		
+    		LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F C ON C.ITEM_TYPE = 'FG'
+	                                              AND C.ACTUAL_SALE_QTY != 0
+	                                              AND C.PERIOD_YYYYMMDD BETWEEN    LEAST(S1.VLD_STR_DT, S1.CALC_STR_DT) 
+	                                              							AND GREATEST(S1.VLD_END_DT, S1.CALC_END_DT)
+	                                              AND C.LIQUOR_CODE     = DECODE(S1.LIQUOR_CODE, '00', C.LIQUOR_CODE, S1.LIQUOR_CODE)
+	                                              AND C.USAGE_CODE      = DECODE(S1.USAGE_CODE, '!ALL', C.USAGE_CODE, S1.USAGE_CODE)
+	                                              AND C.ITEM_CODE       = DECODE(S1.ITEM_CODE, '!ALL', C.ITEM_CODE, S1.ITEM_CODE)
+                                                  AND C.LIQUOR_CODE     IN ('10', '20')
+			GROUP BY S1.SALE_VAR_DFNT_SEQNO, S1.IDX
+    		
+    	) S ON 
+    			(
+    				T.SALE_VAR_DFNT_SEQNO = S.SALE_VAR_DFNT_SEQNO
+    			)
+    			
+		WHEN MATCHED THEN
+			UPDATE SET 
+				  T.VLD_STR_DT 	 	= S.VLD_STR_DT
+				, T.VLD_END_DT 	 	= S.VLD_END_DT
+				, T.SALE_VAR_TYPE   = S.SALE_VAR_TYPE
+				, T.SALE_VAR_NAME   = S.SALE_VAR_NAME
+				, T.LIQUOR_CODE 	= S.LIQUOR_CODE
+				, T.USAGE_CODE 	 	= S.USAGE_CODE
+				, T.ITEM_CODE 		= S.ITEM_CODE
+				, T.VAR_VAL 		= NVL((CASE WHEN S.CALC_BUSINESS_DAY_CNT = 0 					  		  THEN 0 
+												WHEN S.VLD_BUSINESS_DAY_CNT = 0 							  THEN 0
+												WHEN (S.VLD_UOM_ACTUAL_SALE_QTY / S.VLD_BUSINESS_DAY_CNT) = 0 THEN 0
+												ELSE ROUND((( S.CALC_UOM_ACTUAL_SALE_QTY / S.CALC_BUSINESS_DAY_CNT ) / ( S.VLD_UOM_ACTUAL_SALE_QTY / S.VLD_BUSINESS_DAY_CNT)), 2) 
+												END), 0)
+				, T.CALC_STR_DT 	 = S.CALC_STR_DT
+				, T.CALC_END_DT 	 = S.CALC_END_DT
+				, T.RMKS 			 = S.RMKS
+				, T.ATTRIBUTE1		 = S.USE_YN
+				, T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR} 
+				, T.LAST_UPDATE_DATE = SYSDATE
+				
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.SALE_VAR_DFNT_SEQNO, T.VLD_STR_DT, T.VLD_END_DT, T.SALE_VAR_TYPE, T.SALE_VAR_NAME
+			, T.LIQUOR_CODE, T.USAGE_CODE, T.ITEM_CODE
+			, T.VAR_VAL
+			, T.CALC_STR_DT, T.CALC_END_DT, T.RMKS, T.ATTRIBUTE1
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  SCMU.SEQ_SOP_SALE_VAR_DFNT_SEQNO.NEXTVAL, S.VLD_STR_DT, S.VLD_END_DT, S.SALE_VAR_TYPE, S.SALE_VAR_NAME
+			, S.LIQUOR_CODE, S.USAGE_CODE, S.ITEM_CODE
+			, NVL((CASE WHEN S.CALC_BUSINESS_DAY_CNT = 0 					  		  THEN 0 
+						WHEN S.VLD_BUSINESS_DAY_CNT = 0 							  THEN 0
+						WHEN (S.VLD_UOM_ACTUAL_SALE_QTY / S.VLD_BUSINESS_DAY_CNT) = 0 THEN 0
+						ELSE ROUND((( S.CALC_UOM_ACTUAL_SALE_QTY / S.CALC_BUSINESS_DAY_CNT ) / ( S.VLD_UOM_ACTUAL_SALE_QTY / S.VLD_BUSINESS_DAY_CNT)), 2) 
+						END), 0)
+			, S.CALC_STR_DT, S.CALC_END_DT, S.RMKS, S.USE_YN
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+</mapper>

@@ -1,0 +1,866 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 생산 라인별 CAPA 설정 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08100DaoMapper">
+	
+	<!-- 생산 라인별 CAPA 설정 > 조회 -->
+	<select id ="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.search */
+		      T.PRDT_VAR_VER_CD 								   		AS PRDT_VAR_VER_CD
+		    , T.PRDT_VAR_VER_NM 								   		AS PRDT_VAR_VER_NM
+		    , T.PRDT_VAR_VER_DESC 								   		AS PRDT_VAR_VER_DESC
+		    , T.USE_YN 											   		AS USE_YN
+		    , TO_CHAR(T.PRDT_INFO_UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS') AS PRDT_INFO_UPDATE_DATE
+		    , T.CREATED_BY 										   		AS CREATED_BY
+		    , TO_CHAR(T.CREATION_DATE, 'YYYY-MM-DD HH24:MI:SS')    		AS CREATION_DATE
+		    , T.LAST_UPDATED_BY 								   		AS LAST_UPDATED_BY
+		    , TO_CHAR(T.LAST_UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS') 		AS LAST_UPDATE_DATE
+		    
+		FROM SCMU.W_SOP_TB_PRDT_VAR_M T
+		
+		WHERE 1 = 1
+		    AND T.USE_YN = DECODE(#{useYn, jdbcType=VARCHAR}, '!ALL', T.USE_YN, #{useYn, jdbcType=VARCHAR})
+		    AND
+		    (
+		           #{verNm, jdbcType=VARCHAR} IS NULL AND 1 = 1
+		        OR UPPER(T.PRDT_VAR_VER_NM)   LIKE ('%'|| UPPER(#{verNm, jdbcType=VARCHAR}) ||'%')
+		        OR UPPER(T.PRDT_VAR_VER_DESC) LIKE ('%'|| UPPER(#{verNm, jdbcType=VARCHAR}) ||'%')
+		    )
+		ORDER BY T.PRDT_VAR_VER_CD
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 저장 > VERSION 채번 -->
+	<select id="getNewVersion" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.getNewVersion */
+	        (CASE WHEN MAX(T.PRDT_VAR_VER_CD) IS NULL 
+	        		OR SUBSTR(MAX(T.PRDT_VAR_VER_CD), 1, 6) != TO_CHAR(SYSDATE, 'YYYYMM') THEN TO_CHAR(SYSDATE, 'YYYYMM') || '001'
+	              WHEN SUBSTR(MAX(T.PRDT_VAR_VER_CD), 1, 6)  = TO_CHAR(SYSDATE, 'YYYYMM') THEN TO_CHAR(MAX(T.PRDT_VAR_VER_CD) + 1)
+	         END) AS NEW_VER_CD
+		FROM SCMU.W_SOP_TB_PRDT_VAR_M T
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 저장 > 추가/수정 -->
+	<update id="update" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_PRDT_VAR_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.update */
+		USING
+		(
+			SELECT
+				  #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}		 							   	   AS PRDT_VAR_VER_CD
+				, #{PRDT_VAR_VER_NM, jdbcType=VARCHAR} 	     							   	   AS PRDT_VAR_VER_NM
+				, #{PRDT_VAR_VER_DESC, jdbcType=VARCHAR} 									   AS PRDT_VAR_VER_DESC
+				, #{USE_YN, jdbcType=VARCHAR} 			   	 							   	   AS USE_YN
+				, TO_DATE(#{PRDT_INFO_UPDATE_DATE, jdbcType=VARCHAR}, 'YYYY-MM-DD HH24:MI:SS') AS PRDT_INFO_UPDATE_DATE
+			FROM DUAL
+			
+		) S ON (
+		            T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD
+		        )
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.PRDT_VAR_VER_NM  	  = S.PRDT_VAR_VER_NM
+				, T.PRDT_VAR_VER_DESC 	  = S.PRDT_VAR_VER_DESC
+				, T.USE_YN 			  	  = S.USE_YN
+				, T.PRDT_INFO_UPDATE_DATE = DECODE(S.USE_YN, 'Y', S.PRDT_INFO_UPDATE_DATE, NULL) -- USE_YN -> N(갱신일시 초기화)
+				, T.LAST_UPDATED_BY 	  = #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE 	  = SYSDATE
+			
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PRDT_VAR_VER_CD, T.PRDT_VAR_VER_NM, T.PRDT_VAR_VER_DESC, T.USE_YN, T.PRDT_INFO_UPDATE_DATE
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  #{prdtVarVerCd, jdbcType=VARCHAR}, S.PRDT_VAR_VER_NM, NVL(S.PRDT_VAR_VER_DESC, S.PRDT_VAR_VER_NM), S.USE_YN, S.PRDT_INFO_UPDATE_DATE
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 저장 > 추가 > 일일 할당시간 기본값 입력 -->
+	<update id="insertSfthr" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.insertSfthr */
+		USING
+		(	
+			SELECT
+			  #{prdtVarVerCd, jdbcType=VARCHAR} 							AS PRDT_VAR_VER_CD
+		    , S.CODE														AS SFT_PTRN_DTY_CODE
+			, (CASE WHEN S.SEGMENT2 = 10 AND S.SEGMENT4 = '정상' THEN 10
+			 		WHEN S.SEGMENT2 = 10 AND S.SEGMENT4 = '연장' THEN 12
+			 		WHEN S.SEGMENT2 = 10 AND S.SEGMENT4 = '철야' THEN 18
+			 		WHEN S.SEGMENT2 = 20 AND S.SEGMENT4 = '정상' THEN 16
+			 		WHEN S.SEGMENT2 = 20 AND S.SEGMENT4 = '철야' THEN 24
+			 		WHEN S.SEGMENT2 = 20 AND S.SEGMENT4 = 'TPM'  THEN 4
+					ELSE 0
+					 END) 													AS AVL_HR
+					 
+			, S.SEGMENT2  													AS LIQUOR_CODE
+			, #{userId, jdbcType=VARCHAR}									AS CREATED_BY
+			, SYSDATE														AS CREATION_DATE
+			, #{userId, jdbcType=VARCHAR}									AS LAST_UPDATED_BY
+			, SYSDATE														AS LAST_UPDATE_DATE
+			FROM SCMU.W_SOP_TB_COM_CODE_M S
+			WHERE  1 = 1
+			    AND S.GROUP_CODE = 'SFT_PTRN_DTY'
+			    AND S.USE_YN = 'Y'
+		) S ON (
+					T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD
+				)
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PRDT_VAR_VER_CD, T.SFT_PTRN_DTY_CODE, T.AVL_HR, T.LIQUOR_CODE
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(	  
+			  S.PRDT_VAR_VER_CD, S.SFT_PTRN_DTY_CODE, S.AVL_HR, S.LIQUOR_CODE
+			, S.CREATED_BY, S.CREATION_DATE, S.LAST_UPDATED_BY, S.LAST_UPDATE_DATE
+		)
+		
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 갱신 > 추가/수정 -->
+	<update id="renew" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_PRDT_VAR_DTL_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.renew */
+		USING
+		(
+			WITH TBL AS 
+			(
+			    -- 영업일 기준 120일 이내에 생산실적이 존재하는 공장/라인/제품만 대상
+			    SELECT DISTINCT ZB.ORG_CODE, ZB.DEPT_CODE, ZB.ITEM_CODE
+			      FROM SCMU.W_SOP_VW_CALENDAR_M        ZA
+			      JOIN EDW.M_PRD_TB_MFG_OP_EFF_DAILY_F ZB
+			        ON ZB.OU_CODE = 'HJ0'
+			       AND ZB.YYYYMMDD_CODE BETWEEN ZA.BF_120D_YYYYMMDD AND ZA.YYYYMMDD
+			     WHERE 1 = 1
+			       AND ZA.YYYYMMDD          = TO_CHAR(SYSDATE - 1, 'YYYYMMDD') -- 전일 기준
+			       AND ZB.CONV_COMPLETE_QTY <![CDATA[ > ]]> 0
+			)
+		    SELECT 
+		    	   #{prdtVarVerCd, jdbcType=VARCHAR} 				AS PRDT_VAR_VER_CD
+		    	 , C.LIQUOR_CODE                                    AS LIQUOR_CODE
+		         , MAX(D.LIQUOR_DESC)                               AS LIQUOR_DESC
+		         , A.ORG_CODE                                       AS ORG_CODE
+		         , MAX(B.MFG_NAME)                                  AS ORG_NAME
+		         , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT
+		                ELSE                                                                     A.START_DEPARTMENT || '-' || A.END_DEPARTMENT
+		           END                                              AS LINE_DEPT_CODE
+		         
+		         , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC
+		                ELSE                                                                     A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC
+		           END                                              AS LINE_DEPT_NAME
+		
+		         , A.ITEM_CODE                                      AS ITEM_CODE
+		         , MAX(C.DESCRIPTION)                               AS ITEM_NAME
+		         
+		         , MAX(C.VESSEL_CODE)                               AS VESSEL_CODE
+		         , MAX(C.VESSEL_SORT)                               AS VESSEL_NAME
+		         , MAX(C.VOLUME_VALUE)                              AS VOLUME_VALUE
+		         
+		         , MAX(NVL(A.QTY_PER_HOUR, 0))                      AS QTY_PER_HOUR   -- 시간당 생산량(단순c/s단위)
+		         , MAX(NVL(A.QTY_PER_HOUR, 0) / 60)                 AS QTY_PER_MIN    -- 분당 생산량(단순c/s단위)
+		             
+		         , MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY, 0) * 60)      AS ACTUAL_60D_SALE_QTY      -- 판매실적 60일 수량(단순c/s단위)
+		         , MAX(C.UOM_CONVERSION_VALUE)                      AS UOM_CONVERSION_VALUE
+		         
+		         , RANK() OVER (PARTITION BY C.LIQUOR_CODE ORDER BY MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY * 60 * C.UOM_CONVERSION_VALUE, 0)) DESC, MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY, 0)) DESC, A.ITEM_CODE)
+		                                                            AS PRDT_RANK                -- 60일 판매실적 기준의 순위
+		         
+		      FROM EDW.W_PRD_TB_ITEM_ROUTING_F A
+		      JOIN EDW.W_CM_TB_MFG_M           B ON A.ORG_CODE          = B.MFG_CODE
+		      JOIN EDW.W_CM_TB_FG_ITEM_M       C ON A.ITEM_CODE         = C.ITEM_CODE
+		      JOIN EDW.W_CM_TB_LIQUOR_M        D ON C.LIQUOR_CODE       = D.LIQUOR_CODE
+		 LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F   E ON E.PERIOD_YYYYMMDD   = TO_CHAR(SYSDATE - 1, 'YYYYMMDD') -- 전일 기준
+		                                        AND E.ITEM_CODE         = A.ITEM_CODE
+		     WHERE 1 = 1
+		       AND A.START_LINE                            IS NOT NULL
+		       AND A.ORG_CODE                              NOT IN ('MH2', 'S01')
+		       AND CASE WHEN NVL(A.START_LINE_DISABLE_DATE, SYSDATE)     <![CDATA[ >= ]]> SYSDATE
+		                     AND NVL(A.END_LINE_DISABLE_DATE, SYSDATE)   <![CDATA[ >= ]]> SYSDATE
+		                     AND C.ITEM_STATUS                           = 'Active' THEN 'Y'
+		                ELSE                                                             'N'
+		           END                                     = 'Y'
+		       AND NVL(A.QTY_PER_HOUR, 0)                  <![CDATA[ > ]]> 0 -- 단위 생산량이 존재하는 라우팅만
+		       AND EXISTS (
+		                SELECT 1
+		                  FROM TBL Z
+		                 WHERE 1 = 1
+		                   AND Z.ORG_CODE  = A.ORG_CODE
+		                   AND Z.DEPT_CODE = A.START_DEPARTMENT
+		                   AND Z.ITEM_CODE = A.ITEM_CODE
+		           )
+		           
+		     GROUP BY C.LIQUOR_CODE, A.ORG_CODE, A.ITEM_CODE
+		            , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END
+		            , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC ELSE A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC END
+		            
+		     ORDER BY A.ORG_CODE, CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END, A.ITEM_CODE
+		     
+		) S ON (
+					  T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD
+				  AND T.ORG_CODE		= S.ORG_CODE
+				  AND T.LINE_DEPT_CODE	= S.LINE_DEPT_CODE
+				  AND T.ITEM_CODE		= S.ITEM_CODE
+				)
+				
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.QTY_PER_HOUR   		= S.QTY_PER_HOUR
+				, T.QTY_PER_MIN    		= S.QTY_PER_MIN
+				, T.PRDT_RANK	   		= S.PRDT_RANK
+				, T.LINE_DEPT_NAME 		= S.LINE_DEPT_NAME
+				, T.ACTUAL_60D_SALE_QTY = S.ACTUAL_60D_SALE_QTY
+				, T.LAST_UPDATED_BY 	= #{userId, jdbcType=VARCHAR} 
+				, T.LAST_UPDATE_DATE 	= SYSDATE
+		
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.ITEM_CODE, T.WORK_SFT_TEXT, T.QTY_PER_HOUR, T.QTY_PER_MIN, T.PRDT_EFC_RATE
+			, T.PRDT_RANK, T.LINE_DEPT_NAME, T.NEW_LINE_YN, T.VESSEL_CODE, T.VOLUME_VALUE, T.ACTUAL_60D_SALE_QTY, T.UOM_CONVERSION_VALUE
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.PRDT_VAR_VER_CD, S.ORG_CODE, S.LINE_DEPT_CODE, S.ITEM_CODE, NULL, S.QTY_PER_HOUR, S.QTY_PER_MIN, 1
+			, S.PRDT_RANK , S.LINE_DEPT_NAME, 'N', S.VESSEL_CODE, S.VOLUME_VALUE, S.ACTUAL_60D_SALE_QTY, S.UOM_CONVERSION_VALUE
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 갱신 > 삭제 -->
+	<delete id="deleteNotExistsRenew" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08100DaoMapper.deleteNotExistsRenew */
+		FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M T
+		WHERE 1 = 1
+			AND T.NEW_LINE_YN != 'Y'
+			AND T.PRDT_VAR_VER_CD = #{prdtVarVerCd, jdbcType=VARCHAR}
+			AND NOT EXISTS
+			(
+				SELECT 
+					  S.PRDT_VAR_VER_CD
+					, S.ORG_CODE
+					, S.LINE_DEPT_CODE
+					, S.ITEM_CODE
+				FROM
+				(
+					WITH TBL AS 
+					(
+					    -- 영업일 기준 120일 이내에 생산실적이 존재하는 공장/라인/제품만 대상
+					    SELECT DISTINCT ZB.ORG_CODE, ZB.DEPT_CODE, ZB.ITEM_CODE
+					      FROM SCMU.W_SOP_VW_CALENDAR_M        ZA
+					      JOIN EDW.M_PRD_TB_MFG_OP_EFF_DAILY_F ZB
+					        ON ZB.OU_CODE = 'HJ0'
+					       AND ZB.YYYYMMDD_CODE BETWEEN ZA.BF_120D_YYYYMMDD AND ZA.YYYYMMDD
+					     WHERE 1 = 1
+					       AND ZA.YYYYMMDD          = TO_CHAR(SYSDATE - 1, 'YYYYMMDD') 
+					       AND ZB.CONV_COMPLETE_QTY <![CDATA[ > ]]> 0
+					)
+				    SELECT
+				           #{prdtVarVerCd, jdbcType=VARCHAR}				AS PRDT_VAR_VER_CD
+				         , A.ORG_CODE                                       AS ORG_CODE
+				         , (CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT
+				                 ELSE                                                                     A.START_DEPARTMENT || '-' || A.END_DEPARTMENT
+				           		 END)                                       AS LINE_DEPT_CODE
+				         , A.ITEM_CODE                                      AS ITEM_CODE
+				
+				      FROM EDW.W_PRD_TB_ITEM_ROUTING_F A
+				      JOIN EDW.W_CM_TB_FG_ITEM_M       B ON A.ITEM_CODE = B.ITEM_CODE
+				 LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F   C ON C.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE - 1, 'YYYYMMDD') 
+				       									AND C.ITEM_CODE = A.ITEM_CODE
+				     WHERE 1 = 1
+				       AND A.START_LINE                            IS NOT NULL
+				       AND A.ORG_CODE                              NOT IN ('MH2', 'S01')
+				       AND CASE WHEN NVL(A.START_LINE_DISABLE_DATE, SYSDATE)     <![CDATA[ >= ]]> SYSDATE
+				                     AND NVL(A.END_LINE_DISABLE_DATE, SYSDATE)   <![CDATA[ >= ]]> SYSDATE
+				                     AND B.ITEM_STATUS                           = 'Active' THEN 'Y'
+				                ELSE                                                             'N'
+				           END                                     = 'Y'
+				       AND NVL(A.QTY_PER_HOUR, 0)                  <![CDATA[ > ]]> 0 -- 단위 생산량이 존재하는 라우팅만
+				       AND EXISTS (
+				                SELECT 1
+				                  FROM TBL Z
+				                 WHERE 1 = 1
+				                   AND Z.ORG_CODE  = A.ORG_CODE
+				                   AND Z.DEPT_CODE = A.START_DEPARTMENT
+				                   AND Z.ITEM_CODE = A.ITEM_CODE
+				           )
+				     GROUP BY A.ORG_CODE, A.ITEM_CODE
+				            , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END
+				            , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC ELSE A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC END
+				     ORDER BY A.ORG_CODE, CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END, A.ITEM_CODE
+				) S
+				WHERE 1 = 1
+					AND T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD
+					AND T.ORG_CODE		  = S.ORG_CODE
+					AND T.LINE_DEPT_CODE  = S.LINE_DEPT_CODE
+					AND T.ITEM_CODE		  = S.ITEM_CODE
+			)
+	</delete>
+	
+	<!-- 생산 라인별 CAPA 설정 > 갱신 > 갱신일시 UPDATE -->
+	<update id="updateRenewDate" parameterType="map">
+		UPDATE SCMU.W_SOP_TB_PRDT_VAR_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.updateRenewDate */
+		SET T.PRDT_INFO_UPDATE_DATE = (CASE WHEN #{fromPrdtVarVerCd, jdbcType=VARCHAR} IS NULL THEN SYSDATE
+											ELSE (SELECT S.PRDT_INFO_UPDATE_DATE 
+												  FROM SCMU.W_SOP_TB_PRDT_VAR_M S 
+												  WHERE 1 = 1
+												  	AND S.PRDT_VAR_VER_CD = #{fromPrdtVarVerCd, jdbcType=VARCHAR}) 
+											 END)
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = DECODE(#{toPrdtVarVerCd, jdbcType=VARCHAR}, NULL, #{prdtVarVerCd, jdbcType=VARCHAR}, #{toPrdtVarVerCd, jdbcType=VARCHAR})
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 버전복사 > TO버전 상세 테이블 데이터 삭제 -->
+	<delete id="deleteToVerDtl" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08100DaoMapper.deleteToVerDtl */
+		FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M T
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = NVL(#{toPrdtVarVerCd, jdbcType=VARCHAR}, #{PRDT_VAR_VER_CD, jdbcType=VARCHAR})
+	</delete>
+	<!-- 생산 라인별 CAPA 설정 > 버전복사 > TO버전 신규라인 테이블 데이터 삭제 -->
+	<delete id="deleteToVerNewLine" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08100DaoMapper.deleteToVerNewLine */
+		FROM SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M T
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = NVL(#{toPrdtVarVerCd, jdbcType=VARCHAR}, #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}) 
+	</delete>
+	<!-- 생산 라인별 CAPA 설정 > 버전복사 > TO버전 일일할당시간 테이블 데이터 삭제 -->
+	<delete id="deleteToVerSftHr" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08100DaoMapper.deleteToVerSftHr */
+		FROM SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M T
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = NVL(#{toPrdtVarVerCd, jdbcType=VARCHAR}, #{PRDT_VAR_VER_CD, jdbcType=VARCHAR})
+	</delete>
+	
+	<!-- 생산 라인별 CAPA 설정 > 버전복사 > FROM버전 상세 테이블 데이터 입력 -->
+	<update id="insertFromVerDtl" parameterType="map">
+		INSERT INTO W_SOP_TB_PRDT_VAR_DTL_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.insertFromVerDtl */
+		( 
+			  T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.ITEM_CODE, T.WORK_SFT_TEXT, T.QTY_PER_HOUR, T.QTY_PER_MIN, T.PRDT_EFC_RATE
+		    , T.PRDT_RANK, T.LINE_DEPT_NAME, T.NEW_LINE_YN, T.VESSEL_CODE, T.VOLUME_VALUE, T.ACTUAL_60D_SALE_QTY, T.UOM_CONVERSION_VALUE
+		    , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE 
+		)
+		(
+		SELECT
+		      #{toPrdtVarVerCd}, S.ORG_CODE, S.LINE_DEPT_CODE, S.ITEM_CODE, S.WORK_SFT_TEXT, S.QTY_PER_HOUR, S.QTY_PER_MIN, S.PRDT_EFC_RATE
+		    , S.PRDT_RANK, S.LINE_DEPT_NAME, S.NEW_LINE_YN, S.VESSEL_CODE, S.VOLUME_VALUE, S.ACTUAL_60D_SALE_QTY, S.UOM_CONVERSION_VALUE
+		    , S.CREATED_BY, S.CREATION_DATE, S.LAST_UPDATED_BY, S.LAST_UPDATE_DATE
+		FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M S
+		WHERE  1 = 1
+		    AND S.PRDT_VAR_VER_CD = #{fromPrdtVarVerCd, jdbcType=VARCHAR}
+		)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 버전복사 > FROM버전 신규라인 테이블 데이터 입력 -->
+	<update id="insertFromVerNewLine" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.insertFromVerNewLine */
+		( 
+			  T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.LINE_DEPT_NAME, T.LINE_DEPT_DESC, T.VESSEL_CODE, T.VLD_STR_DT, T.VLD_END_DT
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		(
+		SELECT 
+			  #{toPrdtVarVerCd}, S.ORG_CODE, S.LINE_DEPT_CODE, S.LINE_DEPT_NAME, S.LINE_DEPT_DESC, S.VESSEL_CODE, S.VLD_STR_DT, S.VLD_END_DT
+			, S.CREATED_BY, S.CREATION_DATE, S.LAST_UPDATED_BY, S.LAST_UPDATE_DATE
+		FROM SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M S
+		WHERE  1 = 1
+		    AND S.PRDT_VAR_VER_CD = #{fromPrdtVarVerCd, jdbcType=VARCHAR}
+		)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 버전복사 > FROM버전 일일할당시간 데이터 입력 -->
+	<update id="insertFromVerSftHr" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.insertFromVerSftHr */
+		(
+			T.PRDT_VAR_VER_CD, T.SFT_PTRN_DTY_CODE, T.AVL_HR, T.LIQUOR_CODE, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		(
+		SELECT
+			#{toPrdtVarVerCd}, S.SFT_PTRN_DTY_CODE, S.AVL_HR, S.LIQUOR_CODE, S.CREATED_BY, S.CREATION_DATE, S.LAST_UPDATED_BY, S.LAST_UPDATE_DATE 
+		FROM SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M S
+		WHERE  1 = 1
+		    AND S.PRDT_VAR_VER_CD = #{fromPrdtVarVerCd, jdbcType=VARCHAR}
+		)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 공장 콤보 조회 -->
+	<select id="getMfgList" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.getMfgList */
+		      T.MFG_CODE 			   AS CODE
+		    , SUBSTR(T.MFG_NAME, 1, 4) AS NAME
+		FROM EDW.W_CM_TB_MFG_M T
+		WHERE 1 = 1
+		    AND T.MFG_CODE NOT IN ('MH2', 'S01')
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > Header1 조회 -->
+	<select id="searchDetailHeader1" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.searchDetailHeader1 */
+              T1.CODE                                            AS CODE
+              
+            , (CASE WHEN ROW_NUMBER() OVER (ORDER BY T1.SEQ) = 1 THEN '일일 생산량'
+                    ELSE NULL
+                    END) AS HEADER1_DESC
+
+            , (CASE WHEN ROW_NUMBER() OVER (ORDER BY T1.SEQ) = 1 THEN COUNT(1) OVER (PARTITION BY 1)
+                    ELSE NULL
+                    END) AS HEADER1_SPAN
+
+            , T1.SEGMENT4 AS HEADER3_DESC
+            
+        FROM SCMU.W_SOP_TB_COM_CODE_M T1
+
+        WHERE 1 = 1
+            AND T1.GROUP_CODE = 'SFT_PTRN_DTY'
+            AND T1.USE_YN = 'Y'
+            AND T1.SEGMENT2 = #{liquorCd, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > Header2 조회 -->
+	<select id="searchDetailHeader2" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.searchHeader2 */
+			  A.WEEK_WORK_DCNT_TP_CODE AS CODE
+			  
+		    , CASE WHEN A.TOTAL_ROWNUM = 1 THEN '주당생산기준'
+		           ELSE NULL
+		           END AS HEADER1_DESC
+		           
+		    , CASE WHEN A.TOTAL_ROWNUM = 1 THEN COUNT(1) OVER (PARTITION BY 1)
+		           ELSE NULL
+		           END AS HEADER1_SPAN
+		           
+		    , CASE WHEN A.TP_ROWNUM = 1 THEN A.SEGMENT5
+		           ELSE NULL
+		           END AS HEADER2_DESC
+		           
+		    , CASE WHEN A.TP_ROWNUM = 1 THEN COUNT(1) OVER (PARTITION BY A.SEGMENT5)
+		           ELSE NULL
+		           END AS HEADER2_SPAN
+		           
+		    , SEGMENT7 AS HEADER3_DESC
+		FROM
+		(
+		    SELECT
+		          T1.WEEK_WORK_DCNT_TP_CODE												 AS WEEK_WORK_DCNT_TP_CODE
+		        , ROW_NUMBER() OVER (ORDER BY MAX(T2.SEQ)) 								 AS TOTAL_ROWNUM
+		        , ROW_NUMBER() OVER (PARTITION BY MAX(T2.SEGMENT5) ORDER BY MAX(T2.SEQ)) AS TP_ROWNUM
+		        , MAX(T2.SEGMENT5) 														 AS SEGMENT5
+		        , MAX(T2.SEGMENT7)														 AS SEGMENT7
+		        , MAX(T2.SEQ)    													     AS SEQ
+		        
+		    FROM SCMU.W_SOP_TB_WEEK_PRDT_STD_M T1
+		
+		    INNER JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'WEEK_WORK_DCNT_TP'
+		                                          AND T2.USE_YN     = 'Y'
+		                                          AND T2.CODE       = T1.WEEK_WORK_DCNT_TP_CODE
+		    WHERE 1 = 1
+		        AND T1.LIQUOR_CODE = #{liquorCd, jdbcType=VARCHAR}
+		    GROUP BY T1.WEEK_WORK_DCNT_TP_CODE
+		) A
+		ORDER BY A.SEQ
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 조회 -->
+	<select id="searchDetail" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.searchDetail */
+              MAX(B.LIQUOR_DESC)    					  AS LIQUOR_DESC 
+            , T.PRDT_VAR_VER_CD							  AS PRDT_VAR_VER_CD 
+            , T.ORG_CODE								  AS ORG_CODE
+            , T.LINE_DEPT_CODE							  AS LINE_DEPT_CODE
+            , MAX(T.LINE_DEPT_NAME) 					  AS LINE_DEPT_NAME
+            , T.ITEM_CODE     							  AS ITEM_CODE
+            , MAX(C.DESCRIPTION)    					  AS ITEM_NAME
+            , MAX(T.VESSEL_CODE)						  AS VESSEL_CODE
+            , MAX(T.VOLUME_VALUE)   					  AS VOLUME_VALUE
+            , MAX(T.WORK_SFT_TEXT)  					  AS WORK_SFT_TEXT
+            , MAX(T.QTY_PER_MIN)    					  AS QTY_PER_MIN
+            , MAX(T.PRDT_EFC_RATE)  					  AS PRDT_EFC_RATE
+            , MAX(T.PRDT_RANK) 							  AS PRDT_RANK
+            , MAX(T.QTY_PER_MIN * T.PRDT_EFC_RATE * 60)   AS QTY_PER_HOUR
+            , MAX(T.NEW_LINE_YN)						  AS NEW_LINE_YN
+            
+--          일일 생산량 header1
+			<foreach collection="header1" item="list" index="i">
+			, MAX(CASE WHEN D.SFT_PTRN_DTY_CODE = #{list.CODE, jdbcType=VARCHAR} THEN (D.AVL_HR * (T.QTY_PER_MIN * T.PRDT_EFC_RATE * 60)) 
+					   ELSE 0
+					   END) AS "${list.CODE}"
+			</foreach>
+            
+--          주당 생산기준 header2
+			<foreach collection="header2" item="list2" index="i">
+				,
+				<foreach collection="header1" item="list1" index="j" separator="|| '일, ' ||" close="||'일'">
+					MAX(CASE WHEN E.WEEK_WORK_DCNT_TP_CODE = #{list2.CODE, jdbcType=VARCHAR} 
+							       AND E.SFT_PTRN_DTY_CODE = #{list1.CODE, jdbcType=VARCHAR} THEN #{list1.HEADER3_DESC, jdbcType=VARCHAR} || ' ' || E.WORK_DCNT 
+							 ELSE NULL
+							 END)
+				</foreach>
+				AS "${list2.CODE}"
+			</foreach>
+            
+        FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M 			T
+        LEFT JOIN EDW.W_CM_TB_LIQUOR_M              B ON B.LIQUOR_CODE = #{liquorCd, jdbcType=VARCHAR} 
+        LEFT JOIN EDW.W_CM_TB_FG_ITEM_M             C ON C.ITEM_CODE = T.ITEM_CODE
+        INNER JOIN SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M  D ON D.PRDT_VAR_VER_CD = T.PRDT_VAR_VER_CD
+        INNER JOIN SCMU.W_SOP_TB_WEEK_PRDT_STD_M    E ON E.SFT_PTRN_DTY_CODE = D.SFT_PTRN_DTY_CODE
+        
+        WHERE 1 = 1
+            AND T.PRDT_VAR_VER_CD = #{prdtVarVerCd, jdbcType=VARCHAR} 
+            AND 
+            (	-- 공장
+            	( NVL(#{mfgCd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+            	OR
+            	( T.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+            ) 
+            AND 
+            (
+            	( C.DOM_EXP_CODE = DECODE(#{expCd, jdbcType=VARCHAR}, '!ALL', C.DOM_EXP_CODE, #{expCd, jdbcType=VARCHAR}) )
+            	OR
+            	( C.DOM_EXP_CODE IS NULL AND 1 = 1 )
+            )
+            AND 
+            (      -- 제품이 없다는 것은 신규라인이므로, 공장으로 사업부문 구분)
+            	( C.LIQUOR_CODE = #{liquorCd, jdbcType=VARCHAR} )
+             	OR
+                ( C.LIQUOR_CODE IS NULL AND CASE WHEN T.ORG_CODE LIKE 'MH%' THEN '10' WHEN T.ORG_CODE LIKE 'MJ%' THEN '20' END = #{liquorCd, jdbcType=VARCHAR} )
+            )
+        GROUP BY T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.ITEM_CODE
+        ORDER BY T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.ITEM_CODE
+	</select>
+    
+    <!-- 생산 라인별 CAPA 설정 > 상세 > 제품라우팅 조회 -->
+    <select id="selectItemRouting" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.selectItemRouting */
+           C.LIQUOR_CODE                                    AS LIQUOR_CODE
+         , MAX(D.LIQUOR_DESC)                               AS LIQUOR_DESC
+         , A.ORG_CODE                                       AS ORG_CODE
+         , MAX(B.MFG_NAME)                                  AS ORG_NAME
+         , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT
+                ELSE                                                                     A.START_DEPARTMENT || '-' || A.END_DEPARTMENT
+           END                                              AS LINE_DEPT_CODE
+         , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC
+                ELSE                                                                     A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC
+           END                                              AS LINE_DEPT_NAME
+         , A.ITEM_CODE                                      AS ITEM_CODE
+         , MAX(C.DESCRIPTION)                               AS ITEM_NAME
+         , MAX(C.VESSEL_CODE)                               AS VESSEL_CODE
+         , MAX(C.VESSEL_SORT)                               AS VESSEL_NAME
+         , MAX(C.VOLUME_VALUE)                              AS VOLUME_VALUE
+         , MAX(NVL(A.QTY_PER_HOUR, 0))                      AS QTY_PER_HOUR   -- 시간당 생산량(단순c/s단위)
+         , MAX(NVL(A.QTY_PER_HOUR, 0) / 60)                 AS QTY_PER_MIN    -- 분당 생산량(단순c/s단위)
+         , MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY, 0) * 60)      AS ACTUAL_60D_SALE_QTY      -- 판매실적 60일 수량(단순c/s단위)
+         , MAX(C.UOM_CONVERSION_VALUE)                      AS UOM_CONVERSION_VALUE
+         , RANK() OVER (PARTITION BY C.LIQUOR_CODE ORDER BY MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY * 60 * C.UOM_CONVERSION_VALUE, 0)) DESC, MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY, 0)) DESC, A.ITEM_CODE)
+                                                            AS PRDT_RANK                -- 60일 판매실적 기준의 순위
+      FROM EDW.W_PRD_TB_ITEM_ROUTING_F A
+      JOIN EDW.W_CM_TB_MFG_M           B ON A.ORG_CODE          = B.MFG_CODE
+      JOIN EDW.W_CM_TB_FG_ITEM_M       C ON A.ITEM_CODE         = C.ITEM_CODE
+      JOIN EDW.W_CM_TB_LIQUOR_M        D ON C.LIQUOR_CODE       = D.LIQUOR_CODE
+ LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F   E ON E.PERIOD_YYYYMMDD   = TO_CHAR(SYSDATE - 1, 'YYYYMMDD') -- 전일 기준
+                                        AND E.ITEM_CODE         = A.ITEM_CODE
+     WHERE 1 = 1
+       AND A.START_LINE                            IS NOT NULL
+       AND A.ORG_CODE                              NOT IN ('MH2', 'S01')
+       AND CASE WHEN NVL(A.START_LINE_DISABLE_DATE, SYSDATE)     >= SYSDATE
+                     AND NVL(A.END_LINE_DISABLE_DATE, SYSDATE)   >= SYSDATE
+                     AND C.ITEM_STATUS                           = 'Active' THEN 'Y'
+                ELSE                                                             'N'
+           END                                     = 'Y'
+       AND 
+            (	-- 공장
+            	( NVL(#{mfgCd, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+            	OR
+            	( A.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCd, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL ))
+            ) 
+       AND C.DOM_EXP_CODE = DECODE(#{expCd, jdbcType=VARCHAR}, '!ALL', C.DOM_EXP_CODE, #{expCd, jdbcType=VARCHAR})
+       AND C.LIQUOR_CODE  = #{liquorCd, jdbcType=VARCHAR}
+       AND NOT EXISTS (
+                -- 기 등록된 공장라인/제품은 제외
+                SELECT 1
+                  FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M X
+                 WHERE 1 = 1
+                   AND X.PRDT_VAR_VER_CD = #{prdtVarVerCd, jdbcType=VARCHAR}
+                   AND X.ORG_CODE        = A.ORG_CODE
+                   AND X.LINE_DEPT_CODE  = CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT
+                                                ELSE                                                                     A.START_DEPARTMENT || '-' || A.END_DEPARTMENT
+                                           END
+                   AND X.ITEM_CODE       = A.ITEM_CODE
+           )
+       AND (
+                (#{searchItem, jdbcType=VARCHAR} IS NULL AND 1 = 1)
+                OR
+                (A.ITEM_CODE LIKE '%' || #{searchItem, jdbcType=VARCHAR} || '%')
+                OR
+                (UPPER(C.DESCRIPTION) LIKE '%' || UPPER(#{searchItem, jdbcType=VARCHAR}) || '%')
+           )
+           
+     GROUP BY C.LIQUOR_CODE, A.ORG_CODE, A.ITEM_CODE
+            , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END
+            , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC ELSE A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC END
+
+     ORDER BY A.ORG_CODE, CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END, A.ITEM_CODE
+    </select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 저장 -->
+	<update id="updateDetail" parameterType="map">
+MERGE /* com.hitejinro.snop.work.dao.M08100DaoMapper.updateDetail */
+ INTO SCMU.W_SOP_TB_PRDT_VAR_DTL_M T
+USING (
+            SELECT SA.PRDT_VAR_VER_CD, SA.ORG_CODE, SA.LINE_DEPT_CODE, SA.ITEM_CODE
+                 , SA.WORK_SFT_TEXT, SA.PRDT_EFC_RATE, SA.NEW_LINE_YN
+                 , CASE WHEN SA.ROW_ACTION = 'insert' THEN SB.QTY_PER_HOUR
+                        ELSE                               SA.QTY_PER_HOUR
+                   END AS QTY_PER_HOUR -- 추가한 행의 경우에는 라우팅의 정보로 처리
+                 , CASE WHEN SA.ROW_ACTION = 'insert' THEN SB.QTY_PER_MIN
+                        ELSE                               SA.QTY_PER_MIN
+                   END AS QTY_PER_MIN -- 추가한 행의 경우에는 라우팅의 정보로 처리
+                 , SB.PRDT_RANK, SB.LINE_DEPT_NAME, SB.VESSEL_CODE, SB.VOLUME_VALUE, SB.ACTUAL_60D_SALE_QTY, SB.UOM_CONVERSION_VALUE
+                 , NULL AS ATTRIBUTE1, NULL AS ATTRIBUTE2, NULL AS ATTRIBUTE3, NULL AS ATTRIBUTE4, NULL AS ATTRIBUTE5
+              FROM (
+                        SELECT #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}                 AS PRDT_VAR_VER_CD
+                             , #{ORG_CODE, jdbcType=VARCHAR}                        AS ORG_CODE
+                             , #{LINE_DEPT_CODE, jdbcType=VARCHAR}                  AS LINE_DEPT_CODE
+                             , #{ITEM_CODE, jdbcType=VARCHAR}                       AS ITEM_CODE
+                             , #{WORK_SFT_TEXT, jdbcType=VARCHAR}                   AS WORK_SFT_TEXT
+                             , TO_NUMBER(#{QTY_PER_MIN, jdbcType=VARCHAR}) * 60     AS QTY_PER_HOUR -- 신규라인의 경우에만 사용
+                             , TO_NUMBER(#{QTY_PER_MIN, jdbcType=VARCHAR})          AS QTY_PER_MIN  -- 신규라인의 경우에만 사용
+                             , TO_NUMBER(#{PRDT_EFC_RATE, jdbcType=VARCHAR})        AS PRDT_EFC_RATE
+                             , NVL(#{NEW_LINE_YN, jdbcType=VARCHAR}, 'N')           AS NEW_LINE_YN
+                             , #{list.action, jdbcType=VARCHAR}                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+                          FROM DUAL
+                   ) SA
+         LEFT JOIN (
+                        SELECT C.LIQUOR_CODE                                    AS LIQUOR_CODE
+                             , MAX(D.LIQUOR_DESC)                               AS LIQUOR_DESC
+                             , A.ORG_CODE                                       AS ORG_CODE
+                             , MAX(B.MFG_NAME)                                  AS ORG_NAME
+                             , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT
+                                    ELSE                                                                     A.START_DEPARTMENT || '-' || A.END_DEPARTMENT
+                               END                                              AS LINE_DEPT_CODE
+                             , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC
+                                    ELSE                                                                     A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC
+                               END                                              AS LINE_DEPT_NAME
+                             , A.ITEM_CODE                                      AS ITEM_CODE
+                             , MAX(C.DESCRIPTION)                               AS ITEM_NAME
+                             , MAX(C.VESSEL_CODE)                               AS VESSEL_CODE
+                             , MAX(C.VESSEL_SORT)                               AS VESSEL_NAME
+                             , MAX(C.VOLUME_VALUE)                              AS VOLUME_VALUE
+                             , MAX(NVL(A.QTY_PER_HOUR, 0))                      AS QTY_PER_HOUR   -- 시간당 생산량(단순c/s단위)
+                             , MAX(NVL(A.QTY_PER_HOUR, 0) / 60)                 AS QTY_PER_MIN    -- 분당 생산량(단순c/s단위)
+                             , MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY, 0) * 60)      AS ACTUAL_60D_SALE_QTY      -- 판매실적 60일 수량(단순c/s단위)
+                             , MAX(C.UOM_CONVERSION_VALUE)                      AS UOM_CONVERSION_VALUE
+                             , RANK() OVER (PARTITION BY C.LIQUOR_CODE ORDER BY MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY * 60 * C.UOM_CONVERSION_VALUE, 0)) DESC, MAX(NVL(E.ACTUAL_60D_SALE_AVG_QTY, 0)) DESC, A.ITEM_CODE)
+                                                                                AS PRDT_RANK                -- 60일 판매실적 기준의 순위
+                          FROM EDW.W_PRD_TB_ITEM_ROUTING_F A
+                          JOIN EDW.W_CM_TB_MFG_M           B ON A.ORG_CODE          = B.MFG_CODE
+                          JOIN EDW.W_CM_TB_FG_ITEM_M       C ON A.ITEM_CODE         = C.ITEM_CODE
+                          JOIN EDW.W_CM_TB_LIQUOR_M        D ON C.LIQUOR_CODE       = D.LIQUOR_CODE
+                     LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F   E ON E.PERIOD_YYYYMMDD   = TO_CHAR(SYSDATE - 1, 'YYYYMMDD') -- 전일 기준
+                                                            AND E.ITEM_CODE         = A.ITEM_CODE
+                         WHERE 1 = 1
+                           AND A.START_LINE                            IS NOT NULL
+                           AND A.ORG_CODE                              NOT IN ('MH2', 'S01')
+                           AND CASE WHEN NVL(A.START_LINE_DISABLE_DATE, SYSDATE)     >= SYSDATE
+                                         AND NVL(A.END_LINE_DISABLE_DATE, SYSDATE)   >= SYSDATE
+                                         AND C.ITEM_STATUS                           = 'Active' THEN 'Y'
+                                    ELSE                                                             'N'
+                               END                                     = 'Y'
+                               
+                         GROUP BY C.LIQUOR_CODE, A.ORG_CODE, A.ITEM_CODE
+                                , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END
+                                , CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT_DESC ELSE A.START_DEPARTMENT_DESC || '-' || A.END_DEPARTMENT_DESC END
+            
+                         ORDER BY A.ORG_CODE, CASE WHEN A.START_DEPARTMENT = NVL(A.END_DEPARTMENT, A.START_DEPARTMENT) THEN A.START_DEPARTMENT ELSE A.START_DEPARTMENT || '-' || A.END_DEPARTMENT END, A.ITEM_CODE
+                   ) SB
+                ON SB.ORG_CODE       = SA.ORG_CODE
+               AND SB.LINE_DEPT_CODE = SA.LINE_DEPT_CODE
+               AND SB.ITEM_CODE      = SA.ITEM_CODE
+      ) S
+   ON (T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD AND T.ORG_CODE = S.ORG_CODE AND T.LINE_DEPT_CODE = S.LINE_DEPT_CODE AND T.ITEM_CODE = S.ITEM_CODE)
+   
+ WHEN MATCHED THEN
+    UPDATE
+       SET T.WORK_SFT_TEXT    = S.WORK_SFT_TEXT
+         , T.QTY_PER_HOUR     = CASE WHEN T.NEW_LINE_YN = 'Y' THEN S.QTY_PER_HOUR
+                                     ELSE                          T.QTY_PER_HOUR
+                                END -- 신규라인인 경우에만 Update
+         , T.QTY_PER_MIN      = CASE WHEN T.NEW_LINE_YN = 'Y' THEN S.QTY_PER_MIN
+                                     ELSE                          T.QTY_PER_MIN
+                                END -- 신규라인인 경우에만 Update
+         , T.PRDT_EFC_RATE    = S.PRDT_EFC_RATE
+         , T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+         , T.LAST_UPDATE_DATE = SYSDATE
+       
+ WHEN NOT MATCHED THEN
+    INSERT (T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.ITEM_CODE
+            , T.WORK_SFT_TEXT, T.QTY_PER_HOUR, T.QTY_PER_MIN, T.PRDT_EFC_RATE, T.PRDT_RANK, T.LINE_DEPT_NAME, T.NEW_LINE_YN, T.VESSEL_CODE, T.VOLUME_VALUE, T.ACTUAL_60D_SALE_QTY, T.UOM_CONVERSION_VALUE
+            , T.ATTRIBUTE1, T.ATTRIBUTE2, T.ATTRIBUTE3, T.ATTRIBUTE4, T.ATTRIBUTE5, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+    VALUES (S.PRDT_VAR_VER_CD, S.ORG_CODE, S.LINE_DEPT_CODE, S.ITEM_CODE
+            , S.WORK_SFT_TEXT, S.QTY_PER_HOUR, S.QTY_PER_MIN, S.PRDT_EFC_RATE, S.PRDT_RANK, S.LINE_DEPT_NAME, S.NEW_LINE_YN, S.VESSEL_CODE, S.VOLUME_VALUE, S.ACTUAL_60D_SALE_QTY, S.UOM_CONVERSION_VALUE
+            , S.ATTRIBUTE1, S.ATTRIBUTE2, S.ATTRIBUTE3, S.ATTRIBUTE4, S.ATTRIBUTE5, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 일일 할당시간관리 팝업 > 조회 -->
+	<select id="searchSftHr" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.searchSftHr */
+		      T1.PRDT_VAR_VER_CD		AS PRDT_VAR_VER_CD
+		    , T1.LIQUOR_CODE			AS LIQUOR_CODE
+		    , T2.LIQUOR_DESC			AS LIQUOR_DESC
+		    , T1.SFT_PTRN_DTY_CODE		AS SFT_PTRN_DTY_CODE
+		    , T3.SEGMENT4 				AS SFT_PTRN_DTY_NAME
+		    , T1.AVL_HR					AS AVL_HR
+		FROM SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M T1
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M 		 T2 ON T2.LIQUOR_CODE = T1.LIQUOR_CODE
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M 	 T3 ON T3.GROUP_CODE  = 'SFT_PTRN_DTY' AND T3.CODE = T1.SFT_PTRN_DTY_CODE
+		WHERE 1 = 1
+			AND T1.PRDT_VAR_VER_CD = #{prdtVarVerCd, jdbcType=VARCHAR}
+		ORDER BY T3.SEQ
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 일일 할당시간관리 팝업 > 저장 -->
+	<update id="updateSftHr" parameterType="map">
+		UPDATE SCMU.W_SOP_TB_PRDT_VAR_SFT_HR_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.updateSftHr */
+		   SET
+		   	  T.AVL_HR 			 	= #{AVL_HR, jdbcType=VARCHAR}
+			, T.LAST_UPDATED_BY  	= #{userId, jdbcType=VARCHAR}
+			, T.LAST_UPDATE_DATE 	= SYSDATE
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD   = #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}
+			AND T.SFT_PTRN_DTY_CODE = #{SFT_PTRN_DTY_CODE, jdbcType=VARCHAR}
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 라인관리 팝업 > 조회 -->
+	<select id="searchNewLine" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08100DaoMapper.searchNewLine */
+			  T.PRDT_VAR_VER_CD					  						 AS PRDT_VAR_VER_CD
+			, T.ORG_CODE						  						 AS ORG_CODE
+			, T.LINE_DEPT_CODE					  						 AS LINE_DEPT_CODE
+			, T.LINE_DEPT_NAME					  						 AS LINE_DEPT_NAME
+			, T.LINE_DEPT_DESC					  						 AS LINE_DEPT_DESC
+			, T.VESSEL_CODE						  						 AS VESSEL_CODE
+			, TO_CHAR(TO_DATE(T.VLD_STR_DT, 'YYYY-MM-DD'), 'YYYY-MM-DD') AS VLD_STR_DT
+			, TO_CHAR(TO_DATE(T.VLD_END_DT, 'YYYY-MM-DD'), 'YYYY-MM-DD') AS VLD_END_DT
+		FROM SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M T
+		WHERE 1 = 1
+		    AND T.PRDT_VAR_VER_CD = #{prdtVarVerCd, jdbcType=VARCHAR}
+		ORDER BY T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 라인관리 팝업 > LINE_DEPT_CODE 채번 -->
+	<select id="getNewLineCd" parameterType="map" resultType="map">
+		SELECT
+		   (CASE WHEN MAX(T.LINE_DEPT_CODE) IS NULL THEN 'NEW_001'
+            	 ELSE 'NEW_' || LPAD((SUBSTR(MAX(T.LINE_DEPT_CODE), 5) + 1), 3, '0') 
+               	 END) AS NEW_LINE_CODE
+		FROM SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M T
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}
+			AND T.ORG_CODE 		  = #{ORG_CODE, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 라인관리 팝업 > 삭제 -->
+	<delete id="deleteNewLine" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08100DaoMapper.deleteNewLine */
+		FROM SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M T
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}
+			AND T.ORG_CODE 		  = #{ORG_CODE, jdbcType=VARCHAR}
+			AND T.LINE_DEPT_CODE  = #{LINE_DEPT_CODE, jdbcType=VARCHAR}
+	</delete>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 라인관리 팝업 > 삭제 > 상세 테이블 삭제 -->
+	<delete id="deleteDetailNewLine" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08100DaoMapper.deleteDetailNewLine */
+		FROM SCMU.W_SOP_TB_PRDT_VAR_DTL_M T
+		WHERE 1 = 1
+			AND T.PRDT_VAR_VER_CD = #{PRDT_VAR_VER_CD, jdbcType=VARCHAR}
+			AND T.ORG_CODE 		  = #{ORG_CODE, jdbcType=VARCHAR}
+			AND T.LINE_DEPT_CODE  = #{LINE_DEPT_CODE, jdbcType=VARCHAR}
+			AND T.ITEM_CODE		  = #{VESSEL_CODE, jdbcType=VARCHAR}
+	</delete>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 라인관리 팝업 > 추가/수정 -->
+	<update id="updateNewLine" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_PRDT_VAR_NEW_LINE_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.updateNewLine */
+		USING 
+		(	
+			SELECT
+				  #{PRDT_VAR_VER_CD, jdbcType=VARCHAR} 			AS PRDT_VAR_VER_CD
+				, #{ORG_CODE, jdbcType=VARCHAR} 	   			AS ORG_CODE
+				, #{LINE_DEPT_CODE, jdbcType=VARCHAR}  			AS LINE_DEPT_CODE
+				, #{LINE_DEPT_NAME, jdbcType=VARCHAR}  			AS LINE_DEPT_NAME
+				, #{LINE_DEPT_DESC, jdbcType=VARCHAR}  			AS LINE_DEPT_DESC
+				, #{VESSEL_CODE, jdbcType=VARCHAR} 				AS VESSEL_CODE
+				, REPLACE(#{VLD_STR_DT, jdbcType=VARCHAR}, '-') AS VLD_STR_DT
+				, REPLACE(#{VLD_END_DT, jdbcType=VARCHAR}, '-') AS VLD_END_DT
+			FROM DUAL
+		) S ON (
+					    T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD
+					AND T.ORG_CODE 		  = S.ORG_CODE
+					AND T.LINE_DEPT_CODE  = S.LINE_DEPT_CODE
+				)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.LINE_DEPT_NAME   = S.LINE_DEPT_NAME
+				, T.LINE_DEPT_DESC   = S.LINE_DEPT_DESC
+				, T.VESSEL_CODE	     = S.VESSEL_CODE
+				, T.VLD_STR_DT	     = S.VLD_STR_DT
+				, T.VLD_END_DT	     = S.VLD_END_DT
+				, T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE = SYSDATE
+				  
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.LINE_DEPT_NAME, T.LINE_DEPT_DESC, T.VESSEL_CODE, T.VLD_STR_DT, T.VLD_END_DT
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.PRDT_VAR_VER_CD, S.ORG_CODE, #{newLineCd, jdbcType=VARCHAR}, S.LINE_DEPT_NAME, S.LINE_DEPT_DESC, S.VESSEL_CODE, S.VLD_STR_DT, S.VLD_END_DT
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+	
+	<!-- 생산 라인별 CAPA 설정 > 상세 > 라인관리 팝업 > 추가/수정 > 상세 테이블 추가/수정 -->
+	<update id="updateDetailNewLine" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_PRDT_VAR_DTL_M T /* com.hitejinro.snop.work.dao.M08100DaoMapper.updateDetailNewLine */
+		USING 
+		(	
+			SELECT
+				  #{PRDT_VAR_VER_CD, jdbcType=VARCHAR} 			AS PRDT_VAR_VER_CD
+				, #{ORG_CODE, jdbcType=VARCHAR} 	   			AS ORG_CODE
+				, #{LINE_DEPT_CODE, jdbcType=VARCHAR}  			AS LINE_DEPT_CODE
+				, #{LINE_DEPT_NAME, jdbcType=VARCHAR}  			AS LINE_DEPT_NAME
+				, #{VESSEL_CODE, jdbcType=VARCHAR} 				AS VESSEL_CODE
+			FROM DUAL
+		) S ON (
+					    T.PRDT_VAR_VER_CD = S.PRDT_VAR_VER_CD
+					AND T.ORG_CODE 		  = S.ORG_CODE
+					AND T.LINE_DEPT_CODE  = S.LINE_DEPT_CODE
+				)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.ITEM_CODE	   = S.VESSEL_CODE
+				, T.LINE_DEPT_NAME = S.LINE_DEPT_NAME
+				, T.VESSEL_CODE	   = S.VESSEL_CODE
+				  
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PRDT_VAR_VER_CD, T.ORG_CODE, T.LINE_DEPT_CODE, T.ITEM_CODE
+			, T.LINE_DEPT_NAME, T.NEW_LINE_YN, T.VESSEL_CODE
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.PRDT_VAR_VER_CD, S.ORG_CODE, #{newLineCd, jdbcType=VARCHAR}, S.VESSEL_CODE
+			, S.LINE_DEPT_NAME, 'Y', S.VESSEL_CODE
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+	
+</mapper>

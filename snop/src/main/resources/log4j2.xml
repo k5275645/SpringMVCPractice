@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="warn">
+	<Appenders>
+		<Console name="console" target="SYSTEM_OUT">
+			<PatternLayout pattern="%d %5p [%c][%L LINE] %m%n" />
+            <!-- 사용자 로그는 디버깅 제외 -->
+            <RegexFilter regex="(?s).*insertUserLog.*" onMatch="DENY" onMismatch="NEUTRAL"/>
+		</Console>
+
+		<RollingFile name="rollingFile" filePattern="C:/HITEJINRO/log/snop/SNOP_LOG.%d{yyyy-MM-dd}.log">
+			<PatternLayout pattern="[%-5p] [%d{yyyy-MM-dd HH:mm:ss,SSS}] : %c - %m%n" />
+			<Policies>
+				<TimeBasedTriggeringPolicy interval="1" />
+			</Policies>
+            <!-- 사용자 로그는 디버깅 제외 -->
+            <RegexFilter regex="(?s).*insertUserLog.*" onMatch="DENY" onMismatch="NEUTRAL"/>
+		</RollingFile>
+
+	</Appenders>
+
+	<Loggers>
+		<logger name="com.hitejinro.snop" level="info" additivity="false">
+			<AppenderRef ref="console"/>
+			<!-- <AppenderRef ref="rollingFile"/> -->
+		</logger>
+		
+		<logger name="org.springframework" level="info" additivity="false">
+			<AppenderRef ref="console"/>
+		</logger>
+
+		<Logger name="jdbc.sqlonly" level="off" additivity="false">
+			<AppenderRef ref="console"/>
+		</Logger>
+
+		<Logger name="jdbc.sqltiming" level="info" additivity="false">
+			<AppenderRef ref="console"/>
+			<AppenderRef ref="rollingFile"/>
+		</Logger>
+
+		<Logger name="jdbc.audit" level="off" additivity="false">
+			<AppenderRef ref="console"/>
+		</Logger>
+		
+		<Logger name="jdbc.resultset" level="off" additivity="false">
+			<AppenderRef ref="console"/>
+		</Logger>
+		
+		<Logger name="jdbc.resultsettable" level="off" additivity="false">
+			<AppenderRef ref="console"/>
+		</Logger>
+		
+		<Logger name="jdbc.connection" level="off" additivity="false">
+			<AppenderRef ref="console"/>
+		</Logger>
+
+		<Root level="error">
+			<AppenderRef ref="console"/>
+			<AppenderRef ref="rollingFile"/>
+		</Root>
+
+	</Loggers>
+</Configuration>

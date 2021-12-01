@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 공 P-BOX/PALLET 관리 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08220DaoMapper">
+
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M08220DaoMapper.searchHeader */
+              A.ITEM_CODE, A.DESCRIPTION, A.VESSEL_CODE
+            , A.ITEM_CODE AS NAME, A.LIQUOR_CODE
+            , (CASE WHEN A.VESSEL_ROWNUM != 1     THEN NULL          
+                    WHEN A.VESSEL_CODE = 'PALLET' THEN '공 PALLET 기말재고'
+                    WHEN A.VESSEL_CODE = 'PBOX'   THEN '공 P-BOX 기말재고'
+                    ELSE NULL
+                END) AS HEADER1_DESC
+            , (CASE WHEN A.VESSEL_ROWNUM != 1     THEN NULL          
+                    ELSE COUNT(1) OVER (PARTITION BY A.VESSEL_CODE)
+                END) AS HEADER1_SPAN
+            
+            , A.DESCRIPTION AS HEADER2_DESC
+        FROM
+        (
+            SELECT 
+                  T1.ITEM_CODE
+                , NVL(T1.ABBR_ITEM_NAME, T2.DESCRIPTION) AS DESCRIPTION
+                , T1.VESSEL_CODE, T2.LIQUOR_CODE
+                , ROW_NUMBER() OVER (PARTITION BY T1.VESSEL_CODE ORDER BY T1.VESSEL_CODE, T1.ITEM_CODE) AS VESSEL_ROWNUM
+            FROM SCMU.W_SOP_TB_VESSEL_M T1
+        
+            LEFT JOIN EDW.W_WS_TB_RI_ITEM_M T2 ON T2.ITEM_CODE = T1.ITEM_CODE
+        
+            WHERE 1 = 1
+                AND T1.COMPANY_TYPE = 'OWNER'
+                AND T1.USE_YN       = 'Y'
+                AND T1.VESSEL_CODE  IN ('PBOX', 'PALLET')
+        ) A
+        ORDER BY A.VESSEL_CODE, A.LIQUOR_CODE, A.ITEM_CODE
+	</select>
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08220DaoMapper.search */
+		      TO_CHAR(TO_DATE(A.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS PERIOD_YYYYMMDD
+			, A.ORG_CODE, A.ORG_TYPE
+			, MAX(A.ORG_NAME) AS ORG_NAME
+			
+		<foreach collection="header" item="list" index="i">
+			, SUM(CASE WHEN A.ITEM_CODE = #{list.ITEM_CODE, jdbcType=VARCHAR} THEN A.QTY
+					   ELSE 0
+					END) AS ${list.NAME}	
+		</foreach>
+		FROM
+		(
+		    SELECT
+		          T2.PERIOD_YYYYMMDD, NULL AS ITEM_CODE, T1.ORG_CODE
+		        , T1.ORG_NAME, T1.ORG_TYPE, 0 AS QTY
+		    FROM
+		    (
+				SELECT T1.ORG_CODE, T1.ORG_NAME, T1.ORG_TYPE
+				FROM EDW.W_CM_TB_ORGANIZATION_M T1
+				WHERE 1 = 1
+					AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+					AND T1.ORG_CODE NOT IN ('S01', 'MH2') -- 진로소주공장, 강원(구) 제외
+					AND T1.ORG_TYPE = DECODE(#{orgType, jdbcType=VARCHAR}, '!ALL', T1.ORG_TYPE, #{orgType, jdbcType=VARCHAR})
+                	AND T1.ORG_CODE	= DECODE(#{orgCode, jdbcType=VARCHAR}, '!ALL', T1.ORG_CODE, #{orgCode, jdbcType=VARCHAR})
+		    ) T1
+		
+		    CROSS JOIN
+		    (
+		        SELECT TO_CHAR(TO_DATE(#{startDate, jdbcType=VARCHAR}, 'YYYYMMDD') + LEVEL - 1, 'YYYYMMDD') AS PERIOD_YYYYMMDD
+		        FROM DUAL
+		        CONNECT BY LEVEL <![CDATA[ <= ]]> TRUNC(TO_DATE(#{endDate, jdbcType=VARCHAR}, 'YYYYMMDD')) 
+		        								- TRUNC(TO_DATE(#{startDate, jdbcType=VARCHAR}, 'YYYYMMDD')) + 1
+		    ) T2
+
+		    UNION ALL
+			
+            SELECT
+                  T1.PERIOD_YYYYMMDD, T1.ITEM_CODE, T1.ORG_CODE
+                , T2.ORG_NAME, T2.ORG_TYPE, T1.QTY
+            FROM SCMU.M_SOP_TB_ITEM_VESSEL_F T1
+            
+            LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M T2 ON T2.ORG_CODE = T1.ORG_CODE
+            
+            WHERE 1 = 1
+                AND T1.PERIOD_YYYYMMDD       BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+                AND T1.TRANSACTION_TYPE_CODE = '공기말재고'
+                AND T1.ORG_TYPE              = DECODE(#{orgType, jdbcType=VARCHAR}, '!ALL', T1.ORG_TYPE, #{orgType, jdbcType=VARCHAR})
+                AND T1.ORG_CODE				 = DECODE(#{orgCode, jdbcType=VARCHAR}, '!ALL', T1.ORG_CODE, #{orgCode, jdbcType=VARCHAR})
+		) A
+        GROUP BY A.PERIOD_YYYYMMDD, A.ORG_TYPE, A.ORG_CODE
+        ORDER BY A.PERIOD_YYYYMMDD, A.ORG_TYPE, A.ORG_CODE
+    </select>
+    
+    <!-- 저장 -->
+    <update id="update" parameterType="map">
+		MERGE INTO SCMU.M_SOP_TB_ITEM_VESSEL_F T /* com.hitejinro.snop.work.dao.M08220DaoMapper.update */
+    	USING
+    	(	
+    		SELECT
+    			  S1.PERIOD_YYYYMMDD, S1.ORG_CODE, S1.ORG_TYPE
+    			, S1.ITEM_CODE, S1.TRANSACTION_TYPE_CODE, S1.QTY
+    			, S2.YYYY, S2.YYYYMM, S2.SCM_YYYYWW, S2.SCM_YYYYMMWW
+    		FROM
+    		(
+				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  REPLACE(#{list.PERIOD_YYYYMMDD, jdbcType=VARCHAR}, '-', '') 	AS PERIOD_YYYYMMDD
+						, #{list.ORG_CODE, jdbcType=VARCHAR}							AS ORG_CODE
+						, #{list.ORG_TYPE, jdbcType=VARCHAR}							AS ORG_TYPE
+						, #{list.ITEM_CODE, jdbcType=VARCHAR}							AS ITEM_CODE
+						, '공기말재고'													AS TRANSACTION_TYPE_CODE
+						, NVL(#{list.QTY, jdbcType=VARCHAR}, 0)							AS QTY
+					FROM DUAL
+				</foreach>
+			) S1
+			
+			LEFT JOIN SCMU.W_SOP_VW_CALENDAR_M S2 ON S2.YYYYMMDD = S1.PERIOD_YYYYMMDD
+			
+    	) S ON (
+    				    T.PERIOD_YYYYMMDD   	= S.PERIOD_YYYYMMDD
+    				AND T.ORG_CODE	  			= S.ORG_CODE
+    				AND T.ITEM_CODE		  		= S.ITEM_CODE
+    				AND T.TRANSACTION_TYPE_CODE	= S.TRANSACTION_TYPE_CODE
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.QTY				= S.QTY
+				, T.CREATED_BY		= #{employeeNumber, jdbcType=VARCHAR}
+				, T.CREATION_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PERIOD_YYYYMMDD, T.ORG_CODE, T.ITEM_CODE, T.TRANSACTION_TYPE_CODE
+			, T.QTY, T.ORG_TYPE
+			, T.PERIOD_YYYY, T.PERIOD_YYYYMM, T.PERIOD_SCM_YYYYWW, T.PERIOD_SCM_YYYYMMWW
+			, T.CREATED_BY, T.CREATION_DATE
+		)
+		VALUES
+		(
+			  S.PERIOD_YYYYMMDD, S.ORG_CODE, S.ITEM_CODE, S.TRANSACTION_TYPE_CODE
+			, S.QTY, S.ORG_TYPE
+			, S.YYYY, S.YYYYMM, S.SCM_YYYYWW, S.SCM_YYYYMMWW
+			, #{employeeNumber, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+</mapper>

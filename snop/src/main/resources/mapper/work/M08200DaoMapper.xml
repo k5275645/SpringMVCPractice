@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > Alert 기능 종합 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08200DaoMapper">
+    
+    <!-- 데이터 조회 : Alert 리스트 -->
+    <select id="search" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08200DaoMapper.search */
+           A.ALERT_CODE
+         , A.ALERT_NAME, A.ALERT_DESC, A.ALERT_TYPE
+         , A.SEND_PERIOD_CODE   -- 발송 주기 코드(공통그룹코드=SEND_PERIOD_CODE) : NA(N/A), WW_MON(매주 월요일)
+         , A.SEND_HR            -- 발송 시간
+         , A.SEND_TYPE          -- 발송 유형 : SMS(문자)
+         , A.USE_YN
+         , A.SEND_DEPT_TYPE     -- 발송 조직 유형(공통그룹코드=SEND_DEPT_TYPE) : NA(N/A), OU(전사), DEPARTMENT(지점)
+         , A.PROGRAM_NAME
+         , A.MSG, A.RMKS
+         , B.TARGET_CNT         -- 발송대상자 인원수
+         
+         , A.ALERT_CODE AS CODE
+         , A.ALERT_NAME AS NAME
+         
+         , CASE WHEN SCMU.FN_SOP_IS_DATE(C.SEND_TIME, 'YYYYMMDDHH24MISS')  = 1 THEN TO_CHAR(TO_DATE(C.SEND_TIME, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS')
+                ELSE                                                                C.SEND_TIME
+           END          AS LAST_SEND_DTM
+         , C.SEND_CNT   AS LAST_SEND_CNT
+         , CASE WHEN C.SEND_CNT > 0 AND SCMU.FN_SOP_IS_DATE(C.SEND_TIME, 'YYYYMMDDHH24MISS') = 1 THEN TO_CHAR(TO_DATE(C.SEND_TIME, 'YYYYMMDDHH24MISS'), 'YYYY-MM-DD HH24:MI:SS') || ', ' || C.SEND_CNT || '건'
+                WHEN C.SEND_CNT > 0 AND SCMU.FN_SOP_IS_DATE(C.SEND_TIME, 'YYYYMMDDHH24MISS') = 0 THEN C.SEND_TIME || ', ' || C.SEND_CNT || '건'
+                ELSE 'N/A'
+           END          AS LAST_SEND_DESC
+
+      FROM SCMU.W_SOP_TB_ALERT_M A
+ LEFT JOIN (
+                SELECT ALERT_CODE, COUNT(EMPLOYEE_NUMBER) AS TARGET_CNT
+                  FROM (
+                            SELECT DISTINCT BA.ALERT_CODE, BB.EMPLOYEE_NUMBER
+                                 --, BA.TARGET_TYPE, BA.TARGET_VAL
+                              FROM SCMU.W_SOP_TB_ALERT_TARGET_M BA
+                              JOIN EDW.W_HR_TB_EMPLOYEE_M       BB
+                                ON 1 = 1
+                               AND (
+                                        (BA.TARGET_TYPE = 'USER_DEPT'       AND BA.TARGET_VAL = BB.DEPARTMENT_CODE)
+                                        OR
+                                        (BA.TARGET_TYPE = 'EMPLOYEE_NUMBER' AND BA.TARGET_VAL = BB.EMPLOYEE_NUMBER)
+                                   )
+                             WHERE 1 = 1
+                               AND BA.USE_YN = 'Y'
+                       )
+                 WHERE 1 = 1
+                 GROUP BY ALERT_CODE
+           )                     B
+        ON B.ALERT_CODE = A.ALERT_CODE
+ LEFT JOIN (
+                 SELECT REGEXP_SUBSTR(XX_CUST3,'[^-]+', 1, 1)      AS ALERT_CODE
+                      , MAX(REGEXP_SUBSTR(XX_CUST3,'[^-]+', 1, 2)) AS SEND_TIME
+                      , COUNT(1)                                   AS SEND_CNT
+                   FROM XXSMS.SUREDATA_LOG
+                  WHERE 1 = 1
+                    AND XX_CUST1 = 'SNOP'
+                    AND XX_CUST2 = 'ALERT'
+                  GROUP BY REGEXP_SUBSTR(XX_CUST3,'[^-]+', 1, 1)
+            )                    C
+        ON C.ALERT_CODE = A.ALERT_CODE
+     WHERE 1 = 1
+       AND A.ALERT_TYPE = 'AUTO' -- Alert 유형 : AUTO(자동), MANUAL(수동)
+     ORDER BY A.ALERT_TYPE, A.SEND_PERIOD_CODE, A.SEND_HR, A.ALERT_NAME, A.ALERT_CODE
+    </select>
+
+    <!-- 데이터 저장 : Alert 리스트 수정 -->
+    <update id="update" parameterType="map">
+UPDATE /* com.hitejinro.snop.work.dao.M08200DaoMapper.update */
+       SCMU.W_SOP_TB_ALERT_M T
+   SET T.ALERT_NAME       = #{ALERT_NAME, jdbcType=VARCHAR}
+     , T.ALERT_DESC       = #{ALERT_DESC, jdbcType=VARCHAR}
+     , T.USE_YN           = #{USE_YN, jdbcType=VARCHAR}
+     , T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+     , T.LAST_UPDATE_DATE = SYSDATE
+ WHERE 1 = 1
+   AND T.ALERT_TYPE = 'AUTO' -- Alert 유형 : AUTO(자동), MANUAL(수동)
+   AND T.ALERT_CODE = #{ALERT_CODE, jdbcType=VARCHAR}
+    </update>
+    
+    <!-- 체화재고- 전사관점 호출 -->
+    <update id="callAlertSendAccumStockOu" parameterType="hashmap"     statementType="CALLABLE">
+        {  CALL /* com.hitejinro.snop.work.dao.M08200DaoMapper.callAlertSendAccumStockOu */
+                SCMU.PKG_SOP_ALERT.SP_SEND_ACCUM_STOCK_OU
+                (
+                      P_ALERT_CODE      => #{alertCode           , mode=IN,jdbcType=VARCHAR}
+                    , P_WORKFLOW        => TO_CHAR(SYSDATE, 'YYYYMMDDHH24MISS')
+                    , P_USER_NO         => #{userId              , mode=IN,jdbcType=VARCHAR}
+                    , O_TOT_ROWCOUNT    => #{O_TOT_ROWCOUNT      , mode=OUT,jdbcType=NUMERIC}    -- 실행 결과 건수
+                    , O_RETURN_MSG      => #{O_RETURN_MSG        , mode=OUT,jdbcType=VARCHAR}    -- 실행 결과 메시지. 오류일때 반환
+                    , O_RETURN_STATUS   => #{O_RETURN_STATUS     , mode=OUT,jdbcType=VARCHAR}    -- 실행 결과 상태 : S(성공), F(실패)
+                )
+        }
+    </update>
+    
+    <!-- 체화재고- 지점관점 호출 -->
+    <update id="callAlertSendAccumStockDepartment" parameterType="hashmap"     statementType="CALLABLE">
+        {  CALL /* com.hitejinro.snop.work.dao.M08200DaoMapper.callAlertSendAccumStockDepartment */
+                SCMU.PKG_SOP_ALERT.SP_SEND_ACCUM_STOCK_DEPARTMENT
+                (
+                      P_ALERT_CODE      => #{alertCode           , mode=IN,jdbcType=VARCHAR}
+                    , P_WORKFLOW        => TO_CHAR(SYSDATE, 'YYYYMMDDHH24MISS')
+                    , P_USER_NO         => #{userId              , mode=IN,jdbcType=VARCHAR}
+                    , O_TOT_ROWCOUNT    => #{O_TOT_ROWCOUNT      , mode=OUT,jdbcType=NUMERIC}    -- 실행 결과 건수
+                    , O_RETURN_MSG      => #{O_RETURN_MSG        , mode=OUT,jdbcType=VARCHAR}    -- 실행 결과 메시지. 오류일때 반환
+                    , O_RETURN_STATUS   => #{O_RETURN_STATUS     , mode=OUT,jdbcType=VARCHAR}    -- 실행 결과 상태 : S(성공), F(실패)
+                )
+        }
+    </update>
+
+
+
+    <!-- 사용자 리스트 조회 -->
+    <select id="selectUserList" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08200DaoMapper.selectUserList */
+           A.EMPLOYEE_NUMBER    AS CODE
+         , '[' || A.EMPLOYEE_NUMBER || '] ' || A.EMPLOYEE_KOR_NAME
+           || ' ' || CASE WHEN A.POSITION_NAME IS NULL AND A.DUTY_NAME IS NULL THEN ''
+                          WHEN A.POSITION_NAME IS NULL OR A.DUTY_NAME IS NULL  THEN A.POSITION_NAME || A.DUTY_NAME
+                          ELSE A.POSITION_NAME || '/' || A.DUTY_NAME
+                     END
+           || ' ' || A.DEPARTMENT_NAME
+                                AS NAME
+         , A.EMPLOYEE_NUMBER, A.EMPLOYEE_KOR_NAME
+         , A.DUTY_CODE, A.DUTY_NAME, A.POSITION_CODE, A.POSITION_NAME, A.DEPARTMENT_CODE, A.DEPARTMENT_NAME
+         
+         , B.DEPT_CODE  -- 지점코드
+         , B.DEPARTMENT_NAME_PATH
+         
+      FROM EDW.W_HR_TB_EMPLOYEE_M   A
+      JOIN (
+                SELECT DEPARTMENT_CODE, DEPARTMENT_KOREAN_NAME
+                     , DEPARTMENT_TYPE, DEPARTMENT_LEVEL, ORDER_NO
+                     , PRE_DEPARTMENT_CODE, PRE_DEPARTMENT_KOREAN_NAME
+                     , SUBSTR(SYS_CONNECT_BY_PATH(DEPARTMENT_KOREAN_NAME, ' > ') , 3) AS DEPARTMENT_NAME_PATH
+                     , LEVEL AS DEPARTMENT_TREE_LEVEL
+                     , CASE WHEN DEPARTMENT_TYPE = '지점' THEN DEPARTMENT_CODE
+                            WHEN DEPARTMENT_TYPE = '파트' THEN PRE_DEPARTMENT_CODE
+                       END      AS DEPT_CODE -- 지점코드
+                  FROM EDW.W_HR_TB_DEPARTMENT_M
+                 WHERE 1 = 1
+                   AND OU_CODE      = 'HJ0'
+                   AND ENABLED_FLAG = 'Y'
+            START WITH PRE_DEPARTMENT_CODE IS NULL
+                       AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+               CONNECT BY NOCYCLE PRIOR DEPARTMENT_CODE = PRE_DEPARTMENT_CODE
+                                        AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+               ORDER SIBLINGS BY ORDER_NO, DEPARTMENT_CODE
+           )                        B
+        ON B.DEPARTMENT_CODE = A.DEPARTMENT_CODE
+     WHERE 1 = 1
+       AND A.OU_CODE         = 'HJ0'
+       AND A.SERVE_TYPE_CODE IN ('10', '13') -- 10(재직), 13(휴직)
+     ORDER BY TO_NUMBER(B.ORDER_NO), A.DUTY_CODE, A.POSITION_CODE, A.EMPLOYEE_NUMBER
+    </select>
+
+    <!-- 사용자의 부서 리스트 조회 -->
+    <select id="selectUserDepartmentList" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08200DaoMapper.selectUserDepartmentList */
+           A.DEPARTMENT_CODE
+         , MAX(A.DEPARTMENT_NAME) AS DEPARTMENT_NAME
+         , MAX(B.DEPT_CODE)       AS DEPT_CODE -- 지점코드
+      FROM EDW.W_HR_TB_EMPLOYEE_M   A
+      JOIN (
+                SELECT DEPARTMENT_CODE, DEPARTMENT_KOREAN_NAME
+                     , DEPARTMENT_TYPE, DEPARTMENT_LEVEL, ORDER_NO
+                     , PRE_DEPARTMENT_CODE, PRE_DEPARTMENT_KOREAN_NAME
+                     , SUBSTR(SYS_CONNECT_BY_PATH(DEPARTMENT_KOREAN_NAME, ' > ') , 3) AS DEPARTMENT_NAME_PATH
+                     , LEVEL AS DEPARTMENT_TREE_LEVEL
+                     , CASE WHEN DEPARTMENT_TYPE = '지점' THEN DEPARTMENT_CODE
+                            WHEN DEPARTMENT_TYPE = '파트' THEN PRE_DEPARTMENT_CODE
+                       END      AS DEPT_CODE -- 지점코드
+                  FROM EDW.W_HR_TB_DEPARTMENT_M
+                 WHERE 1 = 1
+                   AND OU_CODE      = 'HJ0'
+                   AND ENABLED_FLAG = 'Y'
+            START WITH PRE_DEPARTMENT_CODE IS NULL
+                       AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+               CONNECT BY NOCYCLE PRIOR DEPARTMENT_CODE = PRE_DEPARTMENT_CODE
+                                        AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+               ORDER SIBLINGS BY ORDER_NO, DEPARTMENT_CODE
+           )                        B
+        ON B.DEPARTMENT_CODE = A.DEPARTMENT_CODE
+     WHERE 1 = 1
+       AND A.OU_CODE         = 'HJ0'
+       AND A.SERVE_TYPE_CODE IN ('10', '13') -- 10(재직), 13(휴직)
+     GROUP BY A.DEPARTMENT_CODE
+     ORDER BY TO_NUMBER(MAX(B.ORDER_NO)), MAX(A.DEPARTMENT_NAME), A.DEPARTMENT_CODE
+    </select>
+    
+    <!-- 지점 리스트 조회 -->
+    <select id="selectDeptList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08200DaoMapper.selectDeptList */
+       DEPARTMENT_CODE          AS DEPT_CODE
+     , DEPARTMENT_KOREAN_NAME   AS DEPT_NAME
+     , DEPARTMENT_TYPE, DEPARTMENT_LEVEL, ORDER_NO
+  FROM EDW.W_HR_TB_DEPARTMENT_M
+ WHERE 1 = 1
+   AND OU_CODE         = 'HJ0'
+   AND ENABLED_FLAG    = 'Y'
+   AND DEPARTMENT_TYPE = '지점'
+ ORDER BY ORDER_NO, DEPARTMENT_CODE
+    </select>
+
+
+
+    <!-- Alert 대상자 데이터 조회 -->
+    <select id="searchAlertTarget" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08200DaoMapper.searchAlertTarget */
+           A.ALERT_CODE
+         , B.TARGET_TYPE    -- 대상 유형 : USER_DEPT(부서), EMPLOYEE_NUMBER(사번)
+         , B.TARGET_VAL     -- 대상 값 : 
+         , A.SEND_DEPT_TYPE -- 발송 조직 유형(공통그룹코드=SEND_DEPT_TYPE) : NA(N/A), OU(전사), DEPARTMENT(지점)
+         , B.SEND_DEPT_VAL  -- 발송 조직 값 : 발송조직유형(SEND_DEPT_TYPE)에 해당하는 조직값 표기. 발송조직유형이 지점일때, 발송내용에 사용하는 지점을 지정.
+         , B.USE_YN
+      FROM SCMU.W_SOP_TB_ALERT_M        A
+      JOIN SCMU.W_SOP_TB_ALERT_TARGET_M B
+        ON B.ALERT_CODE = A.ALERT_CODE
+     WHERE 1 = 1
+       AND A.ALERT_CODE = #{alertCode, jdbcType=VARCHAR}
+     ORDER BY B.TARGET_TYPE, B.TARGET_VAL
+    </select>
+
+    <!-- Alert 대상자 데이터 저장 : 추가 -->
+    <update id="insertAlertTarget" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08200DaoMapper.insertAlertTarget */
+  INTO SCMU.W_SOP_TB_ALERT_TARGET_M T
+       (ALERT_CODE, TARGET_TYPE, TARGET_VAL
+       , SEND_DEPT_VAL, USE_YN
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+VALUES (#{ALERT_CODE, jdbcType=VARCHAR}, #{TARGET_TYPE, jdbcType=VARCHAR}, #{TARGET_VAL, jdbcType=VARCHAR}
+       , #{SEND_DEPT_VAL, jdbcType=VARCHAR}, #{USE_YN, jdbcType=VARCHAR}
+       , NULL, NULL, NULL, NULL, NULL
+       , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+
+    <!-- Alert 대상자 데이터 저장 : 수정 -->
+    <update id="updateAlertTarget" parameterType="map">
+UPDATE /* com.hitejinro.snop.work.dao.M08200DaoMapper.updateAlertTarget */
+       SCMU.W_SOP_TB_ALERT_TARGET_M T
+   SET T.USE_YN           = #{USE_YN, jdbcType=VARCHAR}
+     , T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+     , T.LAST_UPDATE_DATE = SYSDATE
+ WHERE 1 = 1
+   AND T.ALERT_CODE    = #{ALERT_CODE, jdbcType=VARCHAR}
+   AND T.TARGET_TYPE   = #{TARGET_TYPE, jdbcType=VARCHAR}
+   AND T.TARGET_VAL    = #{TARGET_VAL, jdbcType=VARCHAR}
+   AND T.SEND_DEPT_VAL = #{SEND_DEPT_VAL, jdbcType=VARCHAR}
+    </update>
+
+    <!-- Alert 대상자 데이터 저장 : 삭제 -->
+    <delete id="deleteAlertTarget" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08200DaoMapper.deleteAlertTarget */
+  FROM SCMU.W_SOP_TB_ALERT_TARGET_M T
+ WHERE 1 = 1
+   AND T.ALERT_CODE    = #{ALERT_CODE, jdbcType=VARCHAR}
+   AND T.TARGET_TYPE   = #{TARGET_TYPE, jdbcType=VARCHAR}
+   AND T.TARGET_VAL    = #{TARGET_VAL, jdbcType=VARCHAR}
+   AND T.SEND_DEPT_VAL = #{SEND_DEPT_VAL, jdbcType=VARCHAR}
+    </delete>
+
+
+
+    <!-- 신규 수동 Alert 코드 -->
+    <select id="selectNewManualAlertCode" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08200DaoMapper.selectNewManualAlertCode */
+       'M' || LPAD(NVL(TO_NUMBER(MAX(SUBSTR(ALERT_CODE, 2))) + 1, 1), 6, '0') AS NEW_ALERT_CODE
+     , TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS')                              AS NEW_DTM
+  FROM SCMU.W_SOP_TB_ALERT_M
+ WHERE 1 = 1
+   AND ALERT_TYPE = 'MANUAL'
+    </select>
+
+    <!-- 수동 Alert 데이터 저장 : 수동 Alert 추가 -->
+    <update id="insertManualAlert" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08200DaoMapper.insertManualAlert */
+  INTO SCMU.W_SOP_TB_ALERT_M T
+       (ALERT_CODE
+       , ALERT_NAME, ALERT_DESC
+       , ALERT_TYPE, SEND_PERIOD_CODE, SEND_HR, SEND_TYPE, USE_YN, SEND_DEPT_TYPE, PROGRAM_NAME
+       , MSG, RMKS
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+VALUES (#{NEW_ALERT_CODE, jdbcType=VARCHAR}
+       , '수동발송 ' || #{userId, jdbcType=VARCHAR} || ' ' || #{NEW_DTM, jdbcType=VARCHAR}, '수동발송 ' || #{userId, jdbcType=VARCHAR} || ' ' || #{NEW_DTM, jdbcType=VARCHAR}
+       , 'MANUAL', NULL, NULL, 'SMS', 'Y', 'NA', NULL
+       , #{msg, jdbcType=VARCHAR}, NULL
+       , NULL, NULL, NULL, NULL, NULL
+       , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+
+    <!-- 수동 Alert 발송 -->
+    <update id="sendManualAlert" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08200DaoMapper.sendManualAlert */
+  INTO XXSMS.SUREDATA
+       (SEQNO
+       , USERCODE, REQNAME
+       , REQPHONE
+       , CALLNAME, CALLPHONE
+       , SUBJECT, MSG
+       , REQTIME
+       , RESULT
+       , KIND
+       , XX_CUST1, XX_CUST2,  XX_CUST3)
+SELECT XXSMS.SUREDATA_SEQNO.NEXTVAL
+     , 'HITEJINRO' AS USERCODE, '하이트진로 ' || 'S' || CHR(38) || 'OP' AS REQNAME
+     , (SELECT NAME FROM SCMU.W_SOP_TB_COM_CODE_M WHERE GROUP_CODE = 'ALERT_REQPHONE' AND CODE = 'MANUAL') AS REQPHONE
+     , B.EMPLOYEE_KOR_NAME AS CALLNAME, REPLACE(B.MOBILE_PHONE, '-', '') AS CALLPHONE
+     , 'S' || CHR(38) || 'OP Alert' AS SUBJECT, A.MSG
+     , '00000000000000' AS REQTIME  -- 예약문자 전송시 'YYYYmmddHHMMss', 즉시전송시 '00000000000000'
+     , '0'              AS RESULT   -- Default = 0. ( 0 : 즉시전송(숫자 0) R : 예약전송 )
+     , 'M'              AS KIND     -- M : MMS, S : SMS, I : 국제문자, L : 국제 MMS
+     , 'SNOP'           AS XX_CUST1
+     , 'ALERT'          AS XX_CUST2
+     , A.ALERT_CODE || '-' || TO_CHAR(TO_DATE(#{NEW_DTM, jdbcType=VARCHAR}, 'YYYY-MM-DD HH24:MI:SS'), 'YYYYMMDDHH24MISS')
+                        AS XX_CUST3
+
+  FROM SCMU.W_SOP_TB_ALERT_M        A
+  JOIN (
+            SELECT DISTINCT BA.ALERT_CODE, BB.EMPLOYEE_KOR_NAME, BB.MOBILE_PHONE
+              FROM SCMU.W_SOP_TB_ALERT_TARGET_M BA
+              JOIN EDW.W_HR_TB_EMPLOYEE_M       BB
+                ON 1 = 1
+               AND (
+                        (BA.TARGET_TYPE = 'USER_DEPT'       AND BA.TARGET_VAL = BB.DEPARTMENT_CODE)
+                        OR
+                        (BA.TARGET_TYPE = 'EMPLOYEE_NUMBER' AND BA.TARGET_VAL = BB.EMPLOYEE_NUMBER)
+                   )
+             WHERE 1 = 1  
+               AND BA.USE_YN          = 'Y'
+               AND BB.SERVE_TYPE_CODE IN ('10', '13') -- 10(재직), 13(휴직)
+               AND BB.MOBILE_PHONE    IS NOT NULL
+               AND BA.ALERT_CODE      = #{NEW_ALERT_CODE, jdbcType=VARCHAR}
+       )                            B
+    ON B.ALERT_CODE = A.ALERT_CODE
+ WHERE 1 = 1
+   AND A.ALERT_TYPE      = 'MANUAL'
+   AND A.USE_YN          = 'Y'
+   AND A.ALERT_CODE      = #{NEW_ALERT_CODE, jdbcType=VARCHAR}
+    </update>
+
+
+</mapper>

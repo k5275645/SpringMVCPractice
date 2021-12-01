@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 공통코드 관리 -->
+<mapper namespace="com.hitejinro.snop.system.dao.M08180DaoMapper">
+    
+    <!-- 공통그룹&사용여부 검색조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    	SELECT /*com.hitejinro.snop.system.dao.M08180DaoMapper.search */
+    		  T.GROUP_CODE, T.GROUP_NAME
+    		, T.DESCRIPTION ,T.USE_YN
+		FROM SCMU.W_SOP_TB_COM_GROUP_M T
+		WHERE 1 = 1
+			AND
+			(
+				    T.GROUP_CODE LIKE ('%'|| UPPER(#{groupCode, jdbcType=VARCHAR}) ||'%')
+				 OR T.GROUP_NAME LIKE ('%'|| UPPER(#{groupCode, jdbcType=VARCHAR}) ||'%')			
+			)
+			AND T.USE_YN = DECODE(#{useYN, jdbcType=VARCHAR}, '!ALL', T.USE_YN, #{useYN, jdbcType=VARCHAR}) 
+		ORDER BY T.GROUP_CODE
+    </select>
+    
+    <!-- 공통그룹 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH UPDATE_TBL AS /*com.hitejinro.snop.system.dao.M08180DaoMapper.validate */
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.action, jdbcType=VARCHAR}				AS ACTION
+    				, #{list.GROUP_CODE, jdbcType=VARCHAR}			AS GROUP_CODE
+    				, #{list.GROUP_NAME, jdbcType=VARCHAR}			AS GROUP_NAME
+    				, #{list.DESCRIPTION, jdbcType=VARCHAR}			AS DESCRIPTION
+    			FROM DUAL
+    		</foreach>
+   		)
+   		SELECT
+   			  A.GROUP_CODE
+   			, A.IDX || '번째 행에 오류 : ' || SUBSTR(A.GROUP_CODE_ERR || GROUP_NAME_ERR || DESCRIPTION_ERR, 3) AS ERR_MSG
+   		FROM
+   		(
+   			SELECT
+   				  ROWNUM AS IDX
+   				, T1.GROUP_CODE
+   				, (CASE WHEN T1.GROUP_CODE IS NULL 								THEN ', 그룹코드는 필수값'
+   						WHEN T1.ACTION = 'insert' AND T2.GROUP_CODE IS NOT NULL THEN ', 중복된 그룹코드'
+   						WHEN COUNT(1) OVER (PARTITION BY T1.GROUP_CODE) > 1		THEN ', 중복입력된 그룹코드'
+   						ELSE ''
+   				   END) AS GROUP_CODE_ERR
+   				   
+   				, (CASE WHEN T1.GROUP_NAME IS NULL THEN ', 그룹코드명은 필수값'
+   						ELSE ''
+   				   END) AS GROUP_NAME_ERR
+   				   
+   				, (CASE WHEN T1.DESCRIPTION IS NULL THEN ', 설명은 필수값'
+   						ELSE ''
+	   			   END) AS DESCRIPTION_ERR
+   			FROM UPDATE_TBL T1
+   			
+   			LEFT JOIN SCMU.W_SOP_TB_COM_GROUP_M T2 ON T2.GROUP_CODE = T1.GROUP_CODE
+   			
+   		) A
+   		WHERE 1 = 1
+   			AND SUBSTR(A.GROUP_CODE_ERR || A.GROUP_NAME_ERR || A.DESCRIPTION_ERR, 3) IS NOT NULL
+   		ORDER BY A.IDX
+    </select>
+    
+    <!-- 공통그룹 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_COM_GROUP_M T /* com.hitejinro.snop.system.dao.M08180DaoMapper.update */
+    	USING
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.GROUP_CODE, jdbcType=VARCHAR}			AS GROUP_CODE
+    				, #{list.GROUP_NAME, jdbcType=VARCHAR}			AS GROUP_NAME
+    				, #{list.DESCRIPTION, jdbcType=VARCHAR}			AS DESCRIPTION
+    				, #{list.USE_YN, jdbcType=VARCHAR}				AS USE_YN
+    			FROM DUAL
+    		</foreach>
+    	) S ON (
+    				T.GROUP_CODE = S.GROUP_CODE
+    			)
+    	WHEN MATCHED THEN
+    		UPDATE SET
+    			  T.GROUP_NAME				= S.GROUP_NAME
+    			, T.DESCRIPTION				= S.DESCRIPTION
+    			, T.USE_YN					= S.USE_YN
+    			, T.LAST_UPDATED_BY			= #{userId, jdbcType=VARCHAR}
+    			, T.LAST_UPDATE_DATE		= SYSDATE
+    	WHEN NOT MATCHED THEN
+		INSERT
+    	(
+    		  T.GROUP_CODE, T.GROUP_NAME
+    		, T.DESCRIPTION, T.USE_YN
+    		, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+    	)
+    	VALUES
+    	(
+    		  S.GROUP_CODE, S.GROUP_NAME
+    		, S.DESCRIPTION, S.USE_YN
+    		, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+    	)
+    </update>
+    
+    <!-- 상위 코드 USE_YN = 'N' -> 하위코드 모두 USE_YN ='N' -->
+    <update id="updateDetailUseYN" parameterType="map">
+        MERGE INTO SCMU.W_SOP_TB_COM_CODE_M T /* com.hitejinro.snop.system.dao.M08180DaoMapper.updateDetailUseYN */
+    	USING
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.GROUP_CODE, jdbcType=VARCHAR}			AS GROUP_CODE
+    				, #{list.USE_YN, jdbcType=VARCHAR}				AS USE_YN
+    			FROM DUAL
+    		</foreach>
+    	) S ON (
+    				T.GROUP_CODE = S.GROUP_CODE
+    			)
+    	WHEN MATCHED THEN
+    		UPDATE SET
+    			  T.USE_YN = (CASE WHEN S.USE_YN = 'Y' THEN T.USE_YN
+    			  				   WHEN S.USE_YN = 'N' THEN S.USE_YN
+    			  				   ELSE T.USE_YN
+    			  			  END)
+    </update>
+    
+    <!-- 공통코드&사용여부 검색조회 -->
+    <select id="searchDetail" parameterType="map" resultType="map">
+    	SELECT /*com.hitejinro.snop.system.dao.M08180DaoMapper.searchDetail*/
+    			T2.GROUP_NAME
+    		  , T1.GROUP_CODE	 
+    		  , T1.CODE
+    		  , T1.NAME
+    		  ,	T1.DESCRIPTION
+    		  , T1.SEQ
+    		  , T1.USE_YN
+    		  , T1.SEGMENT1, T1.SEGMENT2, T1.SEGMENT3, T1.SEGMENT4, T1.SEGMENT5
+    		  , T1.SEGMENT6, T1.SEGMENT7, T1.SEGMENT8, T1.SEGMENT9, T1.SEGMENT10
+    		  , T1.CREATED_BY
+    		  , TO_CHAR(T1.CREATION_DATE, 'YYYY-MM-DD HH24:MI:SS') AS CREATION_DATE
+    		  , T1.LAST_UPDATED_BY
+    		  , TO_CHAR(T1.LAST_UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS') AS LAST_UPDATE_DATE
+		FROM SCMU.W_SOP_TB_COM_CODE_M T1
+		
+		INNER JOIN SCMU.W_SOP_TB_COM_GROUP_M T2 ON T2.GROUP_CODE = T1.GROUP_CODE
+		WHERE 1 = 1
+		   	AND T1.GROUP_CODE = #{groupCode, jdbcType=VARCHAR}
+			AND T1.USE_YN 	  = DECODE(#{useYN, jdbcType=VARCHAR}, '!ALL', T1.USE_YN, #{useYN, jdbcType=VARCHAR})
+		ORDER BY T1.SEQ, T1.GROUP_CODE, T1.CODE
+    </select>
+    
+    <!-- 공통코드 유효성 검증 -->
+    <select id="validateDetail" parameterType="map" resultType="map">
+    	WITH UPDATE_TBL AS /*com.hitejinro.snop.system.dao.M08180DaoMapper.validateDetail */
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.action, jdbcType=VARCHAR}			AS ACTION
+    				, #{list.GROUP_CODE, jdbcType=VARCHAR}		AS GROUP_CODE
+    				, #{list.CODE, jdbcType=VARCHAR}			AS CODE
+    				, #{list.NAME, jdbcType=VARCHAR}			AS NAME
+    				, #{list.DESCRIPTION, jdbcType=VARCHAR}		AS DESCRIPTION
+    				, #{list.SEQ, jdbcType=VARCHAR}				AS SEQ
+    				, #{list.USE_YN, jdbcType=VARCHAR}			AS USE_YN
+    				, #{list.SEGMENT1, jdbcType=VARCHAR}		AS SEGMENT1
+   					, #{list.SEGMENT2, jdbcType=VARCHAR}		AS SEGMENT2
+    				, #{list.SEGMENT3, jdbcType=VARCHAR}		AS SEGMENT3
+    				, #{list.SEGMENT4, jdbcType=VARCHAR}		AS SEGMENT4
+    				, #{list.SEGMENT5, jdbcType=VARCHAR}		AS SEGMENT5
+    				, #{list.SEGMENT6, jdbcType=VARCHAR}		AS SEGMENT6
+    				, #{list.SEGMENT7, jdbcType=VARCHAR}		AS SEGMENT7
+    				, #{list.SEGMENT8, jdbcType=VARCHAR}		AS SEGMENT8
+    				, #{list.SEGMENT9, jdbcType=VARCHAR}		AS SEGMENT9
+    				, #{list.SEGMENT10, jdbcType=VARCHAR}		AS SEGMENT10
+    			FROM DUAL
+    		</foreach>
+    	)
+    	SELECT
+    		  A.GROUP_CODE
+    		, A.CODE
+    		, A.IDX || '번째 행에 오류 : ' || SUBSTR(A.GROUP_CODE_ERR || A.CODE_ERR || A.NAME_ERR || A.DESCRIPTION_ERR || A.SEQ_ERR, 3) AS ERR_MSG
+    	FROM
+    	(
+    		SELECT
+    			  ROWNUM AS IDX
+    			, T1.GROUP_CODE
+    			, T1.CODE
+    			, (CASE WHEN T1.GROUP_CODE IS NULL THEN ', 그룹코드는 필수값'
+    					WHEN T3.GROUP_CODE IS NULL THEN ', 유효하지 않은 그룹코드'
+    					ELSE ''
+    			   END) AS GROUP_CODE_ERR
+    			   
+    			, (CASE WHEN T1.CODE IS NULL 										THEN ', 공통코드는 필수값'
+    					WHEN T1.ACTION = 'insert' AND T2.CODE IS NOT NULL 			THEN ', 중복된 코드'
+    					WHEN COUNT(1) OVER (PARTITION BY T1.GROUP_CODE, T1.CODE) > 1 THEN ', 중복입력된 코드'
+    					ELSE ''
+    			   END) AS CODE_ERR
+    			
+    			, (CASE WHEN T1.NAME IS NULL THEN ', 공통코드명은 필수값'
+    					ELSE ''
+    			   END) AS NAME_ERR
+    			 
+    			, (CASE WHEN T1.DESCRIPTION IS NULL THEN ', 설명은 필수값'
+    					ELSE ''
+    			   END) AS DESCRIPTION_ERR
+    			   
+    			, (CASE WHEN T1.SEQ IS NULL THEN ', 순번은 필수값'
+    					ELSE ''
+    			   END) AS SEQ_ERR
+    			   
+    		FROM UPDATE_TBL T1
+    		
+    		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE 	= T1.GROUP_CODE
+    											 AND T2.CODE 		= T1.CODE
+    											 
+    		LEFT JOIN SCMU.W_SOP_TB_COM_GROUP_M T3 ON T3.GROUP_CODE = T1.GROUP_CODE
+    	) A
+    	WHERE 1 = 1
+    		AND SUBSTR(A.GROUP_CODE_ERR || A.CODE_ERR || A.NAME_ERR || A.DESCRIPTION_ERR || A.SEQ_ERR, 3) IS NOT NULL
+    	ORDER BY A.IDX
+    </select>
+    
+	<!-- 공통코드 추가, 수정 -->    
+    <update id="updateDetail" parameterType="map">
+    		MERGE INTO SCMU.W_SOP_TB_COM_CODE_M T /* com.hitejinro.snop.system.dao.M08160DaoMapper.updateDetail */
+    		USING
+    		(
+    			<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    				SELECT
+    					  #{list.GROUP_CODE, jdbcType=VARCHAR}			AS GROUP_CODE
+    					, #{list.CODE, jdbcType=VARCHAR}				AS CODE
+    					, #{list.NAME, jdbcType=VARCHAR}				AS NAME
+    					, #{list.DESCRIPTION, jdbcType=VARCHAR}			AS DESCRIPTION
+    					, #{list.SEQ, jdbcType=VARCHAR}					AS SEQ
+    					, #{list.USE_YN, jdbcType=VARCHAR}				AS USE_YN
+    					, #{list.SEGMENT1, jdbcType=VARCHAR}			AS SEGMENT1
+    					, #{list.SEGMENT2, jdbcType=VARCHAR}			AS SEGMENT2
+    					, #{list.SEGMENT3, jdbcType=VARCHAR}			AS SEGMENT3
+    					, #{list.SEGMENT4, jdbcType=VARCHAR}			AS SEGMENT4
+    					, #{list.SEGMENT5, jdbcType=VARCHAR}			AS SEGMENT5
+    					, #{list.SEGMENT6, jdbcType=VARCHAR}			AS SEGMENT6
+    					, #{list.SEGMENT7, jdbcType=VARCHAR}			AS SEGMENT7
+    					, #{list.SEGMENT8, jdbcType=VARCHAR}			AS SEGMENT8
+    					, #{list.SEGMENT9, jdbcType=VARCHAR}			AS SEGMENT9
+    					, #{list.SEGMENT10, jdbcType=VARCHAR}			AS SEGMENT10
+    				FROM DUAL
+    			</foreach>
+    		) S ON (
+    						T.GROUP_CODE = S.GROUP_CODE
+    					AND T.CODE 		 = S.CODE
+    				)
+    		WHEN MATCHED THEN
+    			UPDATE SET
+    				  T.NAME				= S.NAME
+    				, T.DESCRIPTION			= S.DESCRIPTION
+    				, T.SEQ					= S.SEQ
+    				, T.USE_YN				= S.USE_YN
+    				, T.SEGMENT1			= S.SEGMENT1
+    				, T.SEGMENT2			= S.SEGMENT2
+    				, T.SEGMENT3			= S.SEGMENT3
+    				, T.SEGMENT4			= S.SEGMENT4
+    				, T.SEGMENT5			= S.SEGMENT5
+    				, T.SEGMENT6			= S.SEGMENT6
+    				, T.SEGMENT7			= S.SEGMENT7
+    				, T.SEGMENT8			= S.SEGMENT8
+    				, T.SEGMENT9			= S.SEGMENT9
+    				, T.SEGMENT10			= S.SEGMENT10
+    				, T.LAST_UPDATED_BY 	= #{userId, jdbcType=VARCHAR}
+    				, T.LAST_UPDATE_DATE	= SYSDATE
+    		WHEN NOT MATCHED THEN
+    		INSERT
+    		(	  T.GROUP_CODE	
+    			, T.CODE
+    			, T.NAME
+    			, T.DESCRIPTION
+    			, T.SEQ
+    			, T.USE_YN
+    			, T.SEGMENT1, T.SEGMENT2, T.SEGMENT3, T.SEGMENT4, T.SEGMENT5
+    			, T.SEGMENT6, T.SEGMENT7, T.SEGMENT8, T.SEGMENT9, T.SEGMENT10
+    			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+    		)
+    		VALUES
+    		(
+    			  S.GROUP_CODE
+    			, S.CODE
+    			, S.NAME
+    			, S.DESCRIPTION
+    			, S.SEQ
+    			, S.USE_YN
+    			, S.SEGMENT1, S.SEGMENT2, S.SEGMENT3, S.SEGMENT4, S.SEGMENT5
+    			, S.SEGMENT6, S.SEGMENT7, S.SEGMENT8, S.SEGMENT9, S.SEGMENT10
+    			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+    		)
+    </update>
+    
+</mapper>

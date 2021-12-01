@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 반제품 생산실적 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M09070DaoMapper">
+
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09070DaoMapper.searchHeader */
+		      A.PERIOD_SCM_YYYYWW, A.PERIOD_TYPE, A.MIN_YYYYMMDD, A.MAX_YYYYMMDD
+		    , B.TYPE_CODE, B.TYPE_DESC
+			
+			, 'COL' || (ROW_NUMBER() OVER (ORDER BY A.PERIOD_SEQ, A.PERIOD_SCM_YYYYWW, B.TYPE_SEQ) -1) AS NAME
+            , (CASE WHEN B.TYPE_CODE = 'PRODUCT_RATE' THEN 'percent'
+                    ELSE 'numeric'
+                    END) AS DEF
+			, B.WIDTH
+                    
+		    , (CASE WHEN B.TYPE_SEQ != '1'          THEN NULL
+		            WHEN A.PERIOD_TYPE = 'MONTH'    THEN '당월'
+		            ELSE SUBSTR(A.PERIOD_SCM_YYYYWW, 0, 4)
+		              || '년 ' || LTRIM(SUBSTR(A.PERIOD_SCM_YYYYWW, 5, 2), '0')
+		              || '주(' || LTRIM(SUBSTR(A.MIN_YYYYMMDD, 5, 2), '0') || '/' || LTRIM(SUBSTR(A.MIN_YYYYMMDD, 7, 2), '0')
+		              || ' ~ ' || LTRIM(SUBSTR(A.MAX_YYYYMMDD, 5, 2), '0') || '/' || LTRIM(SUBSTR(A.MAX_YYYYMMDD, 7, 2), '0')
+		              || ')'
+		            END) AS HEADER1_DESC
+		    , (CASE WHEN B.TYPE_SEQ != '1'          THEN NULL
+		            ELSE COUNT(1) OVER (PARTITION BY A.PERIOD_SCM_YYYYWW, A.PERIOD_TYPE)
+		            END) AS HEADER1_SPAN
+		            
+			, B.TYPE_DESC AS HEADER2_DESC
+		FROM
+		(
+            SELECT
+                  DECODE(GROUPING_ID(AB.YYYYMM), 1, AB.SCM_YYYYWW, AB.YYYYMM)   AS PERIOD_SCM_YYYYWW
+                , DECODE(GROUPING_ID(AB.YYYYMM), 1, 'WEEK', 'MONTH')            AS PERIOD_TYPE
+                , GROUPING_ID(AB.YYYYMM)                                        AS PERIOD_SEQ
+                , MIN(AB.YYYYMMDD)  AS MIN_YYYYMMDD
+                , MAX(AB.YYYYMMDD)  AS MAX_YYYYMMDD
+            FROM SCMU.W_SOP_VW_CALENDAR_M AB
+            WHERE 1 = 1
+                AND AB.YYYYMMDD BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+            GROUP BY GROUPING SETS((AB.SCM_YYYYWW), (AB.YYYYMM))
+		) A
+		LEFT JOIN
+		(
+		    SELECT 'CONV_STD_QUANTITY' 	AS TYPE_CODE, '표준\n생산량' 	AS TYPE_DESC, '1' AS TYPE_SEQ, '80' AS WIDTH FROM DUAL
+		    UNION ALL
+		    SELECT 'CONV_COMP_QUANTITY' AS TYPE_CODE, '당일\n생산량' 	AS TYPE_DESC, '2' AS TYPE_SEQ, '80' AS WIDTH FROM DUAL
+		    UNION ALL
+		    SELECT 'WORK_HOURS' 		AS TYPE_CODE, '근무\n시간' 	    AS TYPE_DESC, '3' AS TYPE_SEQ, '60' AS WIDTH FROM DUAL
+		    UNION ALL
+		    SELECT 'R_WORK_HOURS_M' 	AS TYPE_CODE, '실작업\n시간' 	AS TYPE_DESC, '4' AS TYPE_SEQ, '60' AS WIDTH FROM DUAL
+		    UNION ALL
+		    SELECT 'PRODUCT_RATE' 		AS TYPE_CODE, '생산\n효율' 	    AS TYPE_DESC, '5' AS TYPE_SEQ, '80' AS WIDTH FROM DUAL
+		    UNION ALL
+		    SELECT 'R_WORK_HOURS_P' 	AS TYPE_CODE, '인원투입\n시간'	AS TYPE_DESC, '6' AS TYPE_SEQ, '80' AS WIDTH FROM DUAL		    
+		    UNION ALL
+		    SELECT 'CONV_PLAN_QUANTITY' AS TYPE_CODE, '생산성' 	        AS TYPE_DESC, '7' AS TYPE_SEQ, '80' AS WIDTH FROM DUAL
+		) B ON 1 = 1
+		ORDER BY A.PERIOD_SEQ, A.PERIOD_SCM_YYYYWW, B.TYPE_SEQ
+	</select>
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09070DaoMapper.search */
+		      A.MFG_CODE
+		    , MAX(B.MFG_NAME)       AS MFG_NAME
+		    , A.DEPT_CODE
+		    , MAX(C.DEPT_DESC)      AS DEPT_DESC
+		    , A.ITEM_CODE
+		    , MAX(D.BRAND_CODE)     AS BRAND_CODE
+		    , MAX(D.BRAND_NAME)     AS BRAND_NAME
+		    , MAX(D.DESCRIPTION)    AS DESCRIPTION
+
+		<foreach collection="header" item="list" index="i">
+		    , SUM(CASE WHEN A.PERIOD_TYPE = #{list.PERIOD_TYPE, jdbcType=VARCHAR} AND A.PERIOD_SCM_YYYYWW = #{list.PERIOD_SCM_YYYYWW, jdbcType=VARCHAR}
+		    		   THEN A.${list.TYPE_CODE}
+		    		   ELSE 0
+		    		   END) AS ${list.NAME}
+		</foreach>
+		FROM
+		(
+		    -- 주차별/월별 계
+		    SELECT
+		          DECODE(GROUPING_ID(AB.SCM_YYYYWW), 0, AB.SCM_YYYYWW, AB.YYYYMM)   AS PERIOD_SCM_YYYYWW
+		        , DECODE(GROUPING_ID(AB.SCM_YYYYWW), 0, 'WEEK', 'MONTH')            AS PERIOD_TYPE
+		        , AA.ORG_CODE                   AS MFG_CODE
+		        , AA.DEPT_CODE
+		        , AA.ITEM_CODE
+		        
+		        , SUM(AA.CONV_STD_QUANTITY)     AS CONV_STD_QUANTITY
+		        , SUM(AA.CONV_COMP_QUANTITY)    AS CONV_COMP_QUANTITY
+		        , SUM(AA.WORK_HOURS)            AS WORK_HOURS        
+		        , SUM(AA.R_WORK_HOURS_M)        AS R_WORK_HOURS_M
+		        , (CASE WHEN SUM(AA.CONV_STD_QUANTITY) = 0 THEN 0
+		                ELSE SUM(AA.CONV_COMP_QUANTITY) / SUM(AA.CONV_STD_QUANTITY)
+		                END)                    AS PRODUCT_RATE
+		        , SUM(AA.R_WORK_HOURS_P)        AS R_WORK_HOURS_P    
+		        , SUM(AA.CONV_PLAN_QUANTITY)    AS CONV_PLAN_QUANTITY
+		    FROM EDW.W_PRD_TB_MFG_OP_EFF_F AA
+		
+		    INNER JOIN W_SOP_VW_CALENDAR_M AB ON AB.YYYYMMDD = AA.TRANSACTION_DATE
+		
+		    WHERE 1 = 1
+		        AND AA.OU_CODE 			= 'HJ0'
+		        AND AA.TRANSACTION_DATE BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+		        AND AA.BUSINESS_CODE 	= DECODE(#{liquorCode, jdbcType=VARCHAR}, '10', '1', '20', '2')
+		    GROUP BY GROUPING SETS((AB.SCM_YYYYWW, AA.ORG_CODE, AA.DEPT_CODE, AA.ITEM_CODE), (AB.YYYYMM, AA.ORG_CODE, AA.DEPT_CODE, AA.ITEM_CODE))
+		) A
+		
+		INNER JOIN EDW.W_CM_TB_MFG_M B ON B.MFG_CODE = A.MFG_CODE
+		
+		INNER JOIN EDW.W_CM_TB_DEPT_M C ON C.ORG_CODE  = A.MFG_CODE
+		                               AND C.DEPT_CODE = A.DEPT_CODE
+		
+		INNER JOIN EDW.W_CM_TB_FG_ITEM_M D ON D.ITEM_CODE = A.ITEM_CODE
+		
+		WHERE 1 = 1
+			AND
+	    	(    -- 공장
+	        	(NVL(#{mfgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+	        	OR
+	        	A.MFG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS MFG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+	    	)
+			AND
+		    (    -- 공장
+		        (NVL(#{mfgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        A.MFG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS MFG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 중분류
+		        (NVL(#{segment2, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.SEGMENT2 IN (SELECT REGEXP_SUBSTR(#{segment2, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS SEGMENT2 FROM DUAL CONNECT BY REGEXP_SUBSTR(#{segment2, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 소분류
+		        (NVL(#{segment3, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.SEGMENT3 IN (SELECT REGEXP_SUBSTR(#{segment3, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS SEGMENT3 FROM DUAL CONNECT BY REGEXP_SUBSTR(#{segment3, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 브랜드
+		        (NVL(#{brandCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.BRAND_CODE IN (SELECT REGEXP_SUBSTR(#{brandCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS BRAND_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{brandCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 용도
+		        (NVL(#{usageCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.USAGE_CODE IN (SELECT REGEXP_SUBSTR(#{usageCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS USAGE_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{usageCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 용기
+		        (NVL(#{vesselCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.VESSEL_CODE IN (SELECT REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS VESSEL_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 용량
+		        (NVL(#{volumeValue, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.VOLUME_VALUE IN (SELECT REGEXP_SUBSTR(#{volumeValue, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS VOLUME_VALUE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+		    )
+		    AND
+		    (    -- 내수수출구분 : 1(내수), 2(수출)
+		        (NVL(#{domExpCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+		        OR
+		        D.DOM_EXP_CODE = #{domExpCode, jdbcType=VARCHAR}
+		    )
+		
+		GROUP BY A.MFG_CODE, A.DEPT_CODE, A.ITEM_CODE
+	</select>
+</mapper>

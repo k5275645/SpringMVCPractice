@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 용기 시뮬레이션 버전 비교 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03071DaoMapper">
+	
+	<select id="searchVerCd" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03071DaoMapper.searchVersion */
+		      A.VER_CD AS CODE
+		    , A.VER_NM
+		      || '(' 
+		      || '기준일자 : ' || TO_CHAR(TO_DATE(A.STD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD')
+			  || ')' AS NAME
+		FROM SCMU.W_SOP_TB_VESSEL_SIMUL_M A
+		WHERE 1 = 1
+		    AND SUBSTR(A.STD_YYYYMMDD, 0, 6) = #{YYYYMM, jdbcType=VARCHAR}
+		    AND A.BRAND_CODE                 = DECODE(#{brandCode, jdbcType=VARCHAR}, '!ALL', A.BRAND_CODE, #{brandCode, jdbcType=VARCHAR})
+		ORDER BY A.VER_CD
+	</select>
+
+	<select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03071DaoMapper */
+		      T3.SCM_YYYYWW, T3.SCM_YYYYWW_SEQ, T3.PERIOD_SEQ
+		    , DECODE(T3.PERIOD_SEQ, 1, 'TOTAL', NULL) AS "Def"
+		    , (CASE WHEN T3.PERIOD_SEQ = 1 THEN TO_CHAR(TO_DATE(T3.SCM_YYYYWW, 'YYYYMM'), 'YYYY-MM') || '월'
+		            WHEN T3.PERIOD_SEQ = 0 THEN    SUBSTR(T3.SCM_YYYYWW, 0, 4) || '-' 
+		                                        || SUBSTR(T3.SCM_YYYYWW, 5, 2) || '주차(' 
+		                                        || TO_CHAR(TO_DATE(MIN(T4.YYYYMMDD), 'YYYYMMDD'), 'YYYY-MM-DD')
+		                                        || '~'
+		                                        || TO_CHAR(TO_DATE(MAX(T4.YYYYMMDD), 'YYYYMMDD'), 'YYYY-MM-DD')
+		                                        || ')'
+		            ELSE NULL
+		            END) AS SCM_YYYYWW_DESC 
+		
+		    , MAX(T3.ACTUAL_ITEM_PRDT_QTY)          AS ACTUAL_ITEM_PRDT_QTY
+		    , MAX(T3.ACTUAL_OLD_TRANS_INPUT_QTY)    AS ACTUAL_OLD_TRANS_INPUT_QTY
+		    , MAX(T3.ACTUAL_MFG_STOCK_QTY)          AS ACTUAL_MFG_STOCK_QTY
+		    , MAX(T3.ACTUAL_MFG_STOCK_DCNT)         AS ACTUAL_MFG_STOCK_DCNT
+		    , MAX(T3.ACTUAL_TOTAL_STOCK_QTY)        AS ACTUAL_TOTAL_STOCK_QTY
+		
+		    , MAX(T3.EXPECTED_ITEM_PRDT_QTY)        AS EXPECTED_ITEM_PRDT_QTY
+		    , MAX(T3.EXPECTED_OLD_TRANS_INPUT_QTY)  AS EXPECTED_OLD_TRANS_INPUT_QTY
+		    , MAX(T3.EXPECTED_MFG_STOCK_QTY)        AS EXPECTED_MFG_STOCK_QTY
+		    , MAX(T3.EXPECTED_MFG_STOCK_DCNT)       AS EXPECTED_MFG_STOCK_DCNT
+		    , MAX(T3.EXPECTED_TOTAL_STOCK_QTY)      AS EXPECTED_TOTAL_STOCK_QTY
+		
+		    , MAX(T3.DIFF_ITEM_PRDT_QTY)            AS DIFF_ITEM_PRDT_QTY
+		    , MAX(T3.DIFF_OLD_TRANS_INPUT_QTY)      AS DIFF_OLD_TRANS_INPUT_QTY
+		    , MAX(T3.DIFF_MFG_STOCK_QTY)            AS DIFF_MFG_STOCK_QTY
+		    , MAX(T3.DIFF_MFG_STOCK_DCNT)           AS DIFF_MFG_STOCK_DCNT
+		    , MAX(T3.DIFF_TOTAL_STOCK_QTY)          AS DIFF_TOTAL_STOCK_QTY
+		FROM
+		(
+		    SELECT
+		          NVL(T1.SCM_YYYYWW, T2.SCM_YYYYWW)             AS SCM_YYYYWW
+		        , NVL(T1.SCM_YYYYWW_SEQ, T2.SCM_YYYYWW_SEQ)     AS SCM_YYYYWW_SEQ
+		        , NVL(T1.PERIOD_SEQ, T2.PERIOD_SEQ)             AS PERIOD_SEQ
+		        , NVL(T1.ITEM_PRDT_QTY, 0)                      AS ACTUAL_ITEM_PRDT_QTY
+		        , NVL(T1.OLD_TRANS_INPUT_QTY, 0)                AS ACTUAL_OLD_TRANS_INPUT_QTY
+		        , NVL(T1.MFG_STOCK_QTY, 0)                      AS ACTUAL_MFG_STOCK_QTY
+		        , NVL(T1.MFG_STOCK_DCNT, 0)                     AS ACTUAL_MFG_STOCK_DCNT
+		        , NVL(T1.TOTAL_STOCK_QTY, 0)                    AS ACTUAL_TOTAL_STOCK_QTY
+		
+		        , NVL(T2.ITEM_PRDT_QTY, 0)                      AS EXPECTED_ITEM_PRDT_QTY
+		        , NVL(T2.OLD_TRANS_INPUT_QTY, 0)                AS EXPECTED_OLD_TRANS_INPUT_QTY
+		        , NVL(T2.MFG_STOCK_QTY, 0)                      AS EXPECTED_MFG_STOCK_QTY
+		        , NVL(T2.MFG_STOCK_DCNT, 0)                     AS EXPECTED_MFG_STOCK_DCNT
+		        , NVL(T2.TOTAL_STOCK_QTY, 0)                    AS EXPECTED_TOTAL_STOCK_QTY
+		
+		        , NVL(T2.ITEM_PRDT_QTY, 0) - NVL(T1.ITEM_PRDT_QTY, 0)               AS DIFF_ITEM_PRDT_QTY
+		        , NVL(T2.OLD_TRANS_INPUT_QTY, 0) - NVL(T1.OLD_TRANS_INPUT_QTY, 0)   AS DIFF_OLD_TRANS_INPUT_QTY
+		        , NVL(T2.MFG_STOCK_QTY, 0) - NVL(T1.MFG_STOCK_QTY, 0)               AS DIFF_MFG_STOCK_QTY
+		        , NVL(T2.MFG_STOCK_DCNT, 0) - NVL(T1.MFG_STOCK_DCNT, 0)             AS DIFF_MFG_STOCK_DCNT
+		        , NVL(T2.TOTAL_STOCK_QTY, 0) - NVL(T1.TOTAL_STOCK_QTY, 0)           AS DIFF_TOTAL_STOCK_QTY
+		
+		    FROM
+		    (
+		        SELECT
+		              (CASE WHEN GROUPING_ID(C.SCM_YYYYWW) = 0 THEN C.SCM_YYYYWW
+		                    WHEN GROUPING_ID(C.SCM_YYYYWW) = 1 THEN C.YYYYMM
+		                    ELSE NULL
+		                    END) AS SCM_YYYYWW
+                    , MIN(C.SCM_YYYYWW)                 AS SCM_YYYYWW_SEQ
+		            , GROUPING_ID(C.SCM_YYYYWW)         AS PERIOD_SEQ
+		            , SUM(C.ITEM_PRDT_QTY)              AS ITEM_PRDT_QTY
+		            , SUM(C.OLD_TRANS_INPUT_QTY)        AS OLD_TRANS_INPUT_QTY
+		
+		            , (CASE WHEN GROUPING_ID(C.SCM_YYYYWW) = 0 THEN SUM(C.WEEK_MFG_STOCK_QTY)
+		                    WHEN GROUPING_ID(C.SCM_YYYYWW) = 1 THEN SUM(C.MONTH_MFG_STOCK_QTY)
+		                    ELSE 0
+		                    END) AS MFG_STOCK_QTY
+		
+		            , (CASE WHEN GROUPING_ID(C.SCM_YYYYWW) = 0 THEN SUM(C.WEEK_MFG_STOCK_DCNT)
+		                    WHEN GROUPING_ID(C.SCM_YYYYWW) = 1 THEN SUM(C.MONTH_MFG_STOCK_DCNT)
+		                    ELSE 0
+		                    END) AS MFG_STOCK_DCNT
+		
+		            , (CASE WHEN GROUPING_ID(C.SCM_YYYYWW) = 0 THEN SUM(C.WEEK_TOTAL_STOCK_QTY)
+		                    WHEN GROUPING_ID(C.SCM_YYYYWW) = 1 THEN SUM(C.MONTH_TOTAL_STOCK_QTY)
+		                    ELSE 0
+		                    END) AS TOTAL_STOCK_QTY
+		        FROM
+		        (
+		            SELECT
+		                  A.VER_CD, B.PERIOD_YYYYMMDD, A.SCM_YYYYWW, A.YYYYMM
+		                , A.END_WEEK_YYYYMMDD, A.END_MONTH_YYYYMMDD
+		                
+		                , B.ITEM_PRDT_QTY, B.OLD_TRANS_INPUT_QTY
+		                
+		                , (CASE WHEN B.PERIOD_YYYYMMDD = A.END_WEEK_YYYYMMDD THEN B.MFG_STOCK_QTY
+		                        ELSE 0
+		                        END) AS WEEK_MFG_STOCK_QTY
+		                , (CASE WHEN B.PERIOD_YYYYMMDD = A.END_WEEK_YYYYMMDD THEN B.MFG_STOCK_DCNT
+		                        ELSE 0
+		                        END) AS WEEK_MFG_STOCK_DCNT
+		                , (CASE WHEN B.PERIOD_YYYYMMDD = A.END_WEEK_YYYYMMDD THEN B.TOTAL_STOCK_QTY
+		                        ELSE 0
+		                        END) AS WEEK_TOTAL_STOCK_QTY
+		
+		                , (CASE WHEN B.PERIOD_YYYYMMDD = A.END_MONTH_YYYYMMDD THEN B.MFG_STOCK_QTY
+		                        ELSE 0
+		                        END) AS MONTH_MFG_STOCK_QTY
+		                , (CASE WHEN B.PERIOD_YYYYMMDD = A.END_MONTH_YYYYMMDD THEN B.MFG_STOCK_DCNT
+		                        ELSE 0
+		                        END) AS MONTH_MFG_STOCK_DCNT
+		                , (CASE WHEN B.PERIOD_YYYYMMDD = A.END_MONTH_YYYYMMDD THEN B.TOTAL_STOCK_QTY
+		                        ELSE 0
+		                        END) AS MONTH_TOTAL_STOCK_QTY
+		            FROM
+		            (
+		                SELECT
+		                    AB.VER_CD, AA.YYYYMMDD, AA.SCM_YYYYWW, AA.YYYYMM
+		                    , MAX(AA.YYYYMMDD) OVER (PARTITION BY AA.SCM_YYYYWW) AS END_WEEK_YYYYMMDD
+		                    , MAX(AA.YYYYMMDD) OVER (PARTITION BY AA.YYYYMM)     AS END_MONTH_YYYYMMDD
+		                FROM SCMU.W_SOP_VW_CALENDAR_M AA
+		
+		                INNER JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_M AB ON AB.VER_CD   = #{actualVerCd, jdbcType=VARCHAR}
+		                                                          AND AA.YYYYMMDD BETWEEN AB.VER_FR_DT AND AB.VER_TO_DT
+		            ) A
+		
+		            LEFT JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_RESULT_F B ON B.VER_CD          = A.VER_CD
+		                                                           AND B.PERIOD_YYYYMMDD = A.YYYYMMDD
+		        ) C
+		        GROUP BY GROUPING SETS((C.SCM_YYYYWW), (C.YYYYMM))
+		    ) T1
+		
+		    FULL OUTER JOIN
+		    (
+		        SELECT
+		              (CASE WHEN GROUPING_ID(F.SCM_YYYYWW) = 0 THEN F.SCM_YYYYWW
+		                    WHEN GROUPING_ID(F.SCM_YYYYWW) = 1 THEN F.YYYYMM
+		                    ELSE NULL
+		                    END) AS SCM_YYYYWW
+					, MIN(F.SCM_YYYYWW)                 AS SCM_YYYYWW_SEQ
+		            , GROUPING_ID(F.SCM_YYYYWW)         AS PERIOD_SEQ
+		            , SUM(F.ITEM_PRDT_QTY)              AS ITEM_PRDT_QTY
+		            , SUM(F.OLD_TRANS_INPUT_QTY)        AS OLD_TRANS_INPUT_QTY
+		
+		            , (CASE WHEN GROUPING_ID(F.SCM_YYYYWW) = 0 THEN SUM(F.WEEK_MFG_STOCK_QTY)
+		                    WHEN GROUPING_ID(F.SCM_YYYYWW) = 1 THEN SUM(F.MONTH_MFG_STOCK_QTY)
+		                    ELSE 0
+		                    END) AS MFG_STOCK_QTY
+		
+		            , (CASE WHEN GROUPING_ID(F.SCM_YYYYWW) = 0 THEN SUM(F.WEEK_MFG_STOCK_DCNT)
+		                    WHEN GROUPING_ID(F.SCM_YYYYWW) = 1 THEN SUM(F.MONTH_MFG_STOCK_DCNT)
+		                    ELSE 0
+		                    END) AS MFG_STOCK_DCNT
+		
+		            , (CASE WHEN GROUPING_ID(F.SCM_YYYYWW) = 0 THEN SUM(F.WEEK_TOTAL_STOCK_QTY)
+		                    WHEN GROUPING_ID(F.SCM_YYYYWW) = 1 THEN SUM(F.MONTH_TOTAL_STOCK_QTY)
+		                    ELSE 0
+		                    END) AS TOTAL_STOCK_QTY
+		        FROM
+		        (
+		            SELECT
+		                  D.VER_CD, E.PERIOD_YYYYMMDD, D.SCM_YYYYWW, D.YYYYMM
+		                , D.END_WEEK_YYYYMMDD, D.END_MONTH_YYYYMMDD
+		                
+		                , E.ITEM_PRDT_QTY, E.OLD_TRANS_INPUT_QTY
+		                
+		                , (CASE WHEN E.PERIOD_YYYYMMDD = D.END_WEEK_YYYYMMDD THEN E.MFG_STOCK_QTY
+		                        ELSE 0
+		                        END) AS WEEK_MFG_STOCK_QTY
+		                , (CASE WHEN E.PERIOD_YYYYMMDD = D.END_WEEK_YYYYMMDD THEN E.MFG_STOCK_DCNT
+		                        ELSE 0
+		                        END) AS WEEK_MFG_STOCK_DCNT
+		                , (CASE WHEN E.PERIOD_YYYYMMDD = D.END_WEEK_YYYYMMDD THEN E.TOTAL_STOCK_QTY
+		                        ELSE 0
+		                        END) AS WEEK_TOTAL_STOCK_QTY
+		
+		                , (CASE WHEN E.PERIOD_YYYYMMDD = D.END_MONTH_YYYYMMDD THEN E.MFG_STOCK_QTY
+		                        ELSE 0
+		                        END) AS MONTH_MFG_STOCK_QTY
+		                , (CASE WHEN E.PERIOD_YYYYMMDD = D.END_MONTH_YYYYMMDD THEN E.MFG_STOCK_DCNT
+		                        ELSE 0
+		                        END) AS MONTH_MFG_STOCK_DCNT
+		                , (CASE WHEN E.PERIOD_YYYYMMDD = D.END_MONTH_YYYYMMDD THEN E.TOTAL_STOCK_QTY
+		                        ELSE 0
+		                        END) AS MONTH_TOTAL_STOCK_QTY
+		            FROM
+		            (
+		                SELECT
+		                      DB.VER_CD, DA.YYYYMMDD, DA.SCM_YYYYWW, DA.YYYYMM
+		                    , MAX(DA.YYYYMMDD) OVER (PARTITION BY DA.SCM_YYYYWW) AS END_WEEK_YYYYMMDD
+		                    , MAX(DA.YYYYMMDD) OVER (PARTITION BY DA.YYYYMM)     AS END_MONTH_YYYYMMDD
+		                FROM SCMU.W_SOP_VW_CALENDAR_M DA
+		
+		                INNER JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_M DB ON DB.VER_CD   = #{expectedVerCd, jdbcType=VARCHAR}
+		                                                          AND DA.YYYYMMDD BETWEEN DB.VER_FR_DT AND DB.VER_TO_DT
+		            ) D
+		
+		            LEFT JOIN SCMU.W_SOP_TB_VESSEL_SIMUL_RESULT_F E ON E.VER_CD          = D.VER_CD
+		                                                           AND E.PERIOD_YYYYMMDD = D.YYYYMMDD
+		        ) F
+		        GROUP BY GROUPING SETS((F.SCM_YYYYWW), (F.YYYYMM))
+		    ) T2 ON T2.SCM_YYYYWW = T1.SCM_YYYYWW
+		) T3
+		
+		LEFT JOIN SCMU.W_SOP_VW_CALENDAR_M T4 ON T4.SCM_YYYYWW = T3.SCM_YYYYWW
+		
+		GROUP BY T3.SCM_YYYYWW, T3.SCM_YYYYWW_SEQ, T3.PERIOD_SEQ
+		ORDER BY T3.SCM_YYYYWW_SEQ, T3.PERIOD_SEQ DESC
+	</select>
+</mapper>

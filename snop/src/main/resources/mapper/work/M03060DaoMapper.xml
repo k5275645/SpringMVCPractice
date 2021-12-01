@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제병사실적 입력 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03060DaoMapper">
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		-- 기간/제조사/사업부문/품목
+		SELECT /* com.hitejinro.snop.work.dao.M03060DaoMapper.search */
+		      TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS PERIOD_YYYYMMDD
+		    , T1.BOTL_MANURS_CODE
+		    , MAX(T1.BOTL_MANURS_NAME)  AS BOTL_MANURS_NAME
+		    , T1.LIQUOR_CODE
+		    , MAX(T3.LIQUOR_DESC)       AS LIQUOR_DESC
+		    , T1.ITEM_CODE
+		    , MAX(T2.DESCRIPTION)       AS DESCRIPTION
+		
+		    -- P생산량
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN T1.QTY
+		               ELSE 0
+		               END) AS PBOX_PRDT_QTY
+		    -- 벌크생산량
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'BULK' AND T1.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN T1.QTY
+		               ELSE 0
+		               END) AS BULK_PRDT_QTY
+		    -- 전환량(벌크->P)
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'BULK' AND T1.BOTL_MANURS_ACCT_CODE = 'CONV_BULK_TO_P_QTY' THEN T1.QTY
+		               ELSE 0
+		               END) AS CONV_BULK_TO_P_QTY
+		
+		    -- 출고공장 합계
+		    , SUM(CASE WHEN T1.LIQUOR_CODE = '10' AND T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE IN ('SHIP_MH1', 'SHIP_MH3')                            THEN T1.QTY
+		               WHEN T1.LIQUOR_CODE = '20' AND T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE IN ('SHIP_MJ1', 'SHIP_MJ2', 'SHIP_MJ3', 'SHIP_MJ4')     THEN T1.QTY
+		               ELSE 0
+		               END) AS TOTAL_SHIP_QTY
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'SHIP_MH1' THEN T1.QTY
+		               ELSE 0
+		               END) AS SHIP_MH1
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'SHIP_MH3' THEN T1.QTY
+		               ELSE 0
+		               END) AS SHIP_MH3
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ1' THEN T1.QTY
+		               ELSE 0
+		               END) AS SHIP_MJ1
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ2' THEN T1.QTY
+		               ELSE 0
+		               END) AS SHIP_MJ2
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ3' THEN T1.QTY
+		               ELSE 0
+		               END) AS SHIP_MJ3
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ4' THEN T1.QTY
+		               ELSE 0
+		               END) AS SHIP_MJ4
+		    -- P재고
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'PBOX' AND T1.BOTL_MANURS_ACCT_CODE = 'STOCK_QTY' THEN T1.QTY
+		               ELSE 0
+		               END) AS PBOX_STOCK_QTY
+		    -- 벌크재고
+		    , SUM(CASE WHEN T1.BOTL_PACKING_TYPE = 'BULK' AND T1.BOTL_MANURS_ACCT_CODE = 'STOCK_QTY' THEN T1.QTY
+		               ELSE 0
+		               END) AS BULK_STOCK_QTY
+		    
+		    -- 입력자 정보
+		    , TO_CHAR(MAX(T1.LAST_UPDATE_DATE), 'YYYY-MM-DD hh24:mi:ss')	AS LAST_UPDATE_DATE
+		    , MAX(T1.LAST_UPDATED_BY) 										AS LAST_UPDATED_BY
+		FROM
+		(
+		    SELECT
+		          A.PERIOD_YYYYMMDD, A.BOTL_MANURS_CODE, A.BOTL_MANURS_NAME, A.BOTL_MANURS_SEQ
+		        , A.LIQUOR_CODE, A.ITEM_CODE
+		        , A.BOTL_PACKING_TYPE, A.BOTL_MANURS_ACCT_CODE
+		        , NVL(B.QTY, 0) AS QTY
+		        , B.LAST_UPDATED_BY, B.LAST_UPDATE_DATE
+		    FROM
+		    (
+		        -- 기초 입력 데이터
+		        SELECT
+		              AB.YYYYMMDD       AS PERIOD_YYYYMMDD
+		            , AA.LIQUOR_CODE
+		            , AA.ITEM_CODE
+		            , AC.CODE           AS BOTL_MANURS_CODE
+		            , AC.NAME           AS BOTL_MANURS_NAME
+		            , AC.SEQ            AS BOTL_MANURS_SEQ
+		            , AE.CODE           AS BOTL_PACKING_TYPE
+		            , AD.CODE           AS BOTL_MANURS_ACCT_CODE
+		        FROM SCMU.W_SOP_TB_VESSEL_M AA
+		
+		        LEFT JOIN SCMU.W_SOP_VW_CALENDAR_M AB ON AB.YYYYMMDD BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+		
+		        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AC ON AC.GROUP_CODE = 'BOTL_MANURS_LIST'
+		                                             AND AC.USE_YN     = 'Y'
+		                                             AND AC.CODE       = DECODE(#{botlManursCode, jdbcType=VARCHAR}, '!ALL', AC.CODE, #{botlManursCode, jdbcType=VARCHAR})
+		
+		        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AD ON AD.GROUP_CODE = 'BOTL_MANURS_ACCT_LIST'
+		                                             AND AD.USE_YN     = 'Y'
+		
+		        LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M AE ON AE.GROUP_CODE = 'BOTL_PACKING_TYPE'
+		                                             AND AE.USE_YN     = 'Y'
+		
+		        WHERE 1 = 1
+		            AND AA.ITEM_CODE     = DECODE(#{itemCode, jdbcType=VARCHAR}, '!ALL', AA.ITEM_CODE, #{itemCode, jdbcType=VARCHAR})
+		            AND AA.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+		            AND AA.VESSEL_CODE   = '1'
+		            AND AA.BOTL_TYPE     = 'NEW'
+		            AND AA.COMPANY_TYPE  = 'OWNER'
+		            AND AA.USE_YN        = 'Y'
+		    ) A
+		
+		    LEFT JOIN SCMU.W_SOP_TB_BOTL_MANURS_PRDT_F B ON B.PERIOD_YYYYMMDD       = A.PERIOD_YYYYMMDD
+		                                                AND B.BOTL_MANURS_CODE      = A.BOTL_MANURS_CODE
+		                                                AND B.ITEM_CODE             = A.ITEM_CODE
+		                                                AND B.BOTL_PACKING_TYPE     = A.BOTL_PACKING_TYPE
+		                                                AND B.BOTL_MANURS_ACCT_CODE = A.BOTL_MANURS_ACCT_CODE
+		) T1
+		
+		LEFT JOIN EDW.W_WS_TB_RI_ITEM_M T2 ON T2.ITEM_CODE = T1.ITEM_CODE
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M T3 ON T3.LIQUOR_CODE = T1.LIQUOR_CODE
+		
+		GROUP BY T1.PERIOD_YYYYMMDD, T1.BOTL_MANURS_CODE, T1.LIQUOR_CODE, T1.ITEM_CODE
+		ORDER BY T1.PERIOD_YYYYMMDD, MAX(T1.BOTL_MANURS_SEQ), T1.LIQUOR_CODE, T1.ITEM_CODE
+    </select>
+    
+    <!-- 저장 -->
+    <update id="update" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_BOTL_MANURS_PRDT_F T /* com.hitejinro.snop.work.dao.M03060DaoMapper.update */
+    	USING
+    	(	
+    		SELECT
+    			  REPLACE(S1.PERIOD_YYYYMMDD, '-', '') AS PERIOD_YYYYMMDD
+    			, S1.BOTL_MANURS_CODE, S1.ITEM_CODE
+    			, S3.CODE 	AS BOTL_PACKING_TYPE
+    			, S2.CODE	AS BOTL_MANURS_ACCT_CODE
+				, NVL((CASE WHEN S3.CODE = 'PBOX' AND S2.CODE = 'PRDT_QTY' 				THEN S1.PBOX_PRDT_QTY
+						    WHEN S3.CODE = 'BULK' AND S2.CODE = 'PRDT_QTY' 				THEN S1.BULK_PRDT_QTY
+						    WHEN S3.CODE = 'BULK' AND S2.CODE = 'CONV_BULK_TO_P_QTY' 	THEN S1.CONV_BULK_TO_P_QTY
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'SHIP_MH1' 				THEN S1.SHIP_MH1
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'SHIP_MH3' 				THEN S1.SHIP_MH3
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'SHIP_MJ1' 				THEN S1.SHIP_MJ1
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'SHIP_MJ2' 				THEN S1.SHIP_MJ2
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'SHIP_MJ3' 				THEN S1.SHIP_MJ3
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'SHIP_MJ4' 				THEN S1.SHIP_MJ4
+						    WHEN S3.CODE = 'PBOX' AND S2.CODE = 'STOCK_QTY' 			THEN S1.PBOX_STOCK_QTY
+						    WHEN S3.CODE = 'BULK' AND S2.CODE = 'STOCK_QTY' 			THEN S1.BULK_STOCK_QTY
+						    ELSE 0
+						    END), 0) AS QTY
+    		FROM
+    		(
+				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.PERIOD_YYYYMMDD, jdbcType=VARCHAR}	 				AS PERIOD_YYYYMMDD
+						, #{list.BOTL_MANURS_CODE, jdbcType=VARCHAR}				AS BOTL_MANURS_CODE
+						, #{list.ITEM_CODE, jdbcType=VARCHAR}           			AS ITEM_CODE
+						, #{list.LIQUOR_CODE, jdbcType=VARCHAR}         			AS LIQUOR_CODE
+						, TO_NUMBER(#{list.PBOX_PRDT_QTY, jdbcType=VARCHAR})        AS PBOX_PRDT_QTY
+						, TO_NUMBER(#{list.BULK_PRDT_QTY, jdbcType=VARCHAR})        AS BULK_PRDT_QTY
+						, TO_NUMBER(#{list.CONV_BULK_TO_P_QTY, jdbcType=VARCHAR})   AS CONV_BULK_TO_P_QTY
+						, TO_NUMBER(#{list.SHIP_MH1, jdbcType=VARCHAR})       		AS SHIP_MH1
+						, TO_NUMBER(#{list.SHIP_MH3, jdbcType=VARCHAR})       		AS SHIP_MH3
+						, TO_NUMBER(#{list.SHIP_MJ1, jdbcType=VARCHAR})       		AS SHIP_MJ1
+						, TO_NUMBER(#{list.SHIP_MJ2, jdbcType=VARCHAR})       		AS SHIP_MJ2
+						, TO_NUMBER(#{list.SHIP_MJ3, jdbcType=VARCHAR})       		AS SHIP_MJ3
+						, TO_NUMBER(#{list.SHIP_MJ4, jdbcType=VARCHAR})       		AS SHIP_MJ4
+						, TO_NUMBER(#{list.PBOX_STOCK_QTY, jdbcType=VARCHAR})       AS PBOX_STOCK_QTY
+						, TO_NUMBER(#{list.BULK_STOCK_QTY, jdbcType=VARCHAR})       AS BULK_STOCK_QTY
+					FROM DUAL
+				</foreach>
+			) S1
+			
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M S2 ON S2.GROUP_CODE 	= 'BOTL_MANURS_ACCT_LIST'
+												 AND S2.USE_YN	   	= 'Y'
+			
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M S3 ON S3.GROUP_CODE	= 'BOTL_PACKING_TYPE'
+												 AND S3.USE_YN		= 'Y'
+			WHERE 1 = 1
+			    AND (CASE WHEN S2.CODE IN ('PRDT_QTY', 'STOCK_QTY')                 THEN 'Y'
+			              WHEN S2.CODE = 'CONV_BULK_TO_P_QTY' AND S3.CODE = 'BULK'  THEN 'Y'
+			              WHEN S2.CODE IN ('SHIP_MH1', 'SHIP_MH3', 'SHIP_MJ1', 'SHIP_MJ2', 'SHIP_MJ3', 'SHIP_MJ4') AND S3.CODE = 'PBOX' THEN 'Y'
+			              ELSE 'N'
+			              END) = 'Y'
+                AND (CASE WHEN S2.CODE IN ('PRDT_QTY', 'STOCK_QTY', 'CONV_BULK_TO_P_QTY')                               THEN 'Y'
+                          WHEN S1.LIQUOR_CODE = '10' AND S2.CODE IN ('SHIP_MH1', 'SHIP_MH3')                            THEN 'Y'
+                          WHEN S1.LIQUOR_CODE = '20' AND S2.CODE IN ('SHIP_MJ1', 'SHIP_MJ2', 'SHIP_MJ3', 'SHIP_MJ4')    THEN 'Y'
+                          ELSE 'N'
+                          END) = 'Y'
+    	) S ON (
+    				    T.PERIOD_YYYYMMDD   	= S.PERIOD_YYYYMMDD
+    				AND T.BOTL_MANURS_CODE  	= S.BOTL_MANURS_CODE
+    				AND T.ITEM_CODE		  		= S.ITEM_CODE
+    				AND T.BOTL_PACKING_TYPE 	= S.BOTL_PACKING_TYPE
+    				AND T.BOTL_MANURS_ACCT_CODE = S.BOTL_MANURS_ACCT_CODE
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.QTY					= S.QTY
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PERIOD_YYYYMMDD, T.BOTL_MANURS_CODE, T.ITEM_CODE
+			, T.BOTL_PACKING_TYPE, T.BOTL_MANURS_ACCT_CODE, T.QTY
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.PERIOD_YYYYMMDD, S.BOTL_MANURS_CODE, S.ITEM_CODE
+			, S.BOTL_PACKING_TYPE, S.BOTL_MANURS_ACCT_CODE, S.QTY
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+</mapper>

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 기준판매정의 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08120DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08120DaoMapper.search */
+			   STD_SALE_DFNT_CODE
+		     , PERIOD_GB_CODE
+		     , AGGR_TYPE_GB_CODE
+		     , AGGR_PRD_GB_CODE
+		     , SALE_DFNT_NAME
+		     , APL_PRD_VAL
+		     , CASE 
+		            WHEN PERIOD_GB_CODE = 'PG010' THEN TO_CHAR(TO_DATE(APL_STR_DT,'YYYY'), 'YYYY')
+		            WHEN PERIOD_GB_CODE IN ('PG020', 'PG030') THEN TO_CHAR(TO_DATE(APL_STR_DT,'YYYYMM'), 'YYYY-MM')
+		            WHEN PERIOD_GB_CODE = 'PG040' THEN TO_CHAR(TO_DATE(APL_STR_DT,'YYYYMMDD'), 'YYYY-MM-DD')
+		        END AS APL_STR_DT
+		     , CASE 
+		            WHEN PERIOD_GB_CODE = 'PG010' THEN TO_CHAR(TO_DATE(APL_END_DT,'YYYY'), 'YYYY')
+		            WHEN PERIOD_GB_CODE IN ('PG020', 'PG030') THEN TO_CHAR(TO_DATE(APL_END_DT,'YYYYMM'), 'YYYY-MM')
+		            WHEN PERIOD_GB_CODE = 'PG040' THEN TO_CHAR(TO_DATE(APL_END_DT,'YYYYMMDD'), 'YYYY-MM-DD')
+		        END AS APL_END_DT
+		     , USE_YN
+		  FROM SCMU.W_SOP_TB_STD_SALE_DFNT_M
+		 WHERE 1 = 1
+		   AND USE_YN = #{useYn, jdbcType=VARCHAR}
+    </select>
+    
+    <!-- 데이터 저장 : 삭제 -->
+    <delete id="delete" parameterType="map">
+    	DELETE /* com.hitejinro.snop.work.dao.M08120DaoMapper.delete */
+    	  FROM SCMU.W_SOP_TB_STD_SALE_DFNT_M T1
+    	 WHERE 1 = 1
+    	   AND T1.STD_SALE_DFNT_CODE
+    		IN (
+				<foreach collection="deleteList" item="list" separator="," index="i">
+					#{list.STD_SALE_DFNT_CODE, jdbcType=VARCHAR}
+				</foreach>
+    		   )
+    </delete>
+    
+    <!-- 데이터 저장 : 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH /* com.hitejinro.snop.work.dao.M08120DaoMapper.validate */ 
+    	UPDATE_TBL AS 
+    	(	
+    		-- 그리드에서 하나의 Row는 공통코드(선도관리등급코드)에 따라서 각각의 Row로 저장되어야 하므로 WITH 절에서 분리한다.  
+    		SELECT A.ACTION
+    			 , A.BRAND_CODE
+			     , A.USAGE_CODE
+			     , A.VESSEL_CODE
+			     , A.VOLUME_VALUE
+			     , B.CODE AS GRADE_GB_CODE
+			     , DECODE(B.IDX, 1, OPTIMAL_ELPS_ST_DCNT, CONCERN_ELPS_ST_DCNT)   AS ELPS_ST_DCNT
+			     , DECODE(B.IDX, 1, OPTIMAL_ELPS_CLS_DCNT, CONCERN_ELPS_CLS_DCNT) AS ELPS_CLS_DCNT
+			     , A.USE_YN
+			     , A.RNUM
+    		  FROM (
+				<foreach collection="saveData" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.action, jdbcType=VARCHAR}					AS ACTION
+						, #{list.BRAND_CODE, jdbcType=VARCHAR}				AS BRAND_CODE
+						, #{list.USAGE_CODE, jdbcType=VARCHAR}          	AS USAGE_CODE
+						, #{list.VESSEL_CODE, jdbcType=VARCHAR}          	AS VESSEL_CODE
+						, #{list.VOLUME_VALUE, jdbcType=VARCHAR}          	AS VOLUME_VALUE
+						, #{list.OPTIMAL_ELPS_ST_DCNT, jdbcType=VARCHAR}    AS OPTIMAL_ELPS_ST_DCNT
+						, #{list.OPTIMAL_ELPS_CLS_DCNT, jdbcType=VARCHAR}   AS OPTIMAL_ELPS_CLS_DCNT
+						, #{list.CONCERN_ELPS_ST_DCNT, jdbcType=VARCHAR}    AS CONCERN_ELPS_ST_DCNT
+						, #{list.CONCERN_ELPS_CLS_DCNT, jdbcType=VARCHAR}   AS CONCERN_ELPS_CLS_DCNT
+						, #{list.USE_YN, jdbcType=VARCHAR}          		AS USE_YN
+						, ROWNUM AS RNUM
+					FROM DUAL
+				</foreach>
+				) A
+				, (
+				
+				 --	공통코드(선도관리등급코드)의 CODE, NAME, DESCRIPTION 은 사용여부(USE_YN)나 상황에 따라서 변경될 수 있으나
+				 --	코드 내용('적정', '관심')에 따른 서순(ORDER BY SEQ)는 변경되지 않으리라 판단하여 아래와 같이 조회하였다.
+				 --	다만 공통코드 추가에 따른 대응은 하지 않았으며(그리드 컬럼도 추가되어야 하는 일이므로), 추가시에는 가장 상단 DECODE 문에서 추가한 만큼 분개하여야 한다. 
+				
+				  SELECT ROWNUM AS IDX
+				       , CODE
+				    FROM W_SOP_TB_COM_CODE_M
+				   WHERE 1 = 1
+				     AND GROUP_CODE = 'FRESHNESS_GRADE_GB_CODE'
+				     AND USE_YN = 'Y'
+				   ORDER BY SEQ
+				) B
+    	)
+		SELECT COUNT(1) AS ERR_CNT
+			 , LISTAGG(RNUM || '행 :: 브랜드코드=' || BRAND_CODE || ', 용도 코드='|| USAGE_CODE || ', 용기 코드='|| VESSEL_CODE || ', 용량 코드='|| VOLUME_VALUE 
+							||' :: ' || SUBSTR(ERR_MSG_INSERT || ERR_MSG_UPDATE, 3)
+               		   , '\r\n') WITHIN GROUP (ORDER BY RNUM, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE) AS ERR_MSG
+		  FROM (
+		        SELECT RNUM, BRAND_CODE, USAGE_CODE,VESSEL_CODE , VOLUME_VALUE , MAX(ERR_MSG_INSERT) ERR_MSG_INSERT, MAX(ERR_MSG_UPDATE) AS ERR_MSG_UPDATE  
+		          FROM (
+		            SELECT X.RNUM
+		                 , X.BRAND_CODE
+		                 , X.USAGE_CODE
+		                 , X.VESSEL_CODE
+		                 , X.VOLUME_VALUE
+		                 , X.GRADE_GB_CODE
+		                 , CASE WHEN X.ACTION IN ('insert') AND A.BRAND_CODE IS NOT NULL 
+		                 		THEN ', 존재하는 기준정보 추가' 
+		                 		ELSE ''
+		                 		END AS ERR_MSG_INSERT
+		                 , CASE WHEN X.ACTION IN ('update') AND COUNT(1) OVER (PARTITION BY X.BRAND_CODE, X.USAGE_CODE, X.VESSEL_CODE, X.VOLUME_VALUE, X.GRADE_GB_CODE) <![CDATA[>]]> 1 
+		                 		THEN ', 중복입력된 제품코드' 
+		                 		ELSE ''
+		                 		END AS ERR_MSG_UPDATE
+		              FROM UPDATE_TBL                                   X
+		              LEFT JOIN SCMU.W_SOP_TB_FRESHNESS_ITEM_M          A
+		                     ON X.BRAND_CODE = A.BRAND_CODE
+		                    AND X.USAGE_CODE = A.USAGE_CODE
+		                    AND X.VESSEL_CODE = A.VESSEL_CODE
+		                    AND X.VOLUME_VALUE = A.VOLUME_VALUE
+		                    AND X.GRADE_GB_CODE = A.GRADE_GB_CODE   )
+				 WHERE 1 = 1        
+	   			   AND ERR_MSG_INSERT || ERR_MSG_UPDATE IS NOT NULL 		                    
+		         GROUP BY RNUM, BRAND_CODE, USAGE_CODE, VESSEL_CODE , VOLUME_VALUE   
+		        )
+		  
+    </select>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO /* com.hitejinro.snop.system.dao.M08120DaoMapper.update */ 
+    	SCMU.W_SOP_TB_STD_SALE_DFNT_M T 
+    	USING
+    	(	
+    		-- 그리드에서 하나의 Row는 공통코드(선도관리등급코드)에 따라서 각각의 Row로 저장되어야 하므로 WITH 절에서 분리한다.  
+    		SELECT A.STD_SALE_DFNT_CODE
+			     , A.PERIOD_GB_CODE
+			     , A.AGGR_TYPE_GB_CODE
+			     , A.AGGR_PRD_GB_CODE
+			     , A.SALE_DFNT_NAME
+			     , A.APL_PRD_VAL
+			     , A.APL_STR_DT
+			     , A.APL_END_DT
+			     , A.USE_YN
+			     , ROWNUM RNUM
+    		  FROM (
+				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.action, jdbcType=VARCHAR}					AS ACTION
+						, #{list.STD_SALE_DFNT_CODE, jdbcType=VARCHAR}		AS STD_SALE_DFNT_CODE
+						, #{list.PERIOD_GB_CODE, jdbcType=VARCHAR}          AS PERIOD_GB_CODE
+						, #{list.AGGR_TYPE_GB_CODE, jdbcType=VARCHAR}       AS AGGR_TYPE_GB_CODE
+						, #{list.AGGR_PRD_GB_CODE, jdbcType=VARCHAR}        AS AGGR_PRD_GB_CODE
+						, #{list.SALE_DFNT_NAME, jdbcType=VARCHAR}			AS SALE_DFNT_NAME
+						, #{list.APL_PRD_VAL, jdbcType=VARCHAR}				AS APL_PRD_VAL
+						, REPLACE(#{list.APL_STR_DT, jdbcType=VARCHAR},'-','')				AS APL_STR_DT
+						, REPLACE(#{list.APL_END_DT, jdbcType=VARCHAR},'-','')				AS APL_END_DT
+						, #{list.USE_YN, jdbcType=VARCHAR}					AS USE_YN
+					FROM DUAL
+				</foreach>
+				) A
+    	) S ON (
+    					T.STD_SALE_DFNT_CODE = S.STD_SALE_DFNT_CODE
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.SALE_DFNT_NAME   	= S.SALE_DFNT_NAME
+				, T.APL_PRD_VAL   		= S.APL_PRD_VAL
+				, T.APL_STR_DT   		= S.APL_STR_DT
+				, T.APL_END_DT   		= S.APL_END_DT
+				, T.USE_YN				= S.USE_YN
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+		      	T.STD_SALE_DFNT_CODE, T.PERIOD_GB_CODE, T.AGGR_TYPE_GB_CODE, T.AGGR_PRD_GB_CODE, T.SALE_DFNT_NAME
+		      , T.APL_PRD_VAL, T.APL_STR_DT, T.APL_END_DT, T.USE_YN
+		      , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+		      	(SELECT 'DF'||LPAD(NVL(MAX(SUBSTR(STD_SALE_DFNT_CODE,3)),0)+S.RNUM,4,'0') FROM W_SOP_TB_STD_SALE_DFNT_M)
+		      , S.PERIOD_GB_CODE, S.AGGR_TYPE_GB_CODE, S.AGGR_PRD_GB_CODE, S.SALE_DFNT_NAME
+		      , S.APL_PRD_VAL, S.APL_STR_DT, S.APL_END_DT, S.USE_YN
+			  , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+</mapper>

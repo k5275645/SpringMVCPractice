@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- KPI > 체화 재고 관리 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M07060DaoMapper">
+
+	<select id="search" parameterType="map" resultType="map">
+	WITH DATA_TBL AS
+	         (  SELECT SUBSTR (ITEM_GRADE, 2) AS ITEM_GRADE
+	                 , DECODE (GROUPING (LIQUOR_CODE), 1, '!ALL', LIQUOR_CODE) AS LIQUOR_CODE
+	                 , DECODE (GROUPING (EVENT_ITEM_FLAG), 1, '!ALL', EVENT_ITEM_FLAG) AS EVENT_ITEM_FLAG
+	                 , COUNT (ITEM_CODE) AS ITEM_COUNT
+	                 , SUM (QUANTITY) AS QUANTITY
+	              FROM (  SELECT ITEM_CODE
+	                           , ITEM_GRADE
+	                           , LIQUOR_CODE
+	                           , EVENT_ITEM_FLAG
+	                           , SUM (QUANTITY) QUANTITY
+	                        FROM (  SELECT A.ITEM_CODE
+	                                     , A.LIQUOR_CODE
+	                                     , B.EVENT_ITEM_FLAG
+	                                     , B.DESCRIPTION
+	                                     , MAX (
+	                                           CASE
+	                                               WHEN C.EVENT_DATE_FLAG = 'N' THEN
+	                                                   CASE
+	                                                       WHEN (TO_DATE (A.INPUT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) <![CDATA[ < ]]> START_DAY_CNT THEN
+	                                                           '0정상재고'
+	                                                       WHEN (TO_DATE (A.INPUT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN START_DAY_CNT
+	                                                                                                                                               AND AGRADE_FROM_DAY_CNT THEN
+	                                                           '1체화우려'
+	                                                       WHEN (TO_DATE (A.INPUT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT
+	                                                                                                                                               AND AGRADE_TO_DAY_CNT THEN
+	                                                           '2체화재고'
+	                                                       WHEN (TO_DATE (A.INPUT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_FROM_DAY_CNT
+	                                                                                                                                               AND BGRADE_TO_DAY_CNT THEN
+	                                                           '2체화재고'
+	                                                       WHEN (TO_DATE (A.INPUT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) >=
+	                                                                CGRADE_FROM_DAY_CNT THEN
+	                                                           '2체화재고'
+	                                                   END
+	                                               WHEN C.EVENT_DATE_FLAG = 'Y' THEN
+	                                                   CASE
+	                                                       WHEN (TO_DATE (A.EVENT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) > START_DAY_CNT THEN
+	                                                           '0정상재고'
+	                                                       WHEN (TO_DATE (A.EVENT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT
+	                                                                                                                                               AND START_DAY_CNT THEN
+	                                                           '1체화우려'
+	                                                       WHEN (TO_DATE (A.EVENT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_TO_DAY_CNT
+	                                                                                                                                               AND AGRADE_FROM_DAY_CNT THEN
+	                                                           '2체화재고'
+	                                                       WHEN (TO_DATE (A.EVENT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_TO_DAY_CNT
+	                                                                                                                                               AND BGRADE_FROM_DAY_CNT THEN
+	                                                           '2체화재고'
+	                                                       WHEN (TO_DATE (A.EVENT_DATE, 'YYYYMMDD') - TO_DATE (A.PRODUCTION_DATE, 'YYYYMMDD')) <![CDATA[ <= ]]>
+	                                                                CGRADE_FROM_DAY_CNT THEN
+	                                                           '2체화재고'
+	                                                   END
+	                                           END)
+	                                           AS ITEM_GRADE
+	                                     , A.QUANTITY * B.UOM_CONVERSION_VALUE AS QUANTITY
+	                                  FROM (SELECT ORGANIZATION_CODE
+	                                             , ORGANIZATION_NAME
+	                                             , LIQUOR_TYPE AS LIQUOR_CODE
+	                                             , ITEM_CODE
+	                                             , ITEM_NAME
+	                                             , TO_CHAR (INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+	                                             , STOCK_QUANTITY
+	                                             , TO_CHAR (PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+	                                             , QUANTITY
+	                                             , TO_CHAR (IN_DATE, 'YYYYMMDD') AS IN_DATE
+	                                             , PRODUCTION_MFG
+	                                             , PRODUCTION_LOG
+	                                             , TO_CHAR (EVENT_DATE, 'YYYYMMDD') AS EVENT_DATE
+	                                          FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+	                                         WHERE TO_CHAR (INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR (TO_DATE (YYYYMMDD, 'YYYYMMDD'), 'YYYYMMDD')
+	                                                                                      FROM SCMU.W_SOP_VW_CALENDAR_M
+	                                                                                     WHERE SCM_YYYYWW = #{scmYmw, jdbcType=VARCHAR})
+	                                           AND PRODUCTION_DATE IS NOT NULL) A
+	                                     , (SELECT *
+	                                          FROM EDW.W_CM_TB_FG_ITEM_M WT1
+	                                         WHERE 1 = 1 AND WT1.ITEM_TYPE = 'FG' AND WT1.ITEM_STATUS = 'Active' AND WT1.LIQUOR_CODE IN ('10', '20')) B
+	                                     , (SELECT *
+	                                          FROM SCMU.W_SOP_TB_ACCUM_STOCK_M
+	                                         WHERE END_FLAG = 'N') C
+	                                     , (SELECT *
+	                                          FROM EDW.W_CM_TB_CENTER_M
+	                                         WHERE 1 = 1) D
+	                                 WHERE A.ITEM_CODE = B.ITEM_CODE
+	                                   AND ( (C.EVENT_DATE_FLAG = 'Y' AND A.ITEM_CODE = C.ITEM_CODE)
+	                                     OR (B.LIQUOR_CODE = C.LIQUOR_CODE AND B.VESSEL_CODE = C.VESSEL_CODE AND B.BRAND_CODE = C.BRAND_CODE))
+	                                   AND A.QUANTITY != 0
+	                                   AND A.ORGANIZATION_CODE = D.ORG_CODE
+	                              GROUP BY A.ORGANIZATION_CODE
+	                                     , D.ORG_DESC
+	                                     , A.LIQUOR_CODE
+	                                     , A.ITEM_CODE
+	                                     , B.DESCRIPTION
+	                                     , B.EVENT_ITEM_FLAG
+	                                     , A.PRODUCTION_DATE
+	                                     , A.EVENT_DATE
+	                                     , A.QUANTITY
+	                                     , B.UOM_CONVERSION_VALUE)
+	                    GROUP BY ITEM_CODE
+	                           , ITEM_GRADE
+	                           , LIQUOR_CODE
+	                           , EVENT_ITEM_FLAG)
+	             WHERE ITEM_GRADE IS NOT NULL
+	          GROUP BY GROUPING SETS ( (LIQUOR_CODE, SUBSTR (ITEM_GRADE, 2))
+	          						 , (EVENT_ITEM_FLAG, SUBSTR (ITEM_GRADE, 2))
+	          						 , (LIQUOR_CODE, EVENT_ITEM_FLAG, SUBSTR (ITEM_GRADE, 2))
+	          						 , (SUBSTR (ITEM_GRADE, 2))))
+	SELECT '체화' AS MASTER_GBN
+	     , '체화재고' AS DETAIL_GBN
+	     , MAX ( (SELECT TO_CHAR (TARGET_END)
+	                FROM SCMU.W_SOP_TB_KPI_TARGET_M
+	               WHERE PERIOD_YYYY = #{year, jdbcType=VARCHAR} AND KPI_CODE = 'KPI003'))
+	           AS KPI_TARGET
+	     ,   SUM (DECODE (LIQUOR_CODE, '!ALL', ITEM_COUNT, 0))
+	       / MAX ( (SELECT TARGET_END
+	                  FROM SCMU.W_SOP_TB_KPI_TARGET_M
+	                 WHERE PERIOD_YYYY = #{year, jdbcType=VARCHAR} AND KPI_CODE = 'KPI003'))
+	           AS ACHIEVED_RATE
+	     , SUM (DECODE (LIQUOR_CODE, '!ALL', ITEM_COUNT, 0)) AS COMPANY_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '!ALL', QUANTITY, 0)), 0) AS COMPANY_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '10', ITEM_COUNT, 0)) AS BEER_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '10', QUANTITY, 0)), 0) AS BEER_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '20', ITEM_COUNT, 0)) AS SOJU_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '20', QUANTITY, 0)), 0) AS SOJU_STOCK
+	     , 0 AS SORT_SEQ
+	     , 'accum' AS "Def"
+	  FROM DATA_TBL
+	 WHERE ITEM_GRADE = '체화재고' AND EVENT_ITEM_FLAG = '!ALL'
+	UNION ALL
+	SELECT '체화' AS MASTER_GBN
+	     , '체화우려' AS DETAIL_GBN
+	     , '' AS KPI_TARGET
+	     , TO_NUMBER (NULL) AS ACHIEVED_RATE
+	     , SUM (DECODE (LIQUOR_CODE, '!ALL', ITEM_COUNT, 0)) AS COMPANY_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '!ALL', QUANTITY, 0)), 0) AS COMPANY_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '10', ITEM_COUNT, 0)) AS BEER_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '10', QUANTITY, 0)), 0) AS BEER_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '20', ITEM_COUNT, 0)) AS SOJU_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '20', QUANTITY, 0)), 0) AS SOJU_STOCK
+	     , 1 AS SORT_SEQ
+	     , '' AS "Def"
+	  FROM DATA_TBL
+	 WHERE ITEM_GRADE = '체화우려' AND EVENT_ITEM_FLAG = '!ALL'
+	UNION ALL
+	SELECT '기획' AS MASTER_GBN
+	     , '체화재고' AS DETAIL_GBN
+	     , '' AS KPI_TARGET
+	     , TO_NUMBER (NULL) AS ACHIEVED_RATE
+	     , SUM (DECODE (LIQUOR_CODE, '!ALL', ITEM_COUNT, 0)) AS COMPANY_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '!ALL', QUANTITY, 0)), 0) AS COMPANY_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '10', ITEM_COUNT, 0)) AS BEER_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '10', QUANTITY, 0)), 0) AS BEER_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '20', ITEM_COUNT, 0)) AS SOJU_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '20', QUANTITY, 0)), 0) AS SOJU_STOCK
+	     , 2 AS SORT_SEQ
+	     , 'accum' AS "Def"
+	  FROM DATA_TBL
+	 WHERE ITEM_GRADE = '체화재고' AND EVENT_ITEM_FLAG = '기획'
+	UNION ALL
+	SELECT '기획' AS MASTER_GBN
+	     , '체화우려' AS DETAIL_GBN
+	     , '' AS KPI_TARGET
+	     , TO_NUMBER (NULL) AS ACHIEVED_RATE
+	     , SUM (DECODE (LIQUOR_CODE, '!ALL', ITEM_COUNT, 0)) AS COMPANY_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '!ALL', QUANTITY, 0)), 0) AS COMPANY_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '10', ITEM_COUNT, 0)) AS BEER_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '10', QUANTITY, 0)), 0) AS BEER_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '20', ITEM_COUNT, 0)) AS SOJU_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '20', QUANTITY, 0)), 0) AS SOJU_STOCK
+	     , 3 AS SORT_SEQ
+	     , '' AS "Def"
+	  FROM DATA_TBL
+	 WHERE ITEM_GRADE = '체화우려' AND EVENT_ITEM_FLAG = '기획'
+	UNION ALL
+	SELECT '기획' AS MASTER_GBN
+	     , '정상재고' AS DETAIL_GBN
+	     , '' AS KPI_TARGET
+	     , TO_NUMBER (NULL) AS ACHIEVED_RATE
+	     , SUM (DECODE (LIQUOR_CODE, '!ALL', ITEM_COUNT, 0)) AS COMPANY_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '!ALL', QUANTITY, 0)), 0) AS COMPANY_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '10', ITEM_COUNT, 0)) AS BEER_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '10', QUANTITY, 0)), 0) AS BEER_STOCK
+	     , SUM (DECODE (LIQUOR_CODE, '20', ITEM_COUNT, 0)) AS SOJU_CNT
+	     , ROUND (SUM (DECODE (LIQUOR_CODE, '20', QUANTITY, 0)), 0) AS SOJU_STOCK
+	     , 4 AS SORT_SEQ
+	     , '' AS "Def"
+	  FROM DATA_TBL
+	 WHERE ITEM_GRADE = '정상재고' AND EVENT_ITEM_FLAG = '기획'
+	</select>
+
+    <select id="search_OLD" parameterType="map" resultType="map">
+	WITH TBL AS (
+        SELECT ITEM_CODE
+             , LIQUOR_CODE
+             , EVENT_ITEM_FLAG
+             , SUM(CASE WHEN CONCERN_STOCK > 0 THEN 1 ELSE 0 END) AS CONCERN_CNT
+             , SUM(CONCERN_STOCK) AS CONCERN_STOCK
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 THEN 1 ELSE 0 END) AS ACCUMULATED_CNT
+             , SUM(ACCUMULATED_STOCK) AS ACCUMULATED_STOCK
+             , SUM(CASE WHEN NORMAL_STOCK > 0 THEN 1 ELSE 0 END) AS NORMAL_CNT
+             , SUM(NORMAL_STOCK) AS NORMAL_STOCK
+          FROM (
+                SELECT A.ITEM_CODE
+                     , A.LIQUOR_CODE
+                     , A.EVENT_ITEM_FLAG
+                     , SUM(DECODE(EVENT_DATE_FLAG, 'Y', CASE WHEN B.PASSED_CHK_DAY > A.PASSED_DAY AND B.EXPIRE_CHK_DAY <![CDATA[ <= ]]> A.REMAIN_DAY THEN A.STOCK_QUANTITY ELSE 0 END, CASE WHEN B.PASSED_CHK_DAY > A.PASSED_DAY THEN A.STOCK_QUANTITY ELSE 0 END)) AS CONCERN_STOCK
+                     , SUM(CASE WHEN B.PASSED_CHK_DAY <![CDATA[ <= ]]> A.PASSED_DAY OR B.EXPIRE_CHK_DAY >= A.REMAIN_DAY THEN A.STOCK_QUANTITY ELSE 0 END) AS ACCUMULATED_STOCK
+                     , SUM(A.STOCK_QUANTITY)                                                AS NORMAL_STOCK                         -- 정상재고
+                  FROM (
+                        SELECT A.ITEM_CODE
+                             , C.DESCRIPTION
+                             , C.LIQUOR_CODE
+                             , A.QUANTITY AS STOCK_QUANTITY
+                             , A.INPUT_DATE - A.PRODUCTION_DATE AS PASSED_DAY
+                             , A.EVENT_DATE - A.INPUT_DATE      AS REMAIN_DAY
+                             , C.EVENT_ITEM_FLAG
+                             , TO_CHAR(INPUT_DATE, 'YYYYMMDD')  AS INPUT_DATE
+                             , B.WEEK_START
+                             , B.WEEK_END
+                          FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD A
+                             , ( 
+                                SELECT SCM_YYYYWW
+                                     , MIN(YYYYMMDD) AS WEEK_START
+                                     , MAX(YYYYMMDD) AS WEEK_END
+                                  FROM SCMU.W_SOP_VW_CALENDAR_M
+                                 WHERE SCM_YYYYWW = #{scmYmw, jdbcType=VARCHAR}
+                                 GROUP BY SCM_YYYYWW
+                             ) B
+                             , EDW.W_CM_TB_FG_ITEM_M C
+                         WHERE 1 = 1
+                           AND TO_CHAR(INPUT_DATE, 'YYYYMMDD') BETWEEN B.WEEK_START AND B.WEEK_END
+                           AND A.ITEM_CODE = C.ITEM_CODE
+                           AND A.QUANTITY != 0
+                     ) A
+                  LEFT JOIN
+                       (
+                        SELECT ITEM_CODE
+                             , LIQUOR_CODE
+                             , EVENT_ITEM_FLAG
+                             , MAX(EVENT_DATE_FLAG) EVENT_DATE_FLAG
+                             , MAX(PASSED_CHK_DAY) AS PASSED_CHK_DAY
+                             , MAX(EXPIRE_CHK_DAY) AS EXPIRE_CHK_DAY  
+                          FROM (         
+                                SELECT B.ITEM_CODE
+                                     , B.LIQUOR_CODE
+                                     , B.EVENT_ITEM_FLAG
+                                     , A.EVENT_DATE_FLAG 
+                                     , 0 AS PASSED_CHK_DAY
+                                     , A.AGRADE_FROM_DAY_CNT AS EXPIRE_CHK_DAY
+                                  FROM SCMU.W_SOP_TB_ACCUM_STOCK_M A
+                                     , EDW.W_CM_TB_FG_ITEM_M B
+                                 WHERE A.ITEM_CODE = B.ITEM_CODE
+                                   AND B.EVENT_ITEM_FLAG = '기획'
+                                   AND A.EVENT_DATE_FLAG = 'Y'
+                                 UNION
+                                SELECT B.ITEM_CODE
+                                     , B.LIQUOR_CODE
+                                     , B.EVENT_ITEM_FLAG
+                                     , A.EVENT_DATE_FLAG 
+                                     , A.AGRADE_FROM_DAY_CNT AS PASSED_CHK_DAY
+                                     , 0 AS EXPIRE_CHK_DAY
+                                  FROM SCMU.W_SOP_TB_ACCUM_STOCK_M A
+                                     , EDW.W_CM_TB_FG_ITEM_M B
+                                 WHERE A.LIQUOR_CODE = B.LIQUOR_CODE
+                                   AND A.VESSEL_CODE = B.VESSEL_CODE
+                                   AND A.BRAND_CODE = B.BRAND_CODE
+                             )
+                         GROUP BY ITEM_CODE
+                                , LIQUOR_CODE
+                                , EVENT_ITEM_FLAG
+                        HAVING EVENT_ITEM_FLAG = '일반'
+                            OR (EVENT_ITEM_FLAG = '기획' AND MAX(EVENT_DATE_FLAG) = 'Y') 
+                     ) B
+                    ON 1 = 1
+                   AND A.ITEM_CODE = B.ITEM_CODE
+                 GROUP BY A.ITEM_CODE
+                     , A.LIQUOR_CODE
+                     , A.EVENT_ITEM_FLAG
+                     , B.EVENT_DATE_FLAG
+                     , A.REMAIN_DAY
+                     , PASSED_DAY
+                HAVING (A.EVENT_ITEM_FLAG = '일반' AND PASSED_DAY IS NOT NULL)
+                    OR (A.EVENT_ITEM_FLAG = '기획' AND EVENT_DATE_FLAG = 'Y' AND REMAIN_DAY IS NOT NULL AND PASSED_DAY IS NOT NULL)
+             ) A
+         GROUP BY ITEM_CODE
+        , LIQUOR_CODE
+        , EVENT_ITEM_FLAG
+      )
+        SELECT '체화' AS MASTER_GBN
+             , '체화재고' AS DETAIL_GBN
+             , MAX((SELECT TO_CHAR(TARGET_END) FROM SCMU.W_SOP_TB_KPI_TARGET_M WHERE PERIOD_YYYY = #{year, jdbcType=VARCHAR} AND KPI_CODE = 'KPI003')) AS KPI_TARGET
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 THEN 1 ELSE 0 END) / MAX((SELECT TARGET_END FROM SCMU.W_SOP_TB_KPI_TARGET_M WHERE PERIOD_YYYY = #{year, jdbcType=VARCHAR} AND KPI_CODE = 'KPI003')) AS ACHIEVED_RATE
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 THEN 1 ELSE 0 END) AS COMPANY_CNT
+             , SUM(ACCUMULATED_STOCK) AS COMPANY_STOCK
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 AND LIQUOR_CODE = '10' THEN 1 ELSE 0 END) AS BEER_CNT
+             , SUM(DECODE(LIQUOR_CODE, 10, ACCUMULATED_STOCK, 0)) AS BEER_STOCK
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 AND LIQUOR_CODE = '20' THEN 1 ELSE 0 END) AS SOJU_CNT
+             , SUM(DECODE(LIQUOR_CODE, 20, ACCUMULATED_STOCK, 0)) AS SOJU_STOCK
+             , 0 AS SORT_SEQ
+             , 'accum' AS "Def"
+          FROM TBL A
+         UNION 
+        SELECT '체화' AS MASTER_GBN
+             , '체화우려' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , SUM(CASE WHEN CONCERN_STOCK > 0 THEN 1 ELSE 0 END) AS COMPANY_CNT
+             , SUM(CONCERN_STOCK) AS COMPANY_STOCK
+             , SUM(CASE WHEN CONCERN_STOCK > 0 AND LIQUOR_CODE = '10' THEN 1 ELSE 0 END) AS BEER_CNT
+             , SUM(DECODE(LIQUOR_CODE, 10, CONCERN_STOCK, 0)) AS BEER_STOCK
+             , SUM(CASE WHEN CONCERN_STOCK > 0 AND LIQUOR_CODE = '20' THEN 1 ELSE 0 END) AS SOJU_CNT
+             , SUM(DECODE(LIQUOR_CODE, 20, CONCERN_STOCK, 0)) AS SOJU_STOCK
+             , 1 AS SORT_SEQ
+             , '' AS "Def"
+          FROM TBL A
+         UNION 
+        SELECT '기획' AS MASTER_GBN
+             , '체화재고' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 THEN 1 ELSE 0 END) AS COMPANY_CNT
+             , SUM(ACCUMULATED_STOCK) AS COMPANY_STOCK
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 AND LIQUOR_CODE = '10' THEN 1 ELSE 0 END) AS BEER_CNT
+             , SUM(DECODE(LIQUOR_CODE, 10, ACCUMULATED_STOCK, 0)) AS BEER_STOCK
+             , SUM(CASE WHEN ACCUMULATED_STOCK > 0 AND LIQUOR_CODE = '20' THEN 1 ELSE 0 END) AS SOJU_CNT
+             , SUM(DECODE(LIQUOR_CODE, 20, ACCUMULATED_STOCK, 0)) AS SOJU_STOCK
+             , 2 AS SORT_SEQ
+             , 'accum' AS "Def"
+          FROM TBL A 
+         GROUP BY EVENT_ITEM_FLAG
+        HAVING EVENT_ITEM_FLAG = '기획'
+         UNION
+        SELECT '기획' AS MASTER_GBN
+             , '체화우려' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , SUM(CASE WHEN CONCERN_STOCK > 0 THEN 1 ELSE 0 END) AS COMPANY_CNT
+             , SUM(CONCERN_STOCK) AS COMPANY_STOCK
+             , SUM(CASE WHEN CONCERN_STOCK > 0 AND LIQUOR_CODE = '10' THEN 1 ELSE 0 END) AS BEER_CNT
+             , SUM(DECODE(LIQUOR_CODE, 10, CONCERN_STOCK, 0)) AS BEER_STOCK
+             , SUM(CASE WHEN CONCERN_STOCK > 0 AND LIQUOR_CODE = '20' THEN 1 ELSE 0 END) AS SOJU_CNT
+             , SUM(DECODE(LIQUOR_CODE, 20, CONCERN_STOCK, 0)) AS SOJU_STOCK
+             , 3 AS SORT_SEQ
+             , '' AS "Def"
+          FROM TBL A
+         GROUP BY EVENT_ITEM_FLAG
+        HAVING EVENT_ITEM_FLAG = '기획'
+         UNION
+        SELECT '기획' AS MASTER_GBN
+             , '정상재고' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , SUM(CASE WHEN NORMAL_STOCK > 0 THEN 1 ELSE 0 END) AS COMPANY_CNT
+             , SUM(NORMAL_STOCK) AS COMPANY_STOCK
+             , SUM(CASE WHEN NORMAL_STOCK > 0 AND LIQUOR_CODE = '10' THEN 1 ELSE 0 END) AS BEER_CNT
+             , SUM(DECODE(LIQUOR_CODE, 10, NORMAL_STOCK, 0)) AS BEER_STOCK
+             , SUM(CASE WHEN NORMAL_STOCK > 0 AND LIQUOR_CODE = '20' THEN 1 ELSE 0 END) AS SOJU_CNT
+             , SUM(DECODE(LIQUOR_CODE, 20, NORMAL_STOCK, 0)) AS SOJU_STOCK
+             , 4 AS SORT_SEQ
+             , '' AS "Def"
+          FROM TBL A
+         GROUP BY EVENT_ITEM_FLAG
+        HAVING EVENT_ITEM_FLAG = '기획'
+         UNION ALL
+        SELECT '기획' AS MASTER_GBN
+             , '체화재고' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , TO_NUMBER(NULL) AS COMPANY_CNT
+             , TO_NUMBER(NULL) AS COMPANY_STOCK
+             , TO_NUMBER(NULL) AS BEER_CNT
+             , TO_NUMBER(NULL) AS BEER_STOCK
+             , TO_NUMBER(NULL) AS SOJU_CNT
+             , TO_NUMBER(NULL) AS SOJU_STOCK
+             , 2 AS SORT_SEQ
+             , 'accum' AS "Def"
+          FROM DUAL
+         WHERE NOT EXISTS( SELECT * FROM TBL WHERE EVENT_ITEM_FLAG = '기획')
+         UNION ALL
+        SELECT '기획' AS MASTER_GBN
+             , '체화우려' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , TO_NUMBER(NULL) AS COMPANY_CNT
+             , TO_NUMBER(NULL) AS COMPANY_STOCK
+             , TO_NUMBER(NULL) AS BEER_CNT
+             , TO_NUMBER(NULL) AS BEER_STOCK
+             , TO_NUMBER(NULL) AS SOJU_CNT
+             , TO_NUMBER(NULL) AS SOJU_STOCK
+             , 3 AS SORT_SEQ
+             , '' AS "Def"
+          FROM DUAL
+         WHERE NOT EXISTS( SELECT * FROM TBL WHERE EVENT_ITEM_FLAG = '기획')
+         UNION ALL 
+        SELECT '기획' AS MASTER_GBN
+             , '정상재고' AS DETAIL_GBN
+             , '' AS KPI_TARGET
+             , TO_NUMBER(NULL) AS ACHIEVED_RATE
+             , TO_NUMBER(NULL) AS COMPANY_CNT
+             , TO_NUMBER(NULL) AS COMPANY_STOCK
+             , TO_NUMBER(NULL) AS BEER_CNT
+             , TO_NUMBER(NULL) AS BEER_STOCK
+             , TO_NUMBER(NULL) AS SOJU_CNT
+             , TO_NUMBER(NULL) AS SOJU_STOCK
+             , 4 AS SORT_SEQ
+             , '' AS "Def"
+          FROM DUAL
+         WHERE NOT EXISTS( SELECT * FROM TBL WHERE EVENT_ITEM_FLAG = '기획')
+         ORDER BY SORT_SEQ
+
+    </select>
+
+    
+    <!-- 주차 콤보 조회 -->
+    <select id="getScmYmw" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.system.dao.M07060DaoMapper.getScmYmw */
+               DISTINCT SCM_YYYYWW AS CODE
+             , SUBSTR(SCM_YYYYWW,5,2)||'주차' AS NAME
+          FROM SCMU.W_SOP_VW_CALENDAR_M
+         WHERE YYYYMM = #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR}
+    </select>
+    
+
+    
+	<!-- 팝업 데이터 조회 -->
+    <select id="searchPop" parameterType="map" resultType="map">
+    	
+		SELECT /* com.hitejinro.snop.work.dao.M07060DaoMapper.searchPop */
+			   A.ITEM_CODE                  -- 제품코드
+		     , A.DESCRIPTION                -- 제품명
+			 , B.SAFT_STOCK_DCNT		  -- 안전재고일수
+			 , A.LIQUOR_CODE                -- 주종
+		     , A.BRAND_CODE                 -- 브랜드
+		     , A.USAGE_CODE                 -- 용도
+		     , A.VESSEL_CODE                -- 용기
+		     , A.VOLUME_VALUE               -- 용량
+		     , A.MAIN_FLAG                  -- 주력구분
+		     , A.UOM_CONVERSION_VALUE		-- 환산계수
+		     , A.EVENT_ITEM_FLAG 			-- 기획여부
+		  FROM EDW.W_CM_TB_FG_ITEM_M A       		--  제품마스터
+		  	 , W_SOP_TB_ITEM_SAFT_STOCK_F B
+		 WHERE 1 = 1
+		   AND (A.ITEM_CODE LIKE #{itemCode, jdbcType=VARCHAR} || '%'	OR A.DESCRIPTION LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%')
+		   AND A.LIQUOR_CODE IN ('10', '20')
+		   AND A.ITEM_TYPE = 'FG'
+		   AND A.ITEM_STATUS = 'Active'
+		   AND A.ITEM_CODE = B.ITEM_CODE(+)
+		   AND #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR} = B.PERIOD_YYYYMM(+) 
+    </select>
+</mapper>

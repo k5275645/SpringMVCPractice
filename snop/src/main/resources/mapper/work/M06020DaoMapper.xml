@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제품수명관리 > 기 단종품목 조회 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M06020DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+	    SELECT B.LIQUOR_DESC                    -- 사업부문명칭
+	         , A.BRAND_NAME                     -- 브랜드명
+	         , A.ITEM_CODE                      -- 제품코드
+	         , A.DESCRIPTION                    -- 품목명
+	         , A.ITEM_TYPE                      -- 품목유형
+	         , A.ITEM_STATUS                    -- 품목상태
+	         , A.PRIMARY_UOM_CODE               -- 단위
+	         , A.VESSEL_SORT                    -- 용기종류
+	         , A.PACKING_TYPE                   -- 포장구분
+	         , A.USAGE_NAME                     -- 용도명
+	         , A.VOLUME_VALUE                   -- 용량
+	         , A.SEGMENT2                       -- 품목 중분류명
+	         , C.UPD_ISSUE_RMKS             	-- 수정이슈
+	         , D.EMPLOYEE_KOR_NAME LAST_UPDATED_BY            -- 최종수정자
+	      FROM EDW.W_CM_TB_FG_ITEM_M A
+	         , EDW.W_CM_TB_LIQUOR_M B
+	         , SCMU.W_SOP_TB_DISCONT_ITEM_ISSUE_M C
+	         , SCMU.W_SY_TB_USER_M D
+	     WHERE A.ITEM_TYPE = 'FG'
+	       AND A.LIQUOR_CODE IN ('10', '20')
+	       AND A.LIQUOR_CODE = B.LIQUOR_CODE
+	       AND A.ITEM_CODE = C.ITEM_CODE(+)
+	       AND C.LAST_UPDATED_BY = D.EMPLOYEE_NUMBER(+)
+		   AND (
+                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+                OR
+                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+           )
+           AND (
+                ('!ALL' = #{itemStatus, jdbcType=VARCHAR} AND 1 = 1)
+                OR
+                (A.ITEM_STATUS = #{itemStatus, jdbcType=VARCHAR})
+           )
+           AND (	A.ITEM_CODE LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%'
+				 OR A.DESCRIPTION LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%')  
+  	     ORDER BY ITEM_CODE            
+    </select>
+    
+    <!-- 데이터 저장 : 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH /* com.hitejinro.snop.work.dao.M06020DaoMapper.validate */
+    	UPDATE_TBL AS 
+    	(
+			<foreach collection="saveData" item="list" separator="UNION ALL" index="i">
+				SELECT
+					  #{list.action, jdbcType=VARCHAR}					AS ACTION
+					, #{list.ITEM_CODE, jdbcType=VARCHAR}				AS ITEM_CODE
+					, #{list.UPD_ISSUE_RMKS, jdbcType=VARCHAR}          AS UPD_ISSUE_RMKS
+				FROM DUAL
+			</foreach>
+    	)
+		SELECT COUNT(1)		AS ERR_CNT
+     		 , LISTAGG('- 제품코드=' || ITEM_CODE || ' : ' || SUBSTR(ITEM_CODE_ERR || DO_NOT_EXIST_ERR, 3)
+               		   , '\r\n') WITHIN GROUP (ORDER BY IDX)    AS ERR_MSG		
+		FROM
+		(
+			SELECT ROWNUM AS IDX
+				 , T1.ITEM_CODE
+				 , (CASE WHEN T1.ITEM_CODE IS NULL	THEN ', 제품코드는 필수값'
+						 WHEN T1.ACTION = 'insert' AND T2.ITEM_CODE IS NOT NULL THEN ', 중복된 제품코드'
+						 WHEN COUNT(1) OVER (PARTITION BY T1.ITEM_CODE) > 1 	 THEN ', 중복입력된 제품코드'
+						 ELSE ''
+				    END) AS ITEM_CODE_ERR
+				 , (CASE WHEN T1.ITEM_CODE IS NOT NULL
+						 AND T3.ITEM_CODE IS NULL THEN ', 존재하지 않는 제품코드'
+						 ELSE ''
+				     END) AS DO_NOT_EXIST_ERR
+			  FROM UPDATE_TBL 								T1
+			  LEFT JOIN SCMU.W_SOP_TB_DISCONT_ITEM_ISSUE_M	T2 
+				     ON T2.ITEM_CODE = T1.ITEM_CODE 
+			  LEFT JOIN EDW.W_CM_TB_FG_ITEM_M 				T3 
+				     ON T3.ITEM_CODE = T1.ITEM_CODE
+		) A
+		WHERE 1 = 1
+		  AND SUBSTR(A.ITEM_CODE_ERR || DO_NOT_EXIST_ERR, 3) IS NOT NULL
+    </select>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO /* com.hitejinro.snop.system.dao.M06020DaoMapper.update */ 
+    		  SCMU.W_SOP_TB_DISCONT_ITEM_ISSUE_M T
+    	USING
+    	(
+			<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				SELECT #{list.ITEM_CODE, jdbcType=VARCHAR}				AS ITEM_CODE
+					 , #{list.UPD_ISSUE_RMKS, jdbcType=VARCHAR}         AS UPD_ISSUE_RMKS
+				  FROM DUAL
+			</foreach>
+    	) S ON (
+    				 T.ITEM_CODE = S.ITEM_CODE
+    		   )
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.UPD_ISSUE_RMKS   	= UPD_ISSUE_RMKS
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+		      T.ITEM_CODE, T.UPD_ISSUE_RMKS
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.ITEM_CODE, S.UPD_ISSUE_RMKS
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+    <!-- 품목 상태 콤보 조회 -->
+    <select id="itemStatusCombo" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.system.dao.M06020DaoMapper.itemStatusCombo */
+    		   DISTINCT ITEM_STATUS AS CODE, ITEM_STATUS AS NAME 
+    	  FROM EDW.W_CM_TB_FG_ITEM_M
+    </select>
+
+</mapper>

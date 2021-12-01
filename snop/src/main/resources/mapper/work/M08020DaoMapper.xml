@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > KPI 목표관리 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08020DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08020DaoMapper.search */
+			   KPI_CODE
+		     , KPI_NAME
+		     , UNIT
+		     , TARGET_START
+		     , TARGET_END
+		     , ETC_DESC
+		     , YEAR_TOTAL
+		     , M01
+		     , M02
+		     , M03
+		     , M04
+		     , M05
+		     , M06
+		     , M07
+		     , M08
+		     , M09
+		     , M10
+		     , M11
+		     , M12
+		  FROM SCMU.W_SOP_TB_KPI_TARGET_M
+		 WHERE 1 = 1
+		   AND PERIOD_YYYY = #{yearCode, jdbcType=VARCHAR}
+    </select>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="insertVersion" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_KPI_TARGET_HIST_M
+		SELECT PERIOD_YYYY
+		     , (SELECT NVL(MAX(SEQ),0)+1 FROM SCMU.W_SOP_TB_KPI_TARGET_HIST_M WHERE PERIOD_YYYY = #{yearCode, jdbcType=VARCHAR})
+		     , KPI_CODE
+		     , KPI_NAME
+		     , LIQUOR_CODE 
+		     , VESSEL_CODE 
+		     , VOLUME_VALUE 
+		     , BRAND_CODE 
+		     , UNIT
+		     , TARGET_START
+		     , TARGET_END
+		     , ETC_DESC
+		     , LAST_UPDATED_BY
+		     , LAST_UPDATE_DATE
+		     , #{userId, jdbcType=VARCHAR}
+		     , SYSDATE
+		  FROM SCMU.W_SOP_TB_KPI_TARGET_M
+		 WHERE PERIOD_YYYY = #{yearCode, jdbcType=VARCHAR}
+    </update>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO /* com.hitejinro.snop.system.dao.M08020DaoMapper.update */ 
+    	SCMU.W_SOP_TB_KPI_TARGET_M T 
+    	USING
+    	(	
+    		SELECT A.KPI_CODE
+			     , A.KPI_NAME
+			     , A.UNIT
+			     , A.TARGET_START
+			     , A.TARGET_END
+			     , A.ETC_DESC
+			     , ROWNUM RNUM
+    		  FROM (
+				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.action, jdbcType=VARCHAR}			AS ACTION
+						, #{list.KPI_CODE, jdbcType=VARCHAR}		AS KPI_CODE
+						, #{list.KPI_NAME, jdbcType=VARCHAR}		AS KPI_NAME
+						, #{list.UNIT, jdbcType=VARCHAR}			AS UNIT
+						, #{list.TARGET_START, jdbcType=VARCHAR}	AS TARGET_START
+						, #{list.TARGET_END, jdbcType=VARCHAR}		AS TARGET_END
+						, #{list.ETC_DESC, jdbcType=VARCHAR}		AS ETC_DESC
+					FROM DUAL
+				</foreach>
+				) A
+    	) S ON (
+    					T.KPI_CODE = S.KPI_CODE
+    				AND T.PERIOD_YYYY = #{yearCode, jdbcType=VARCHAR}
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.TARGET_START   	= S.TARGET_START
+				, T.TARGET_END   	= S.TARGET_END
+				, T.ETC_DESC   		= S.ETC_DESC
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+		      	T.PERIOD_YYYY, T.KPI_CODE, T.KPI_NAME
+		      , T.LIQUOR_CODE, T.VESSEL_CODE, T.VOLUME_VALUE, T.BRAND_CODE
+		      , T.UNIT, T.TARGET_START, T.TARGET_END, T.ETC_DESC
+		      , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+		      	#{yearCode, jdbcType=VARCHAR}, S.KPI_CODE, S.KPI_NAME
+		      , '!ALL', '!ALL', '!ALL', '!ALL'
+		      , S.UNIT, S.TARGET_START, S.TARGET_END, S.ETC_DESC
+			  , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+</mapper>

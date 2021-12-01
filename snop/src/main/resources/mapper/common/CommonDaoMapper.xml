@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.hitejinro.snop.common.dao.CommonDaoMapper">
+    
+    <!-- 메뉴 조회 : 권한처리 -->
+    <select id="getMenu" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getMenu */
+           E.MENU_CD, E.MENU_NM, E.MENU_DESC
+         , E.URL, E.SEQ, E.USE_YN, E.HRNK_MENU_CD
+         , LEVEL
+      FROM SCMU.W_SOP_TB_USER_M      A
+      JOIN SCMU.W_SOP_TB_AUTH_USER_M B
+        ON B.USER_ID = A.USER_ID
+      JOIN SCMU.W_SOP_TB_AUTH_M      C
+        ON C.AUTH_CD = B.AUTH_CD
+      JOIN SCMU.W_SOP_TB_AUTH_MENU_M D
+        ON D.AUTH_CD = B.AUTH_CD
+      JOIN SCMU.W_SOP_TB_MENU_M      E
+        ON E.MENU_CD = D.MENU_CD
+     WHERE 1 = 1
+       AND A.USE_YN = 'Y'
+       AND C.USE_YN = 'Y'
+       AND E.USE_YN = 'Y'
+       AND NVL(D.ALOW_YN_BTN_SELECT, 'N') = 'Y'
+       AND A.EMPLOYEE_NUMBER = #{userId, jdbcType=VARCHAR}
+     START WITH E.HRNK_MENU_CD IS NULL 
+            AND A.USE_YN = 'Y' AND C.USE_YN = 'Y' AND E.USE_YN = 'Y' AND NVL(D.ALOW_YN_BTN_SELECT, 'N') = 'Y' AND A.EMPLOYEE_NUMBER = #{userId, jdbcType=VARCHAR}
+   CONNECT BY NOCYCLE PRIOR E.MENU_CD = E.HRNK_MENU_CD
+            AND A.USE_YN = 'Y' AND C.USE_YN = 'Y' AND E.USE_YN = 'Y' AND NVL(D.ALOW_YN_BTN_SELECT, 'N') = 'Y' AND A.EMPLOYEE_NUMBER = #{userId, jdbcType=VARCHAR}
+     ORDER SIBLINGS BY E.SEQ, E.MENU_CD
+    </select>
+    
+    <!-- 용기관리 품목 조회 -->
+    <select id="getVesselItem" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getVesselItem */
+		       T1.ITEM_CODE    AS CODE
+		    ,  '[' || T1.ITEM_CODE || '] ' || T2.DESCRIPTION  AS NAME
+			, T1.BRAND_CODE, T1.VOLUME_VALUE, T1.VESSEL_CODE
+			, T1.BOTL_TYPE, T1.COMPANY_TYPE
+		FROM SCMU.W_SOP_TB_VESSEL_M T1
+		
+		LEFT JOIN EDW.W_WS_TB_RI_ITEM_M T2 ON T2.ITEM_CODE = T1.ITEM_CODE
+		
+		WHERE 1 = 1
+		    AND T1.LIQUOR_CODE 	= DECODE(#{liquorCode, jdbcType=VARCHAR}, '!ALL', T1.LIQUOR_CODE, #{liquorCode, jdbcType=VARCHAR})
+		    AND T1.BOTL_TYPE   	= DECODE(#{botlType, jdbcType=VARCHAR}, '!ALL', T1.BOTL_TYPE, #{botlType, jdbcType=VARCHAR})
+		    AND T1.COMPANY_TYPE = DECODE(#{companyType, jdbcType=VARCHAR}, '!ALL', T1.COMPANY_TYPE, #{companyType, jdbcType=VARCHAR})
+		    AND T1.VOLUME_VALUE = DECODE(#{volumeValue, jdbcType=VARCHAR}, '!ALL', T1.VOLUME_VALUE, #{volumeValue, jdbcType=VARCHAR})
+		    AND T1.USE_YN 		= 'Y'
+		ORDER BY T1.ITEM_CODE
+    </select>
+
+	<!-- 용기관리 용기 조회 -->
+	<select id="getVesselCode" parameterType="map" resultType="map">
+		SELECT DISTINCT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getVesselCode */
+		      T1.VESSEL_CODE AS CODE
+		    , NVL(T2.VESSEL_SORT, T3.NAME) AS NAME
+		FROM SCMU.W_SOP_TB_VESSEL_M T1
+		
+		LEFT JOIN EDW.W_CM_TB_FG_ITEM_M T2 ON T2.VESSEL_CODE = T1.VESSEL_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T3 ON T3.GROUP_CODE = 'OTHER_VESSEL_LIST'
+		                                     AND T3.USE_YN     = 'Y'
+		                                     AND T3.CODE       = T1.VESSEL_CODE
+		WHERE 1 = 1
+			AND T1.LIQUOR_CODE IN
+			<foreach collection="liquorCode" item="i" open="(" close=")" separator=",">
+				DECODE(#{i, jdbcType=VARCHAR}, '!ALL', T1.LIQUOR_CODE, #{i, jdbcType=VARCHAR})
+			</foreach>
+			AND T1.BOTL_TYPE    = DECODE(#{botlType, jdbcType=VARCHAR}, '!ALL', T1.BOTL_TYPE, #{botlType, jdbcType=VARCHAR})
+			AND T1.COMPANY_TYPE = DECODE(#{companyType, jdbcType=VARCHAR}, '!ALL', T1.COMPANY_TYPE, #{companyType, jdbcType=VARCHAR})
+		    AND T1.VESSEL_CODE  != '9' -- 기타는 제외
+		    AND T1.USE_YN = 'Y'
+		ORDER BY T1.VESSEL_CODE
+	</select>
+    
+    <!-- 용기관리 용량 조회 -->
+    <select id="getVesselVolume" parameterType="map" resultType="map">
+    	SELECT DISTINCT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getVesselVolume */
+    		  T1.VOLUME_VALUE  AS CODE
+    		, DECODE(T1.VOLUME_VALUE, '-', 'N/A', T1.VOLUME_VALUE)  AS NAME
+    	FROM SCMU.W_SOP_TB_VESSEL_M T1
+		WHERE 1 = 1
+		    AND T1.LIQUOR_CODE IN
+			<foreach collection="liquorCode" item="i" open="(" close=")" separator=",">
+				DECODE(#{i, jdbcType=VARCHAR}, '!ALL', T1.LIQUOR_CODE, #{i, jdbcType=VARCHAR})
+			</foreach>
+		    AND T1.VESSEL_CODE IN
+			<foreach collection="vesselCode" item="i" open="(" close=")" separator=",">
+				DECODE(#{i, jdbcType=VARCHAR}, '!ALL', T1.VESSEL_CODE, #{i, jdbcType=VARCHAR})
+			</foreach>
+		    
+		    AND T1.BOTL_TYPE    = DECODE(#{botlType, jdbcType=VARCHAR}, '!ALL', T1.BOTL_TYPE, #{botlType, jdbcType=VARCHAR})
+		    AND T1.COMPANY_TYPE = DECODE(#{companyType, jdbcType=VARCHAR}, '!ALL', T1.COMPANY_TYPE, #{companyType, jdbcType=VARCHAR})
+			AND T1.VESSEL_CODE  != '9' -- 기타는 제외
+		    AND T1.USE_YN	    = 'Y'
+    	ORDER BY DECODE(T1.VOLUME_VALUE, '-', 'N/A', T1.VOLUME_VALUE)
+    </select>
+    
+    <!-- 용기관리 브랜드 조회 -->
+    <select id="getVesselBrand" parameterType="map" resultType="map">
+		SELECT DISTINCT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getVesselBrand */
+		      T1.BRAND_CODE AS CODE
+		    , DECODE(NVL(T2.NAME, '-'), '-', 'N/A', T2.NAME)   AS NAME
+		FROM SCMU.W_SOP_TB_VESSEL_M T1
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                     AND T2.USE_YN     = 'Y'
+		                                     AND T2.CODE       = T1.BRAND_CODE  
+		WHERE 1 = 1
+		    AND T1.LIQUOR_CODE IN
+			<foreach collection="liquorCode" item="i" open="(" close=")" separator=",">
+				DECODE(#{i, jdbcType=VARCHAR}, '!ALL', T1.LIQUOR_CODE, #{i, jdbcType=VARCHAR})
+			</foreach>
+		    AND T1.VESSEL_CODE IN
+			<foreach collection="vesselCode" item="i" open="(" close=")" separator=",">
+				DECODE(#{i, jdbcType=VARCHAR}, '!ALL', T1.VESSEL_CODE, #{i, jdbcType=VARCHAR})
+			</foreach>
+			AND T1.VOLUME_VALUE IN
+			<foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+				DECODE(#{i, jdbcType=VARCHAR}, '!ALL', T1.VOLUME_VALUE, #{i, jdbcType=VARCHAR})
+			</foreach>
+			
+			AND T1.BOTL_TYPE    = DECODE(#{botlType, jdbcType=VARCHAR}, '!ALL', T1.BOTL_TYPE, #{botlType, jdbcType=VARCHAR})
+		    AND T1.COMPANY_TYPE = DECODE(#{companyType, jdbcType=VARCHAR}, '!ALL', T1.COMPANY_TYPE, #{companyType, jdbcType=VARCHAR})
+		    AND T1.VESSEL_CODE  != '9' -- 기타는 제외
+		    AND T1.USE_YN		= 'Y'
+		ORDER BY DECODE(T1.BRAND_CODE, '-', 'N/A', T1.BRAND_CODE)
+    </select>
+    
+    <!-- 공장 조회 -->
+    <select id="getOrg" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getOrg */
+       T1.ORG_CODE                       AS CODE
+     , REPLACE(T1.ORG_NAME, ' 생산', '') AS NAME
+  FROM EDW.W_CM_TB_ORGANIZATION_M T1
+ WHERE 1 = 1
+   AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+   AND T1.ORG_TYPE = DECODE(#{orgType, jdbcType=VARCHAR}, '!ALL', T1.ORG_TYPE, #{orgType, jdbcType=VARCHAR})
+   AND T1.ORG_CODE != 'S01'	-- 진로소주공장 제외
+   AND (CASE WHEN #{liquorCode, jdbcType=VARCHAR} = '!ALL'                            THEN 'Y'
+			 WHEN #{liquorCode, jdbcType=VARCHAR} = '00' 							  THEN 'Y'
+             WHEN #{liquorCode, jdbcType=VARCHAR} = '10'   AND T1.ORG_CODE LIKE 'MH%' THEN 'Y'
+             WHEN #{liquorCode, jdbcType=VARCHAR} = '20'   AND T1.ORG_CODE LIKE 'MJ%' THEN 'Y'
+             ELSE 'N'
+        END) = 'Y'
+ ORDER BY T1.ORG_TYPE, T1.ORG_CODE
+    </select>
+    
+    <!-- 품목 중분류 조회 -->
+    <select id="getItemSegment2List" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getItemSegment2List */
+       SEGMENT2 AS CODE
+     , SEGMENT2 AS NAME
+  FROM EDW.W_CM_TB_FG_ITEM_M
+ WHERE 1 = 1
+   AND ITEM_TYPE   = 'FG'
+   AND ITEM_STATUS = 'Active'
+   AND LIQUOR_CODE IN ('10', '20')
+   AND SEGMENT2    IS NOT NULL
+   AND (
+            (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+            OR
+            (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = LIQUOR_CODE)
+       )
+ GROUP BY SEGMENT2
+ ORDER BY SEGMENT2
+    </select>
+    
+    <!-- 품목 소분류 조회 -->
+    <select id="getItemSegment3List" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getItemSegment3List */
+       SEGMENT3 AS CODE
+     , SEGMENT3 AS NAME
+  FROM EDW.W_CM_TB_FG_ITEM_M
+ WHERE 1 = 1
+   AND ITEM_TYPE   = 'FG'
+   AND ITEM_STATUS = 'Active'
+   AND LIQUOR_CODE IN ('10', '20')
+   AND SEGMENT3    IS NOT NULL
+   AND (
+            (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+            OR
+            (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = LIQUOR_CODE)
+       )
+   AND (
+            (NVL(#{segment2, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+            OR
+            (NVL(#{segment2, jdbcType=VARCHAR}, '!ALL') = SEGMENT2)
+       )
+ GROUP BY SEGMENT3
+ ORDER BY SEGMENT3
+    </select>
+    
+    <!-- 오늘의 정보 조회 -->
+    <select id="getTodayInfo" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getTodayInfo */
+       A.YYYYMMDD               -- 기준일자
+     , A.BUSINESS_DAY_FLAG      -- 영업일여부 : Y(영업일), N(휴일)
+     , A.YYYY                   -- 기준년도
+     , A.YYYYMM                 -- 기준년월
+     , A.YYYYWW                 -- 연주차 : 기본적으로 생각하는 연주차. EDW.W_CM_TB_PERIOD_DD_M.PERIOD_YYYYWW_CODE 참고.
+     , A.SCM_YYYYWW             -- SCM 연주차 : 53주차가 7일로 동일 년도를 구성하지 못하면, 차년도 1주차로 넘긴다.
+     , A.SCM_YYYYMMWW           -- SCM 기준년월주차 : YYYYMMWW 형식. 월의 주차를 계산하는데, 1일이 토요일이면 2일부터 1주차로 인식(1일도 1주차에 포함). 마지막 날이 일요일이면 해당 주차는 삭제하고 이전 주차에 포함시킨다
+     , A.DAY_OF_WEEK            -- 요일 숫자(일=1, 토=7)
+     , A.DAY_OF_WEEK_DESC       -- 요일 명
+     , A.SCM_YYYYWW_WORK_CNT    -- SCM 연주차 기준의 영업일수
+     , A.YYYYMM_WORK_CNT        -- 기준년월 기준의 영업일수
+     , A.SCM_YYYYMMWW_WORK_CNT  -- SCM 기준년월주차 기준의 영업일수
+     , A.BF_YYYYMMDD            -- 영업일 기준 전일자
+     , A.BF_5D_YYYYMMDD         -- 영업일 기준 5일 이전 일자
+     , A.BF_10D_YYYYMMDD        -- 영업일 기준 10일 이전 일자
+     , A.BF_20D_YYYYMMDD        -- 영업일 기준 20일 이전 일자
+     , A.BF_60D_YYYYMMDD        -- 영업일 기준 20일 이전 일자
+  FROM SCMU.W_SOP_VW_CALENDAR_M A
+ WHERE 1 = 1
+   AND A.YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD')
+    </select>
+
+    <!-- 기준판매정의 콤보박스 리스트 -->
+    <select id="getStdSaleDfntList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getStdSaleDfntList */
+       A.STD_SALE_DFNT_CODE AS CODE
+     , A.SALE_DFNT_NAME     AS NAME
+     , A.STD_SALE_DFNT_CODE, A.PERIOD_GB_CODE, A.AGGR_TYPE_GB_CODE, A.AGGR_PRD_GB_CODE, A.SALE_DFNT_NAME, A.APL_PRD_VAL, A.APL_STR_DT, A.APL_END_DT, A.USE_YN
+  FROM SCMU.W_SOP_TB_STD_SALE_DFNT_M A
+ WHERE 1 = 1
+   AND (    -- 기간구분 조건절 : 다중선택값(콤마로 구분)도 가능 : PG010(년), PG020(월), PG030(주), PG040(일)
+            (#{periodGbCode, jdbcType=VARCHAR} IS NULL AND 1 = 1) OR (#{periodGbCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+            OR
+            (#{periodGbCode, jdbcType=VARCHAR} IS NOT NULL AND A.PERIOD_GB_CODE IN (SELECT TRIM(REGEXP_SUBSTR(#{periodGbCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL)) FROM DUAL CONNECT BY INSTR(#{periodGbCode, jdbcType=VARCHAR}, ',', 1, LEVEL - 1) > 0))
+       )
+   AND (    -- 집계유형구분 조건절 : 다중선택값(콤마로 구분)도 가능 : ATG010(평균), ATG020(누계), ATG030(최대판매), ATG040(최소판매)
+            (#{aggrTypeGbCode, jdbcType=VARCHAR} IS NULL AND 1 = 1) OR (#{aggrTypeGbCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+            OR
+            (#{aggrTypeGbCode, jdbcType=VARCHAR} IS NOT NULL AND A.AGGR_TYPE_GB_CODE IN (SELECT TRIM(REGEXP_SUBSTR(#{aggrTypeGbCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL)) FROM DUAL CONNECT BY INSTR(#{aggrTypeGbCode, jdbcType=VARCHAR}, ',', 1, LEVEL - 1) > 0))
+       )
+   AND (    -- 집계기간구분 조건절 : 다중선택값(콤마로 구분)도 가능 : APG010(직전), APG020(전년동기), APG030(구간)
+            (#{aggrPrdGbCode, jdbcType=VARCHAR} IS NULL AND 1 = 1) OR (#{aggrPrdGbCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+            OR
+            (#{aggrPrdGbCode, jdbcType=VARCHAR} IS NOT NULL AND A.AGGR_PRD_GB_CODE IN (SELECT TRIM(REGEXP_SUBSTR(#{aggrPrdGbCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL)) FROM DUAL CONNECT BY INSTR(#{aggrPrdGbCode, jdbcType=VARCHAR}, ',', 1, LEVEL - 1) > 0))
+       )
+   AND (    -- 사용여부 조건절 : ''(전체), !ALL(전체), Y, N
+            (#{useYn, jdbcType=VARCHAR} IS NULL AND 1 = 1) OR (#{useYn, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+            OR
+            (#{useYn, jdbcType=VARCHAR} IS NOT NULL AND A.USE_YN = #{useYn, jdbcType=VARCHAR})
+       )
+ ORDER BY A.SALE_DFNT_NAME, A.STD_SALE_DFNT_CODE
+    </select>
+
+    <!-- 판매변수정의 콤보박스 리스트 -->
+    <select id="getSaleVarDfntList" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.common.dao.CommonDaoMapper.getSaleVarDfntList */
+           A.SALE_VAR_DFNT_SEQNO AS CODE
+         , A.SALE_VAR_NAME       AS NAME
+         , A.SALE_VAR_DFNT_SEQNO
+         , '[' || A.SALE_VAR_DFNT_SEQNO || ']' || A.SALE_VAR_NAME AS SALE_VAR_DFNT_SEQNO_NAME
+         , A.VLD_STR_DT, A.VLD_END_DT
+         , A.SALE_VAR_TYPE, NVL(C.NAME, A.SALE_VAR_TYPE) AS SALE_VAR_TYPE_DESC
+         , A.SALE_VAR_NAME
+         , A.LIQUOR_CODE
+         , CASE WHEN A.LIQUOR_CODE = '!ALL' THEN '전체'
+                ELSE                             NVL(B.LIQUOR_DESC, A.LIQUOR_CODE)
+           END  AS LIQUOR_DESC
+         , A.USAGE_CODE, NVL(D.USAGE_NAME, A.USAGE_CODE) AS USAGE_NAME
+         , A.ITEM_CODE
+         , CASE WHEN A.ITEM_CODE = '!ALL' THEN '전체'
+                ELSE                           NVL(E.DESCRIPTION, A.ITEM_CODE)
+           END  AS ITEM_NAME
+         , A.VAR_VAL
+         , A.CALC_STR_DT, A.CALC_END_DT, A.RMKS
+    
+      FROM SCMU.W_SOP_TB_SALE_VAR_DFNT_F    A
+ LEFT JOIN EDW.W_CM_TB_LIQUOR_M             B
+        ON B.LIQUOR_CODE = A.LIQUOR_CODE
+ LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M         C
+        ON C.GROUP_CODE = 'SALE_VAR_TYPE'
+       AND C.CODE       = A.SALE_VAR_TYPE
+ LEFT JOIN (
+                SELECT '!ALL' AS USAGE_CODE, '전체' AS USAGE_NAME FROM DUAL
+                 UNION ALL
+                SELECT USAGE_CODE, MAX(USAGE_NAME) AS USAGE_NAME
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1 = 1
+                   AND ITEM_TYPE  = 'FG'
+                   AND USAGE_CODE IS NOT NULL
+                 GROUP BY USAGE_CODE
+           )                                D
+        ON D.USAGE_CODE = A.USAGE_CODE
+ LEFT JOIN EDW.W_CM_TB_FG_ITEM_M            E
+        ON E.ITEM_CODE = A.ITEM_CODE
+     WHERE 1 = 1
+       AND (    -- 판매변수유형 조건절 : 다중선택값(콤마로 구분)도 가능 : EVENT(이벤트), ISSUE(이슈), DISASTER(재해), ETC(기타)
+                (#{saleVarType, jdbcType=VARCHAR} IS NULL AND 1 = 1) OR (#{saleVarType, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{saleVarType, jdbcType=VARCHAR} IS NOT NULL AND A.SALE_VAR_TYPE IN (SELECT TRIM(REGEXP_SUBSTR(#{saleVarType, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL)) FROM DUAL CONNECT BY INSTR(#{saleVarType, jdbcType=VARCHAR}, ',', 1, LEVEL - 1) > 0))
+           )
+       AND (    -- 사업부문 조건절 : 다중선택값(콤마로 구분)도 가능 : 10(맥주), 20(소주)
+                (#{liquorCode, jdbcType=VARCHAR} IS NULL AND 1 = 1) OR (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{liquorCode, jdbcType=VARCHAR} IS NOT NULL AND A.LIQUOR_CODE IN (SELECT TRIM(REGEXP_SUBSTR(#{liquorCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL)) FROM DUAL CONNECT BY INSTR(#{liquorCode, jdbcType=VARCHAR}, ',', 1, LEVEL - 1) > 0))
+           )
+     ORDER BY C.SEQ, A.SALE_VAR_TYPE, A.SALE_VAR_NAME, A.SALE_VAR_DFNT_SEQNO DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,1026 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- KPI > 제품재고일수 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M07050DaoMapper">
+
+    <!-- 데이터 조회 : 그리드 헤더 조회(기간 데이터) -->
+    <select id="searchHeader" parameterType="map" resultType="map">
+	SELECT /* com.hitejinro.snop.work.dao.M07050DaoMapper.searchHeader */
+	       A.PERIOD_YYYYMM, A.PERIOD_MMWW
+	     , A.PERIOD_YYYYMM || A.PERIOD_MMWW AS PERIOD_YYYYMMWW
+	     , A.FR_YYYYMMDD, A.TO_YYYYMMDD
+	     , A.COL_TYPE
+	     , SUBSTR(A.PERIOD_YYYYMM, 1, 4) || '-' || SUBSTR(A.PERIOD_YYYYMM, 5, 2)    AS PERIOD_YYYYMM_DESC
+	     , CASE WHEN A.PERIOD_MMWW = '00A' THEN '총재고일'
+	            WHEN A.PERIOD_MMWW = '00B' THEN '총재고량'
+	            WHEN A.PERIOD_MMWW = '00C' THEN '전략재고량'
+	            WHEN A.PERIOD_MMWW = '00D' THEN '평균판매'
+	            ELSE                           TO_NUMBER(A.PERIOD_MMWW) || '주'
+	       END                                                                      AS PERIOD_MMWW_DESC
+	     , 'YMW' || A.PERIOD_YYYYMM || A.PERIOD_MMWW                                AS COL_ID                       -- COL_ID : 그리드의 바디에서 사용할 Column ID. "YMW" + YYYYMM + 월주차(00 ~ 05). ex) YMW20210100, YMW20210101, ...
+	     , CASE WHEN A.PERIOD_MMWW = '00A' THEN 4
+	            WHEN A.PERIOD_MMWW = '01' THEN COUNT(1) OVER (PARTITION BY A.PERIOD_YYYYMM) - 4
+	            ELSE                           1
+	       END                                                                      AS HEADER_COL_SPAN              -- 월의 전체 개수(월계+주차 개수) : 헤더의 첫번째 행을 Column Merge하기 위해서 (중간 레벨)
+	     , CASE WHEN A.PERIOD_MMWW = '00A' THEN COUNT(1) OVER (PARTITION BY A.PERIOD_YYYYMM)
+	            ELSE                           1
+	       END                                                                      AS HEADER_COL_SPAN2              -- 월의 전체 개수(월계+주차 개수) : 헤더의 첫번째 행을 Column Merge하기 위해서 (최상위 레벨)
+	  FROM (
+	            SELECT YYYYMM                       AS PERIOD_YYYYMM
+	                 , '00A'                        AS PERIOD_MMWW  -- 월주차
+	                 , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+	                 , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+	                 , 'Float'						AS COL_TYPE
+	              FROM SCMU.W_SOP_VW_CALENDAR_M
+	             WHERE 1 = 1
+	               AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	             GROUP BY YYYYMM
+	             UNION ALL
+	            SELECT YYYYMM                       AS PERIOD_YYYYMM
+	                 , '00B'                        AS PERIOD_MMWW  -- 월주차
+	                 , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+	                 , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+	                 , 'Int'						AS COL_TYPE
+	              FROM SCMU.W_SOP_VW_CALENDAR_M
+	             WHERE 1 = 1
+	               AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	             GROUP BY YYYYMM
+	             UNION ALL
+	            SELECT YYYYMM                       AS PERIOD_YYYYMM
+	                 , '00C'                        AS PERIOD_MMWW  -- 월주차
+	                 , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+	                 , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+	                 , 'Int'						AS COL_TYPE
+	              FROM SCMU.W_SOP_VW_CALENDAR_M
+	             WHERE 1 = 1
+	               AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	             GROUP BY YYYYMM
+	             UNION ALL
+	            SELECT YYYYMM                       AS PERIOD_YYYYMM
+	                 , '00D'                        AS PERIOD_MMWW  -- 월주차
+	                 , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+	                 , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+	                 , 'Int'						AS COL_TYPE
+	              FROM SCMU.W_SOP_VW_CALENDAR_M
+	             WHERE 1 = 1
+	               AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	             GROUP BY YYYYMM
+	             UNION ALL
+	            SELECT YYYYMM                       AS PERIOD_YYYYMM
+	                 , SUBSTR(SCM_YYYYMMWW, 7, 2)   AS PERIOD_MMWW  -- 월주차
+	                 , MIN(YYYYMMDD)                AS FR_YYYYMMDD
+	                 , MAX(YYYYMMDD)                AS TO_YYYYMMDD
+	                 , 'Float'						AS COL_TYPE
+	              FROM SCMU.W_SOP_VW_CALENDAR_M
+	             WHERE 1 = 1
+	               AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	             GROUP BY YYYYMM, SCM_YYYYMMWW
+	       ) A
+	 WHERE 1 = 1
+	 ORDER BY A.PERIOD_YYYYMM, A.PERIOD_MMWW
+    </select>
+    
+    <select id="searchBody" parameterType="map" resultType="map">
+    	SELECT LIQUOR_CODE	/* com.hitejinro.snop.work.dao.M07050DaoMapper.searchBody */
+             , DECODE(GROUPING(BRAND_CODE),   1, '전체', BRAND_CODE)   BRAND_CODE
+             , DECODE(GROUPING(USAGE_CODE),   1, '전체', USAGE_CODE)   USAGE_CODE
+             , DECODE(GROUPING(VESSEL_CODE),  1, '전체', VESSEL_CODE)  VESSEL_CODE
+             , DECODE(GROUPING(VOLUME_VALUE), 1, '전체', VOLUME_VALUE) VOLUME_VALUE
+             , DECODE(GROUPING(PACKING_TYPE), 1, '전체', PACKING_TYPE) PACKING_TYPE
+             , DECODE(GROUPING(PACKING_UNIT), 1, '전체', PACKING_UNIT) PACKING_UNIT
+             , CASE WHEN GROUPING(BRAND_CODE) = 1 
+	             		 AND GROUPING(USAGE_CODE) = 1 
+	             		 AND GROUPING(VESSEL_CODE) = 1 
+	             		 AND GROUPING(VOLUME_VALUE) = 1 
+	             		 AND GROUPING(PACKING_TYPE) = 1 
+	             		 AND GROUPING(PACKING_UNIT) = 1 
+	             	THEN 'TOTAL' 
+             	    ELSE 'NORMAL' 
+             	END AS "Def"
+	<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+  	 	 <choose>
+         	 <!--
+         	 <when test="item.PERIOD_MMWW == '00A'" >
+         	 , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_DAY)) AS ${item.COL_ID}
+			 </when>         	 
+         	 -->
+         	 <when test="item.PERIOD_MMWW == '00A'" >
+         	 , ( SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY))
+         	 - SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STRG_STOCK_CONV_QTY)) )
+         	 / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY)), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY)))
+         	 AS ${item.COL_ID}
+			 </when>
+         	 <when test="item.PERIOD_MMWW == '00B'">
+         	 , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY)) AS ${item.COL_ID}
+         	 </when>
+         	 <when test="item.PERIOD_MMWW == '00C'">
+         	 , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STRG_STOCK_CONV_QTY)) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '00D'">
+         	 , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY)) AS ${item.COL_ID}
+             </when>
+<!-- 
+             <when test="item.PERIOD_MMWW == '01'">
+             , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_WEEK_01)) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '02'">
+             , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_WEEK_02)) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '03'">
+             , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_WEEK_03)) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '04'">
+             , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_WEEK_04)) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '05'">
+             , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_WEEK_05)) AS ${item.COL_ID}
+             </when>
+ -->             
+             
+             <when test="item.PERIOD_MMWW == '01'">
+             , ( SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY_WEEK_01)) 
+               / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_01)), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_01)))
+               ) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '02'">
+             , ( SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY_WEEK_02)) 
+               / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_01)), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_02)))
+               ) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '03'">
+             , ( SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY_WEEK_03)) 
+               / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_01)), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_03)))
+               ) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '04'">
+             , ( SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY_WEEK_04)) 
+               / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_01)), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_04)))
+               ) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '05'">
+             , ( SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, STOCK_QTY_WEEK_05)) 
+               / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_01)), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, ACTUAL_SALE_QTY_WEEK_05)))
+               ) AS ${item.COL_ID}
+             </when>
+
+		</choose>
+	</foreach>
+		  FROM (
+		        SELECT LIQUOR_CODE
+		             , BRAND_CODE
+		             , USAGE_CODE
+		             , VESSEL_CODE
+		             , VOLUME_VALUE
+		             , PACKING_TYPE
+		             , PACKING_UNIT
+		             , PERIOD_YYYYMM
+		             , (
+		                (
+		                  SUM(NVL(STOCK_QTY, 0))        
+		                - MAX(NVL(STRG_STOCK_CONV_QTY, 0)) 
+		                )  
+		                / (DECODE(SUM(NVL(ACTUAL_SALE_QTY, 0)), 0, NULL, SUM(NVL(ACTUAL_SALE_QTY, 0))) 
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMM = PERIOD_YYYYMM AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMM = PERIOD_YYYYMM AND BUSINESS_DAY_FLAG = 'Y'))) 
+		               ) AS STOCK_DAY
+		             , MAX(DECODE(PERIOD_YYYYMMDD , (SELECT TO_CHAR(LAST_DAY(TO_DATE(PERIOD_YYYYMM||'01', 'YYYYMMDD')), 'YYYYMMDD') AS LAST_DAY FROM DUAL), STOCK_QTY, 0))  AS STOCK_QTY
+		             , AVG(NVL(STRG_STOCK_CONV_QTY, 0)) AS STRG_STOCK_CONV_QTY
+		             , SUM(NVL(ACTUAL_SALE_QTY, 0)) / (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMM = PERIOD_YYYYMM AND BUSINESS_DAY_FLAG = 'Y') AS ACTUAL_SALE_QTY 
+		          <!--
+		             , (
+		                (
+		                  SUM(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(STOCK_QTY, 0), 0))
+		                - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(STRG_STOCK_CONV_QTY, 0))) 
+		                )  
+		                / (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '01' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '01' AND BUSINESS_DAY_FLAG = 'Y'))) 
+		               ) AS STOCK_WEEK_01
+		             , (
+		                (
+		                  SUM(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(STOCK_QTY, 0), 0))
+		                - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(STRG_STOCK_CONV_QTY, 0))) 
+		                )  
+		                / (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '02' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '02' AND BUSINESS_DAY_FLAG = 'Y'))) 
+		               ) AS STOCK_WEEK_02
+		             , (
+		                (
+		                  SUM(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(STOCK_QTY, 0), 0))
+		                - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(STRG_STOCK_CONV_QTY, 0))) 
+		                )  
+		                / (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '03' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '03' AND BUSINESS_DAY_FLAG = 'Y'))) 
+		               ) AS STOCK_WEEK_03
+		             , (
+		                (
+		                  SUM(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(STOCK_QTY, 0), 0))
+		                - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(STRG_STOCK_CONV_QTY, 0))) 
+		                )  
+		                / (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '04' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '04' AND BUSINESS_DAY_FLAG = 'Y'))) 
+		               ) AS STOCK_WEEK_04
+		             , (
+		                (
+		                  SUM(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(STOCK_QTY, 0), 0))
+		                - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(STRG_STOCK_CONV_QTY, 0))) 
+		                )  
+		                / (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '05' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '05' AND BUSINESS_DAY_FLAG = 'Y'))) 
+		               ) AS STOCK_WEEK_05
+		          -->
+		          	 , (SUM(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(STOCK_QTY, 0), 0)) - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(STRG_STOCK_CONV_QTY, 0)))) 
+		          	 		AS STOCK_QTY_WEEK_01
+		          	 , (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '01', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '01' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '01' AND BUSINESS_DAY_FLAG = 'Y')))
+		                	AS ACTUAL_SALE_QTY_WEEK_01
+		          	 , (SUM(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(STOCK_QTY, 0), 0)) - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(STRG_STOCK_CONV_QTY, 0)))) 
+		          	 		AS STOCK_QTY_WEEK_02
+		          	 , (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '02', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '02' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '02' AND BUSINESS_DAY_FLAG = 'Y')))
+		                	AS ACTUAL_SALE_QTY_WEEK_02
+		          	 , (SUM(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(STOCK_QTY, 0), 0)) - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(STRG_STOCK_CONV_QTY, 0)))) 
+		          	 		AS STOCK_QTY_WEEK_03
+		          	 , (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '03', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '03' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '03' AND BUSINESS_DAY_FLAG = 'Y')))
+		                	AS ACTUAL_SALE_QTY_WEEK_03
+		          	 , (SUM(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(STOCK_QTY, 0), 0)) - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(STRG_STOCK_CONV_QTY, 0)))) 
+		          	 		AS STOCK_QTY_WEEK_04
+		          	 , (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '04', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '04' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '04' AND BUSINESS_DAY_FLAG = 'Y')))
+		                	AS ACTUAL_SALE_QTY_WEEK_04
+		          	 , (SUM(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(STOCK_QTY, 0), 0)) - MAX(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(STRG_STOCK_CONV_QTY, 0)))) 
+		          	 		AS STOCK_QTY_WEEK_05
+		          	 , (DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, '05', NVL(ACTUAL_SALE_QTY, 0))))
+		                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '05' AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = PERIOD_YYYYMM || '05' AND BUSINESS_DAY_FLAG = 'Y')))
+		                	AS ACTUAL_SALE_QTY_WEEK_05
+		          FROM (
+				        SELECT DATA_TBL.LIQUOR_CODE
+				             , DATA_TBL.BRAND_CODE
+				             , DATA_TBL.USAGE_CODE
+				             , DATA_TBL.VESSEL_CODE
+				             , DATA_TBL.VOLUME_VALUE
+				             , DATA_TBL.PACKING_TYPE
+				             , DATA_TBL.PACKING_UNIT
+				             , DATA_TBL.PERIOD_YYYYMMDD
+				             , DATA_TBL.PERIOD_YYYYMM
+				             , SUBSTR(DATA_TBL.PERIOD_SCM_YYYYMMWW, -2) AS PERIOD_SCM_YYYYMMWW
+				             , DATA_TBL.STOCK_QTY
+				             , DATA_TBL.ACTUAL_SALE_QTY
+				             , SAFT_TBL.STRG_STOCK_CONV_QTY
+				          FROM (	-- 제품별 재고량, 판매량 구하기
+						        SELECT LIQUOR_CODE
+						             , BRAND_CODE
+						             , USAGE_CODE
+						             , VESSEL_CODE
+						             , VOLUME_VALUE
+						             , PACKING_TYPE
+						             , PACKING_UNIT
+						             , PERIOD_YYYYMMDD
+						             , PERIOD_YYYYMM
+						             , PERIOD_SCM_YYYYMMWW
+						             , SUM(STOCK_QTY) AS STOCK_QTY
+						             , SUM(ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+						          FROM (
+								        SELECT A.LIQUOR_CODE
+								             , A.BRAND_CODE
+								             , A.USAGE_CODE
+								             , A.VESSEL_CODE
+								             , A.VOLUME_VALUE
+								             , A.PACKING_TYPE
+								             , A.PACKING_UNIT
+								             , B.PERIOD_YYYYMMDD
+								             , B.PERIOD_YYYYMM
+								             , B.PERIOD_SCM_YYYYMMWW
+								             , B.STOCK_QTY * B.UOM_CONVERSION_VALUE AS STOCK_QTY
+								             , 0 AS ACTUAL_SALE_QTY
+								          FROM EDW.W_CM_TB_FG_ITEM_M A
+								          LEFT JOIN SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F B
+								            ON A.ITEM_CODE = B.ITEM_CODE
+								         WHERE 1 = 1
+								           AND A.ITEM_TYPE = 'FG'
+								           AND A.ITEM_STATUS = 'Active'
+								           AND A.LIQUOR_CODE IN ('10', '20')
+								           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+										   AND (
+								                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingType, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_TYPE = #{packingType, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingUnit, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_UNIT = #{packingUnit, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{planYn, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.EVENT_ITEM_FLAG = #{planYn, jdbcType=VARCHAR})
+								           )
+										<if test="brandCode != null and brandCode != ''">
+								            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+												#{brandCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="usageCode != null and usageCode != ''">
+								            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+												#{usageCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+										<if test="vesselCode != null and vesselCode != ''">
+								            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+												#{vesselCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="volumeCode != null and volumeCode != ''">
+								            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+												#{volumeCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								         UNION ALL
+								        SELECT A.LIQUOR_CODE
+								             , A.BRAND_CODE
+								             , A.USAGE_CODE
+								             , A.VESSEL_CODE
+								             , A.VOLUME_VALUE
+								             , A.PACKING_TYPE
+								             , A.PACKING_UNIT
+								             , B.PERIOD_YYYYMMDD
+								             , B.PERIOD_YYYYMM
+								             , B.PERIOD_SCM_YYYYMMWW
+								             , 0 AS STOCK_QTY
+								             , B.ACTUAL_SALE_QTY * B.UOM_CONVERSION_VALUE AS ACTUAL_SALE_QTY
+								          FROM EDW.W_CM_TB_FG_ITEM_M A
+								          LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F B
+								            ON A.ITEM_CODE = B.ITEM_CODE
+								         WHERE 1 = 1
+								           AND A.ITEM_TYPE = 'FG'
+								           AND A.ITEM_STATUS = 'Active'
+								           AND A.LIQUOR_CODE IN ('10', '20')
+								           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+								           AND (
+								                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingType, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_TYPE = #{packingType, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingUnit, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_UNIT = #{packingUnit, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{planYn, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.EVENT_ITEM_FLAG = #{planYn, jdbcType=VARCHAR})
+								           )
+										<if test="brandCode != null and brandCode != ''">
+								            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+												#{brandCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="usageCode != null and usageCode != ''">
+								            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+												#{usageCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+										<if test="vesselCode != null and vesselCode != ''">
+								            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+												#{vesselCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="volumeCode != null and volumeCode != ''">
+								            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+												#{volumeCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+						               )
+						         GROUP BY LIQUOR_CODE
+						                , BRAND_CODE
+						                , USAGE_CODE
+						                , VESSEL_CODE
+						                , VOLUME_VALUE
+						                , PACKING_TYPE
+						                , PACKING_UNIT
+						                , PERIOD_YYYYMMDD
+						                , PERIOD_YYYYMM
+						                , PERIOD_SCM_YYYYMMWW
+				               ) DATA_TBL
+				         LEFT JOIN
+				               (	-- 제품별 전략 재고 수량
+						        SELECT A.LIQUOR_CODE
+						             , A.BRAND_CODE
+						             , A.USAGE_CODE
+						             , A.VESSEL_CODE
+						             , A.VOLUME_VALUE
+						             , A.PACKING_TYPE
+						             , A.PACKING_UNIT
+						             , B.PERIOD_YYYYMM
+						             , SUM(B.STRG_STOCK_CONV_QTY) AS STRG_STOCK_CONV_QTY
+						          FROM EDW.W_CM_TB_FG_ITEM_M A
+						             , SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F B
+						         WHERE 1 = 1
+						           AND A.ITEM_TYPE = 'FG'
+						           AND A.ITEM_STATUS = 'Active'
+						           AND A.LIQUOR_CODE IN ('10', '20')
+						           AND A.ITEM_CODE = B.ITEM_CODE
+						           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+								   AND (
+						                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+						           )
+						           AND (
+						                ('!ALL' = #{packingType, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.PACKING_TYPE = #{packingType, jdbcType=VARCHAR})
+						           )
+						           AND (
+						                ('!ALL' = #{packingUnit, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.PACKING_UNIT = #{packingUnit, jdbcType=VARCHAR})
+						           )
+						           AND (
+						                ('!ALL' = #{planYn, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.EVENT_ITEM_FLAG = #{planYn, jdbcType=VARCHAR})
+						           )
+								<if test="brandCode != null and brandCode != ''">
+						            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+										#{brandCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+						        <if test="usageCode != null and usageCode != ''">
+						            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+										#{usageCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+								<if test="vesselCode != null and vesselCode != ''">
+						            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+										#{vesselCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+						        <if test="volumeCode != null and volumeCode != ''">
+						            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+										#{volumeCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+						         GROUP BY A.LIQUOR_CODE
+						                , A.BRAND_CODE
+						                , A.USAGE_CODE
+						                , A.VESSEL_CODE
+						                , A.VOLUME_VALUE
+						                , A.PACKING_TYPE
+						                , A.PACKING_UNIT
+						                , B.PERIOD_YYYYMM
+				               ) SAFT_TBL
+				            ON 1 = 1
+				           AND DATA_TBL.LIQUOR_CODE = SAFT_TBL.LIQUOR_CODE
+				           AND DATA_TBL.BRAND_CODE = SAFT_TBL.BRAND_CODE
+				           AND DATA_TBL.USAGE_CODE = SAFT_TBL.USAGE_CODE
+				           AND DATA_TBL.VESSEL_CODE = SAFT_TBL.VESSEL_CODE
+				           AND DATA_TBL.VOLUME_VALUE = SAFT_TBL.VOLUME_VALUE
+				           AND DATA_TBL.PACKING_TYPE = SAFT_TBL.PACKING_TYPE
+				           AND DATA_TBL.PACKING_UNIT = SAFT_TBL.PACKING_UNIT
+				           AND DATA_TBL.PERIOD_YYYYMM = SAFT_TBL.PERIOD_YYYYMM
+		               )
+		         GROUP BY LIQUOR_CODE
+		                , BRAND_CODE
+		                , USAGE_CODE
+		                , VESSEL_CODE
+		                , VOLUME_VALUE
+		                , PACKING_TYPE
+		                , PACKING_UNIT
+		                , PERIOD_YYYYMM
+			 )
+         GROUP BY ROLLUP(LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, PACKING_UNIT)
+        HAVING GROUPING(LIQUOR_CODE) = 0        
+           AND GROUPING_ID(BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, PACKING_UNIT) IN (0, 63)
+         ORDER BY LIQUOR_CODE, DECODE(BRAND_CODE, '전체', '0', BRAND_CODE), USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, TO_NUMBER(DECODE(PACKING_UNIT, '전체', 0, PACKING_UNIT))
+    </select>
+    
+    <!-- 데이터 조회 : 팝업 그리드 헤더 조회(기간 데이터) -->
+    <select id="searchPopHeader" parameterType="map" resultType="map">
+	SELECT /* com.hitejinro.snop.work.dao.M07050DaoMapper.searchHeaderPop */
+	       YYYYMMDD AS PERIOD_YYYYMMDD
+	     , TO_NUMBER(SUBSTR(YYYYMMDD, 5, 2)) || '월' || TO_NUMBER(SUBSTR(YYYYMMDD, 7, 2)) || '일'  AS PERIOD_YYYYMMDD_DESC
+	     , 'YMD' || YYYYMMDD                     AS COL_ID   
+	     , 'Float' AS COL_TYPE
+	  FROM SCMU.W_SOP_VW_CALENDAR_M
+	 WHERE YYYYMM = #{toYYYYMM, jdbcType=VARCHAR}
+	 ORDER BY YYYYMMDD
+    </select>    
+    
+    <select id="searchPopBody" parameterType="map" resultType="map">
+    	SELECT LIQUOR_CODE	/* com.hitejinro.snop.work.dao.M07050DaoMapper.searchBodyPop */
+             , DECODE(GROUPING(BRAND_CODE),   1, '전체', BRAND_CODE)   BRAND_CODE
+             , DECODE(GROUPING(USAGE_CODE),   1, '전체', USAGE_CODE)   USAGE_CODE
+             , DECODE(GROUPING(VESSEL_CODE),  1, '전체', VESSEL_CODE)  VESSEL_CODE
+             , DECODE(GROUPING(VOLUME_VALUE), 1, '전체', VOLUME_VALUE) VOLUME_VALUE
+             , DECODE(GROUPING(PACKING_TYPE), 1, '전체', PACKING_TYPE) PACKING_TYPE
+             , DECODE(GROUPING(PACKING_UNIT), 1, '전체', PACKING_UNIT) PACKING_UNIT
+             , CASE WHEN GROUPING(BRAND_CODE) = 1 
+	             		 AND GROUPING(USAGE_CODE) = 1 
+	             		 AND GROUPING(VESSEL_CODE) = 1 
+	             		 AND GROUPING(VOLUME_VALUE) = 1 
+	             		 AND GROUPING(PACKING_TYPE) = 1 
+	             		 AND GROUPING(PACKING_UNIT) = 1 
+	             	THEN 'TOTAL' 
+             	    ELSE 'NORMAL' 
+             	END AS "Def"
+	<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+			 , SUM(DECODE(PERIOD_YYYYMMDD, #{item.PERIOD_YYYYMMDD, jdbcType=VARCHAR}, STOCK_DAILY)) AS ${item.COL_ID}
+	</foreach>
+		  FROM (
+		        SELECT LIQUOR_CODE
+		             , BRAND_CODE
+		             , USAGE_CODE
+		             , VESSEL_CODE
+		             , VOLUME_VALUE
+		             , PACKING_TYPE
+		             , PACKING_UNIT
+		             , PERIOD_YYYYMMDD
+		             , (
+		                (
+		                  SUM(NVL(STOCK_QTY, 0))        
+		                - MAX(NVL(STRG_STOCK_CONV_QTY, 0)) 
+		                )  
+		                / DECODE(SUM(NVL(ACTUAL_SALE_QTY, 0)), 0, NULL, SUM(NVL(ACTUAL_SALE_QTY, 0))) 
+		               ) AS STOCK_DAILY
+		          FROM (
+				        SELECT DATA_TBL.LIQUOR_CODE
+				             , DATA_TBL.BRAND_CODE
+				             , DATA_TBL.USAGE_CODE
+				             , DATA_TBL.VESSEL_CODE
+				             , DATA_TBL.VOLUME_VALUE
+				             , DATA_TBL.PACKING_TYPE
+				             , DATA_TBL.PACKING_UNIT
+				             , DATA_TBL.PERIOD_YYYYMMDD
+				             , DATA_TBL.PERIOD_YYYYMM
+				             , SUBSTR(DATA_TBL.PERIOD_SCM_YYYYMMWW, -2) AS PERIOD_SCM_YYYYMMWW
+				             , DATA_TBL.STOCK_QTY
+				             , DATA_TBL.ACTUAL_SALE_QTY
+				             , SAFT_TBL.STRG_STOCK_CONV_QTY
+				          FROM (
+						        SELECT LIQUOR_CODE
+						             , BRAND_CODE
+						             , USAGE_CODE
+						             , VESSEL_CODE
+						             , VOLUME_VALUE
+						             , PACKING_TYPE
+						             , PACKING_UNIT
+						             , PERIOD_YYYYMMDD
+						             , PERIOD_YYYYMM
+						             , PERIOD_SCM_YYYYMMWW
+						             , SUM(STOCK_QTY) AS STOCK_QTY
+						             , SUM(ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+						          FROM (
+								        SELECT A.LIQUOR_CODE
+								             , A.BRAND_CODE
+								             , A.USAGE_CODE
+								             , A.VESSEL_CODE
+								             , A.VOLUME_VALUE
+								             , A.PACKING_TYPE
+								             , A.PACKING_UNIT
+								             , B.PERIOD_YYYYMMDD
+								             , B.PERIOD_YYYYMM
+								             , B.PERIOD_SCM_YYYYMMWW
+								             , B.STOCK_QTY * B.UOM_CONVERSION_VALUE AS STOCK_QTY
+								             , 0 AS ACTUAL_SALE_QTY
+								          FROM EDW.W_CM_TB_FG_ITEM_M A
+								          LEFT JOIN SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F B
+								            ON A.ITEM_CODE = B.ITEM_CODE
+								         WHERE 1 = 1
+								           AND A.ITEM_TYPE = 'FG'
+								           AND A.ITEM_STATUS = 'Active'
+								           AND A.LIQUOR_CODE IN ('10', '20')
+								           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+										   AND (
+								                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingType, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_TYPE = #{packingType, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingUnit, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_UNIT = #{packingUnit, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{planYn, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.EVENT_ITEM_FLAG = #{planYn, jdbcType=VARCHAR})
+								           )
+										<if test="brandCode != null and brandCode != ''">
+								            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+												#{brandCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="usageCode != null and usageCode != ''">
+								            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+												#{usageCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+										<if test="vesselCode != null and vesselCode != ''">
+								            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+												#{vesselCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="volumeCode != null and volumeCode != ''">
+								            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+												#{volumeCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								         UNION ALL
+								        SELECT A.LIQUOR_CODE
+								             , A.BRAND_CODE
+								             , A.USAGE_CODE
+								             , A.VESSEL_CODE
+								             , A.VOLUME_VALUE
+								             , A.PACKING_TYPE
+								             , A.PACKING_UNIT
+								             , B.PERIOD_YYYYMMDD
+								             , B.PERIOD_YYYYMM
+								             , B.PERIOD_SCM_YYYYMMWW
+								             , 0 AS STOCK_QTY
+								             , B.ACTUAL_SALE_QTY * B.UOM_CONVERSION_VALUE AS ACTUAL_SALE_QTY
+								          FROM EDW.W_CM_TB_FG_ITEM_M A
+								          LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F B
+								            ON A.ITEM_CODE = B.ITEM_CODE
+								         WHERE 1 = 1
+								           AND A.ITEM_TYPE = 'FG'
+								           AND A.ITEM_STATUS = 'Active'
+								           AND A.LIQUOR_CODE IN ('10', '20')
+								           AND B.PERIOD_YYYYMM = #{toYYYYMM, jdbcType=VARCHAR}
+								           AND (
+								                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingType, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_TYPE = #{packingType, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{packingUnit, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.PACKING_UNIT = #{packingUnit, jdbcType=VARCHAR})
+								           )
+								           AND (
+								                ('!ALL' = #{planYn, jdbcType=VARCHAR} AND 1 = 1)
+								                OR
+								                (A.EVENT_ITEM_FLAG = #{planYn, jdbcType=VARCHAR})
+								           )
+										<if test="brandCode != null and brandCode != ''">
+								            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+												#{brandCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="usageCode != null and usageCode != ''">
+								            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+												#{usageCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+										<if test="vesselCode != null and vesselCode != ''">
+								            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+												#{vesselCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+								        <if test="volumeCode != null and volumeCode != ''">
+								            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+												#{volumeCode, jdbcType=VARCHAR}
+								            </foreach>
+								        </if>
+						               )
+						         GROUP BY LIQUOR_CODE
+						                , BRAND_CODE
+						                , USAGE_CODE
+						                , VESSEL_CODE
+						                , VOLUME_VALUE
+						                , PACKING_TYPE
+						                , PACKING_UNIT
+						                , PERIOD_YYYYMMDD
+						                , PERIOD_YYYYMM
+						                , PERIOD_SCM_YYYYMMWW
+				               ) DATA_TBL
+				         LEFT JOIN
+				               (
+						        SELECT A.LIQUOR_CODE
+						             , A.BRAND_CODE
+						             , A.USAGE_CODE
+						             , A.VESSEL_CODE
+						             , A.VOLUME_VALUE
+						             , A.PACKING_TYPE
+						             , A.PACKING_UNIT
+						             , B.PERIOD_YYYYMM
+						             , SUM(B.STRG_STOCK_CONV_QTY) AS STRG_STOCK_CONV_QTY
+						          FROM EDW.W_CM_TB_FG_ITEM_M A
+						             , SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F B
+						         WHERE 1 = 1
+						           AND A.ITEM_TYPE = 'FG'
+						           AND A.ITEM_STATUS = 'Active'
+						           AND A.LIQUOR_CODE IN ('10', '20')
+						           AND A.ITEM_CODE = B.ITEM_CODE
+						           AND B.PERIOD_YYYYMM = #{toYYYYMM, jdbcType=VARCHAR}
+								   AND (
+						                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+						           )
+						           AND (
+						                ('!ALL' = #{packingType, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.PACKING_TYPE = #{packingType, jdbcType=VARCHAR})
+						           )
+						           AND (
+						                ('!ALL' = #{packingUnit, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.PACKING_UNIT = #{packingUnit, jdbcType=VARCHAR})
+						           )
+						           AND (
+						                ('!ALL' = #{planYn, jdbcType=VARCHAR} AND 1 = 1)
+						                OR
+						                (A.EVENT_ITEM_FLAG = #{planYn, jdbcType=VARCHAR})
+						           )
+								<if test="brandCode != null and brandCode != ''">
+						            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+										#{brandCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+						        <if test="usageCode != null and usageCode != ''">
+						            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+										#{usageCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+								<if test="vesselCode != null and vesselCode != ''">
+						            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+										#{vesselCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+						        <if test="volumeCode != null and volumeCode != ''">
+						            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+										#{volumeCode, jdbcType=VARCHAR}
+						            </foreach>
+						        </if>
+						         GROUP BY A.LIQUOR_CODE
+						                , A.BRAND_CODE
+						                , A.USAGE_CODE
+						                , A.VESSEL_CODE
+						                , A.VOLUME_VALUE
+						                , A.PACKING_TYPE
+						                , A.PACKING_UNIT
+						                , B.PERIOD_YYYYMM
+				               ) SAFT_TBL
+				            ON 1 = 1
+				           AND DATA_TBL.LIQUOR_CODE = SAFT_TBL.LIQUOR_CODE
+				           AND DATA_TBL.BRAND_CODE = SAFT_TBL.BRAND_CODE
+				           AND DATA_TBL.USAGE_CODE = SAFT_TBL.USAGE_CODE
+				           AND DATA_TBL.VESSEL_CODE = SAFT_TBL.VESSEL_CODE
+				           AND DATA_TBL.VOLUME_VALUE = SAFT_TBL.VOLUME_VALUE
+				           AND DATA_TBL.PACKING_TYPE = SAFT_TBL.PACKING_TYPE
+				           AND DATA_TBL.PACKING_UNIT = SAFT_TBL.PACKING_UNIT
+				           AND DATA_TBL.PERIOD_YYYYMM = SAFT_TBL.PERIOD_YYYYMM
+		               )
+		         GROUP BY LIQUOR_CODE
+		                , BRAND_CODE
+		                , USAGE_CODE
+		                , VESSEL_CODE
+		                , VOLUME_VALUE
+		                , PACKING_TYPE
+		                , PACKING_UNIT
+		                , PERIOD_YYYYMMDD
+			 )
+         GROUP BY GROUPING SETS ((LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, PACKING_UNIT), (LIQUOR_CODE))
+         ORDER BY LIQUOR_CODE, DECODE(BRAND_CODE, '전체', '0', BRAND_CODE), USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, TO_NUMBER(DECODE(PACKING_UNIT, '전체', 0, PACKING_UNIT))
+    </select>
+    
+    <select id="searchBody_OLD" parameterType="map" resultType="map">
+        SELECT LIQUOR_CODE
+             , DECODE(GROUPING(BRAND_CODE),   1, '전체', BRAND_CODE)   BRAND_CODE
+             , DECODE(GROUPING(USAGE_CODE),   1, '전체', USAGE_CODE)   USAGE_CODE
+             , DECODE(GROUPING(VESSEL_CODE),  1, '전체', VESSEL_CODE)  VESSEL_CODE
+             , DECODE(GROUPING(VOLUME_VALUE), 1, '전체', VOLUME_VALUE) VOLUME_VALUE
+             , DECODE(GROUPING(PACKING_TYPE), 1, '전체', PACKING_TYPE) PACKING_TYPE
+             , DECODE(GROUPING(PACKING_UNIT), 1, '전체', PACKING_UNIT) PACKING_UNIT
+             <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+             , SUM(${item.COL_ID}) AS ${item.COL_ID}
+             </foreach>
+          FROM (       
+        SELECT LIQUOR_CODE
+             , BRAND_CODE
+             , USAGE_CODE
+             , VESSEL_CODE
+             , VOLUME_VALUE
+             , PACKING_TYPE
+             , PACKING_UNIT
+   	 <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+  	 	 <choose>
+         	 <when test="item.PERIOD_MMWW == '00A'" >
+         	 , (
+                (
+                  SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, NVL(STOCK_QTY, 0), 0))        
+                - MAX(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, NVL(STRG_STOCK_CONV_QTY, 0))) 
+                )  
+                / DECODE(SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, NVL(ACTUAL_SALE_QTY, 0)))) 
+                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMM = #{item.PERIOD_YYYYMM, jdbcType=VARCHAR} AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMM = #{item.PERIOD_YYYYMM, jdbcType=VARCHAR} AND BUSINESS_DAY_FLAG = 'Y'))                               
+               ) AS ${item.COL_ID}
+             </when>   
+         	 <when test="item.PERIOD_MMWW == '00B'">
+             , MAX(DECODE(PERIOD_YYYYMMDD , (SELECT TO_CHAR(LAST_DAY(TO_DATE(#{item.PERIOD_YYYYMM, jdbcType=VARCHAR}||'01', 'YYYYMMDD')), 'YYYYMMDD') AS LAST_DAY FROM DUAL), STOCK_QTY, 0))  AS ${item.COL_ID}  
+         	 </when>
+         	 <when test="item.PERIOD_MMWW == '00C'">
+             , AVG(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, NVL(STRG_STOCK_CONV_QTY, 0))) AS ${item.COL_ID}
+             </when>
+             <when test="item.PERIOD_MMWW == '00D'">
+             , SUM(DECODE(PERIOD_YYYYMM, #{item.PERIOD_YYYYMM, jdbcType=VARCHAR}, NVL(ACTUAL_SALE_QTY, 0))) / (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMM = #{item.PERIOD_YYYYMM, jdbcType=VARCHAR} AND BUSINESS_DAY_FLAG = 'Y') AS ${item.COL_ID} 
+             </when>
+             <otherwise>
+             , (
+                (
+                  SUM(DECODE(PERIOD_SCM_YYYYMMWW, #{item.PERIOD_YYYYMMWW, jdbcType=VARCHAR}, NVL(STOCK_QTY, 0), 0))        
+                - MAX(DECODE(PERIOD_SCM_YYYYMMWW, #{item.PERIOD_YYYYMMWW, jdbcType=VARCHAR}, NVL(STRG_STOCK_CONV_QTY, 0)))  
+                )  
+                / DECODE(SUM(DECODE(PERIOD_SCM_YYYYMMWW, #{item.PERIOD_YYYYMMWW, jdbcType=VARCHAR}, NVL(ACTUAL_SALE_QTY, 0))), 0, NULL, SUM(DECODE(PERIOD_SCM_YYYYMMWW, #{item.PERIOD_YYYYMMWW, jdbcType=VARCHAR}, NVL(ACTUAL_SALE_QTY, 0)))) 
+                / DECODE((SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = #{item.PERIOD_YYYYMMWW, jdbcType=VARCHAR} AND BUSINESS_DAY_FLAG = 'Y'), 0, NULL, (SELECT COUNT(*) AS BIZ_DAY FROM SCMU.W_SOP_VW_CALENDAR_M WHERE SCM_YYYYMMWW = #{item.PERIOD_YYYYMMWW, jdbcType=VARCHAR} AND BUSINESS_DAY_FLAG = 'Y'))                                -- 20210101 영업일 수 
+               ) AS ${item.COL_ID} 
+             </otherwise>
+		</choose>
+	</foreach>
+          FROM (
+        SELECT DATA_TBL.LIQUOR_CODE
+             , DATA_TBL.BRAND_CODE
+             , DATA_TBL.USAGE_CODE
+             , DATA_TBL.VESSEL_CODE
+             , DATA_TBL.VOLUME_VALUE
+             , DATA_TBL.PACKING_TYPE
+             , DATA_TBL.PACKING_UNIT
+             , DATA_TBL.PERIOD_YYYYMMDD
+             , DATA_TBL.PERIOD_YYYYMM
+             , DATA_TBL.PERIOD_SCM_YYYYMMWW
+             , DATA_TBL.STOCK_QTY
+             , DATA_TBL.ACTUAL_SALE_QTY
+             , SAFT_TBL.STRG_STOCK_CONV_QTY
+          FROM (
+        SELECT LIQUOR_CODE
+             , BRAND_CODE
+             , USAGE_CODE
+             , VESSEL_CODE
+             , VOLUME_VALUE
+             , PACKING_TYPE
+             , PACKING_UNIT
+             , PERIOD_YYYYMMDD
+             , PERIOD_YYYYMM
+             , PERIOD_SCM_YYYYMMWW
+             , SUM(STOCK_QTY) AS STOCK_QTY
+             , SUM(ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+          FROM (
+        SELECT A.LIQUOR_CODE
+             , A.BRAND_CODE
+             , A.USAGE_CODE
+             , A.VESSEL_CODE
+             , A.VOLUME_VALUE
+             , A.PACKING_TYPE
+             , A.PACKING_UNIT
+             , B.PERIOD_YYYYMMDD
+             , B.PERIOD_YYYYMM
+             , B.PERIOD_SCM_YYYYMMWW
+             , B.STOCK_QTY * B.UOM_CONVERSION_VALUE AS STOCK_QTY
+             , 0 AS ACTUAL_SALE_QTY
+          FROM EDW.W_CM_TB_FG_ITEM_M A
+          LEFT JOIN SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F B
+            ON A.ITEM_CODE = B.ITEM_CODE
+         WHERE 1 = 1
+           AND A.ITEM_TYPE = 'FG'
+           AND A.ITEM_STATUS = 'Active'
+           AND A.LIQUOR_CODE IN ('10', '20')
+           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+         UNION ALL
+        SELECT A.LIQUOR_CODE
+             , A.BRAND_CODE
+             , A.USAGE_CODE
+             , A.VESSEL_CODE
+             , A.VOLUME_VALUE
+             , A.PACKING_TYPE
+             , A.PACKING_UNIT
+             , B.PERIOD_YYYYMMDD
+             , B.PERIOD_YYYYMM
+             , B.PERIOD_SCM_YYYYMMWW
+             , 0 AS STOCK_QTY
+             , B.ACTUAL_SALE_QTY * B.UOM_CONVERSION_VALUE AS ACTUAL_SALE_QTY
+          FROM EDW.W_CM_TB_FG_ITEM_M A
+          LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F B
+            ON A.ITEM_CODE = B.ITEM_CODE
+         WHERE 1 = 1
+           AND A.ITEM_TYPE = 'FG'
+           AND A.ITEM_STATUS = 'Active'
+           AND A.LIQUOR_CODE IN ('10', '20')
+           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+               )
+         GROUP BY LIQUOR_CODE
+                , BRAND_CODE
+                , USAGE_CODE
+                , VESSEL_CODE
+                , VOLUME_VALUE
+                , PACKING_TYPE
+                , PACKING_UNIT
+                , PERIOD_YYYYMMDD
+                , PERIOD_YYYYMM
+                , PERIOD_SCM_YYYYMMWW
+               ) DATA_TBL
+         LEFT JOIN
+               (
+        SELECT A.LIQUOR_CODE
+             , A.BRAND_CODE
+             , A.USAGE_CODE
+             , A.VESSEL_CODE
+             , A.VOLUME_VALUE
+             , A.PACKING_TYPE
+             , A.PACKING_UNIT
+             , B.PERIOD_YYYYMM
+             , SUM(B.STRG_STOCK_CONV_QTY) AS STRG_STOCK_CONV_QTY
+          FROM EDW.W_CM_TB_FG_ITEM_M A
+             , SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F B
+         WHERE 1 = 1
+           AND A.ITEM_TYPE = 'FG'
+           AND A.ITEM_STATUS = 'Active'
+           AND A.LIQUOR_CODE IN ('10', '20')
+           AND A.ITEM_CODE = B.ITEM_CODE
+           AND B.PERIOD_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+         GROUP BY A.LIQUOR_CODE
+                , A.BRAND_CODE
+                , A.USAGE_CODE
+                , A.VESSEL_CODE
+                , A.VOLUME_VALUE
+                , A.PACKING_TYPE
+                , A.PACKING_UNIT
+                , B.PERIOD_YYYYMM
+               ) SAFT_TBL
+            ON 1 = 1
+           AND DATA_TBL.LIQUOR_CODE = SAFT_TBL.LIQUOR_CODE
+           AND DATA_TBL.BRAND_CODE = SAFT_TBL.BRAND_CODE
+           AND DATA_TBL.USAGE_CODE = SAFT_TBL.USAGE_CODE
+           AND DATA_TBL.VESSEL_CODE = SAFT_TBL.VESSEL_CODE
+           AND DATA_TBL.VOLUME_VALUE = SAFT_TBL.VOLUME_VALUE
+           AND DATA_TBL.PACKING_TYPE = SAFT_TBL.PACKING_TYPE
+           AND DATA_TBL.PACKING_UNIT = SAFT_TBL.PACKING_UNIT
+           AND DATA_TBL.PERIOD_YYYYMM = SAFT_TBL.PERIOD_YYYYMM
+               )
+         GROUP BY LIQUOR_CODE
+                , BRAND_CODE
+                , USAGE_CODE
+                , VESSEL_CODE
+                , VOLUME_VALUE
+                , PACKING_TYPE
+                , PACKING_UNIT
+               )
+         GROUP BY ROLLUP(LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, PACKING_UNIT)
+        HAVING GROUPING(LIQUOR_CODE) = 0        
+           AND GROUPING_ID(BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, PACKING_UNIT) IN (0, 63)
+         ORDER BY LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE, PACKING_TYPE, PACKING_UNIT
+
+    </select>
+    
+    <select id="getMagamYmd" resultType="String">
+		SELECT MAGAM_YMD
+		  FROM EDW.GEIS_MAGAM
+		 WHERE SCRN_ID = 'GEISM0500R'
+		   AND CO_CODE = 'HJ0'
+    </select>
+
+    <!-- 콤보 조회 -->
+    <select id="getCombo" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.system.dao.M07050DaoMapper.itemStatusCombo */
+    		   DISTINCT ${COL_ID} AS CODE, ${COL_ID} AS NAME 
+    	  FROM EDW.W_CM_TB_FG_ITEM_M
+    	 WHERE ${COL_ID} IS NOT NULL
+  	 <choose>
+       	<when test="COL_ID == 'PACKING_UNIT'" >
+        ORDER BY TO_NUMBER(${COL_ID})
+		</when>
+		<otherwise>
+    	ORDER BY ${COL_ID}
+		</otherwise>
+	 </choose>
+    </select>
+
+    
+
+    
+    
+
+    
+    
+</mapper>

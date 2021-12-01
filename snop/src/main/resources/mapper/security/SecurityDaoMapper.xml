@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+  
+<mapper namespace="com.hitejinro.snop.security.dao.SecurityDaoMapper">
+
+    <!-- 사용자 정보 조회 -->
+    <select id="loadUserByUsername" parameterType="map" resultType="com.hitejinro.snop.security.vo.User">
+    SELECT /* com.hitejinro.snop.security.dao.SecurityDaoMapper.loadUserByUsername */
+           T1.USER_ID, T1.USER_NM, T1.PASSWORD
+         , T1.DEPT_CD, T1.DEPT_NM
+         , T1.POSITION_CODE, T1.POSITION_NAME
+         , T1.DUTY_CODE, T1.DUTY_NAME
+         , T1.OFFICE_EMAIL, T1.MOBILE_PHONE, T1.USE_YN
+         , T1.EMPLOYEE_NUMBER, T1.AUTO_AUTH_LOCK_YN
+         , T3.AUTH_CD
+         , (
+                CASE WHEN T3.AUTH_CD IS NULL      THEN 'ROLE_ANONYMOUS'
+                     WHEN T3.AUTH_CD = 'A0000'    THEN 'ROLE_ADMIN'
+                     ELSE                              'ROLE_USER'
+                END
+           )    AS ROLE_CD
+      FROM SCMU.W_SOP_TB_USER_M      T1
+ LEFT JOIN SCMU.W_SOP_TB_AUTH_USER_M T2
+        ON T2.USER_ID = T1.USER_ID
+ LEFT JOIN SCMU.W_SOP_TB_AUTH_M      T3
+        ON T3.USE_YN  = 'Y'
+       AND T3.AUTH_CD = T2.AUTH_CD
+     WHERE 1 = 1
+       AND T1.EMPLOYEE_NUMBER = #{employeeNumber, jdbcType=VARCHAR}
+       AND T1.USE_YN          = 'Y'
+    </select>
+
+    <!-- 사용자의 메뉴-권한 정보 조회 -->
+    <select id="selectUserAuthMenuList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.security.dao.SecurityDaoMapper.selectUserAuthMenuList */
+       A.USER_ID, A.USER_NM
+     , B.AUTH_CD, C.AUTH_NM
+     , D.MENU_CD, E.MENU_NM, E.URL
+     , CASE WHEN E.ALOW_YN_BTN_SELECT = 'Y' THEN NVL(D.ALOW_YN_BTN_SELECT, 'N')
+            ELSE 'N'
+       END              AS ALOW_YN_BTN_SELECT
+     , CASE WHEN E.ALOW_YN_BTN_SAVE = 'Y'   THEN NVL(D.ALOW_YN_BTN_SAVE, 'N')
+            ELSE 'N'
+       END              AS ALOW_YN_BTN_SAVE
+     , CASE WHEN E.ALOW_YN_BTN_EXEC = 'Y'   THEN NVL(D.ALOW_YN_BTN_EXEC, 'N')
+            ELSE 'N'
+       END              AS ALOW_YN_BTN_EXEC
+     
+  FROM SCMU.W_SOP_TB_USER_M      A
+  JOIN SCMU.W_SOP_TB_AUTH_USER_M B
+    ON B.USER_ID = A.USER_ID
+  JOIN SCMU.W_SOP_TB_AUTH_M      C
+    ON C.AUTH_CD = B.AUTH_CD
+  JOIN SCMU.W_SOP_TB_AUTH_MENU_M D
+    ON D.AUTH_CD = B.AUTH_CD
+  JOIN SCMU.W_SOP_TB_MENU_M      E
+    ON E.MENU_CD = D.MENU_CD
+ WHERE 1 = 1
+   AND A.USE_YN = 'Y'
+   AND C.USE_YN = 'Y'
+   AND E.USE_YN = 'Y'
+   AND A.EMPLOYEE_NUMBER = #{employeeNumber, jdbcType=VARCHAR}
+ ORDER BY D.MENU_CD
+    </select>
+
+
+    <!-- 사용자로그 생성 -->
+    <insert id="insertUserLog" parameterType="Map">
+        <![CDATA[
+    INSERT /* com.hitejinro.snop.security.dao.SecurityDaoMapper.insertUserLog */
+      INTO SCMU.W_SOP_TB_USER_LOG_F
+           (USER_LOG_SEQNO
+            , SERVER_MODE, YYYYMMDD, MENU_CD, USER_ID, LOG_DATE, CLIENT_IP, URL, PARAMETER, MENU_NM, MENU_URL
+            , USER_NM, EMPLOYEE_NUMBER, DEPT_CD, DEPT_NM, POSITION_CODE, POSITION_NAME, DUTY_CODE, DUTY_NAME, AUTH_CD, AUTH_NM)
+    SELECT SCMU.SEQ_SOP_USER_LOG_SEQNO.NEXTVAL AS USER_LOG_SEQNO
+         , A.SERVER_MODE
+         , TO_CHAR(SYSDATE, 'YYYYMMDD') AS YYYYMMDD
+         , CASE WHEN INSTR(A.MENU_URL, 'security/sso') = 1                                      THEN 'TOPFFICE'    -- Topffice 로그인
+                WHEN INSTR(A.MENU_URL, 'security/auth') = 1                                     THEN 'LOGIN'       -- ID/PWD 로그인
+                WHEN INSTR(A.MENU_URL, 'security/link') = 1                                     THEN 'LINK'        -- 링크 로그인 : mail에 첨부된 링그 URL을 이용한 로그인
+                WHEN INSTR(A.MENU_URL, 'security/logout') = 1                                   THEN 'LOGOUT'      -- 로그아웃
+                WHEN B.MENU_CD IS NOT NULL                                                      THEN B.MENU_CD
+                ELSE                                                                                 '-'
+           END                          AS MENU_CD
+         , NVL(A.USER_ID, '-')          AS USER_ID
+         , SYSDATE                      AS LOG_DATE
+         , A.CLIENT_IP                  AS CLIENT_IP
+         , A.REQUEST_URL                AS URL
+         , A.PARAMETER                  AS PARAMETER
+         , CASE WHEN INSTR(A.MENU_URL, 'security/sso') = 1                                      THEN 'Topffice 로그인'    -- Topffice 로그인
+                WHEN INSTR(A.MENU_URL, 'security/auth') = 1                                     THEN 'ID/PWD 로그인'      -- ID/PWD 로그인
+                WHEN INSTR(A.MENU_URL, 'security/link') = 1                                     THEN '링크 로그인'        -- 링크 로그인 : mail에 첨부된 링그 URL을 이용한 로그인
+                WHEN INSTR(A.MENU_URL, 'security/logout') = 1                                   THEN '로그아웃'           -- 로그아웃
+                WHEN B.MENU_CD IS NOT NULL                                                      THEN B.MENU_NM
+                ELSE                                                                                 '-'
+           END                          AS MENU_NM
+         , A.MENU_URL
+         , NVL(C.USER_NM, '-')          AS USER_NM
+         , NVL(C.EMPLOYEE_NUMBER, '-')  AS EMPLOYEE_NUMBER
+         , NVL(C.DEPT_CD, '-')          AS DEPT_CD
+         , NVL(C.DEPT_NM, '-')          AS DEPT_NM
+         , NVL(C.POSITION_CODE, '-')    AS POSITION_CODE
+         , NVL(C.POSITION_NAME, '-')    AS POSITION_NAME
+         , NVL(C.DUTY_CODE, '-')        AS DUTY_CODE
+         , NVL(C.DUTY_NAME, '-')        AS DUTY_NAME
+         , NVL(E.AUTH_CD, '-')          AS AUTH_CD
+         , NVL(E.AUTH_NM, '-')          AS AUTH_NM
+      FROM (
+                SELECT #{serverMode, jdbcType=VARCHAR} AS SERVER_MODE   -- LOCAL, DEV, PROD
+                     , #{serverUrl, jdbcType=VARCHAR}  AS SERVER_URL    -- http://localhost:8080/
+                     , #{requestUrl, jdbcType=VARCHAR} AS REQUEST_URL   -- http://localhost:8080/work/M02010
+                     , #{clientIp, jdbcType=VARCHAR}   AS CLIENT_IP
+                     , #{menuUrl, jdbcType=VARCHAR}    AS MENU_URL      -- work/M02010
+                     , #{parameter, jdbcType=CLOB}     AS PARAMETER     -- uid=1234, orgUnitId=224, ...
+                     , #{userId, jdbcType=VARCHAR}     AS USER_ID
+                  FROM DUAL
+           )                            A
+ LEFT JOIN SCMU.W_SOP_TB_MENU_M         B
+        ON B.URL IS NOT NULL
+       AND A.MENU_URL   LIKE B.URL || '%'
+ LEFT JOIN SCMU.W_SOP_TB_USER_M         C
+        ON A.USER_ID    = C.USER_ID
+ LEFT JOIN SCMU.W_SOP_TB_AUTH_USER_M    D
+        ON A.USER_ID    = D.USER_ID
+ LEFT JOIN SCMU.W_SOP_TB_AUTH_M         E
+        ON D.AUTH_CD    = E.AUTH_CD
+
+     WHERE 1 = 1
+       AND ROWNUM = 1
+        ]]>
+    </insert>
+
+</mapper>

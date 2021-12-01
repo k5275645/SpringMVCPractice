@@ -1,0 +1,1504 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M01020 : 일일 판매현황 분석
+ * 작성일자 :: 2021.7.13
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M01020DaoMapper">
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		WITH TBL_SOURCE_SALES_ACTUAL AS ( /* com.hitejinro.snop.work.dao.M01020DaoMapper.search */
+		    SELECT T1.PERIOD_YYYYMMDD
+		         , T1.ITEM_CODE
+		         , T1.MARKET_TYPE
+		         , T1.YYYY_TRG_SALE_QTY
+		         , T1.YYYY_TRG_SALE_CONV_QTY
+		         , T1.WW_SALE_PLAN_QTY
+		         , T1.MM_SALE_PLAN_QTY
+		         , T1.ESPN_SALE_QTY
+		         , T1.ACTUAL_SALE_QTY
+		         , T1.ACTUAL_1D_SALE_QTY
+		         , T1.ACTUAL_5D_SALE_AVG_QTY
+		         , T1.ACTUAL_10D_SALE_AVG_QTY
+		         , T1.ACTUAL_20D_SALE_AVG_QTY
+		         , T1.ACTUAL_60D_SALE_AVG_QTY
+		         , T1.ACTUAL_DONATE_QTY
+		         , T1.ACTUAL_BF1M_SALE_AVG_QTY
+		         , T1.ACTUAL_BF3M_SALE_AVG_QTY
+		         , T1.PERIOD_YYYY
+		         , T1.PERIOD_YYYYMM
+		         , T1.PERIOD_SCM_YYYYWW
+		         , T1.PERIOD_SCM_YYYYMMWW
+		         , T1.ITEM_TYPE
+		         , T2.LIQUOR_CODE
+		         , T2.USAGE_CODE
+		         , T2.VESSEL_CODE
+		         , T2.VOLUME_VALUE
+		         , T2.BRAND_CODE
+		         , T1.UOM_CONVERSION_VALUE
+		      FROM (SELECT MAIN.PERIOD_YYYYMMDD
+		                 , CASE WHEN SUBT2.TO_ITEM_CODE IS NULL THEN MAIN.ITEM_CODE
+		                        ELSE SUBT2.TO_ITEM_CODE
+		                   END AS ITEM_CODE
+		                 , MAIN.MARKET_TYPE
+		                 , MAIN.YYYY_TRG_SALE_QTY
+		                 , MAIN.YYYY_TRG_SALE_CONV_QTY
+		                 , MAIN.WW_SALE_PLAN_QTY
+		                 , MAIN.MM_SALE_PLAN_QTY
+		                 , MAIN.ESPN_SALE_QTY
+		                 , MAIN.ACTUAL_SALE_QTY
+		                 , MAIN.ACTUAL_1D_SALE_QTY
+		                 , MAIN.ACTUAL_5D_SALE_AVG_QTY
+		                 , MAIN.ACTUAL_10D_SALE_AVG_QTY
+		                 , MAIN.ACTUAL_20D_SALE_AVG_QTY
+		                 , MAIN.ACTUAL_60D_SALE_AVG_QTY
+		                 , MAIN.ACTUAL_DONATE_QTY
+		                 , MAIN.ACTUAL_BF1M_SALE_AVG_QTY
+		                 , MAIN.ACTUAL_BF3M_SALE_AVG_QTY
+		                 , MAIN.PERIOD_YYYY
+		                 , MAIN.PERIOD_YYYYMM
+		                 , MAIN.PERIOD_SCM_YYYYWW
+		                 , MAIN.PERIOD_SCM_YYYYMMWW
+		                 , MAIN.ITEM_TYPE
+		                 , MAIN.LIQUOR_CODE
+		                 , MAIN.USAGE_CODE
+		                 , MAIN.VESSEL_CODE
+		                 , MAIN.VOLUME_VALUE
+		                 , MAIN.BRAND_CODE
+		                 , MAIN.UOM_CONVERSION_VALUE
+		              FROM SCMU.M_SOP_TB_ITEM_SALE_F MAIN LEFT JOIN
+		                   SCMU.W_SOP_TB_ITEM_MAP_M SUBT2 ON MAIN.ITEM_CODE = SUBT2.FR_ITEM_CODE
+		             WHERE (   MAIN.PERIOD_YYYYMMDD LIKE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), 1, 4) || '%'        --당해년도
+		                    OR MAIN.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -12), 'YYYYMMDD'), 1, 6)||'01' AND TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -12), 'YYYYMMDD') --전년동기
+		                    OR MAIN.PERIOD_YYYYMMDD LIKE SUBSTR(TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -1), 'YYYYMMDD'), 1, 6)||'%'  --전월
+		                   )
+		               AND MAIN.LIQUOR_CODE IN ('10', '20')
+		               AND MAIN.ITEM_TYPE IN ('FG', 'PH')
+		               AND MAIN.MARKET_TYPE = 'D'
+		               AND MAIN.BRAND_CODE != '27' ) T1 INNER JOIN
+		           EDW.W_CM_TB_FG_ITEM_M T2 ON T1.ITEM_CODE = T2.ITEM_CODE
+		       AND T1.ITEM_CODE = T2.ITEM_CODE
+		       AND T2.ITEM_STATUS = 'Active'
+	        <if test="liquorCode != null and liquorCode != '!ALL'">
+               AND T2.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+	        </if>
+	        <if test="mainFlag != null and mainFlag != '!ALL'">
+	           AND T2.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+	        </if>
+		)
+		, TBL_SOURCE_ACTUAL AS (
+		    /*
+		    경영목표, 판매계획 한달치의 데이터를 모두 조회해야 하는 항목
+		    경영목표, 판매계획은 월별 데이터를 영업일자로 나눠 일별 데이터로 존재한다.
+		    */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , SUM(YYYY_TRG_SALE_CONV_QTY) AS YYYY_TRG_SALE_CONV_QTY                --경영목표
+		         , SUM(MM_SALE_PLAN_QTY * UOM_CONVERSION_VALUE) AS MM_SALE_PLAN_QTY     --판매계획
+		         , SUM(ESPN_SALE_QTY) AS ESPN_SALE_QTY                                  --영업예상판매량
+		         , 0 AS MM_SALE_QTY
+		         , 0 AS ESPN_SALE_QTY_01
+		         , 0 AS ESPN_SALE_QTY_02
+		         , 0 AS ESPN_SALE_QTY_03
+		         , 0 AS ESPN_SALE_QTY_04
+		         , 0 AS ESPN_SALE_QTY_05
+		         , 0 AS BYM_ACT_SALE_QTY
+		         , 0 AS BM_ACT_SALE_QTY
+		         , 0 AS MAX_SALE_QTY
+		         , 0 AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_20D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_5D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BD_SALE_QTY
+		      FROM TBL_SOURCE_SALES_ACTUAL
+		     WHERE 1=1
+		       AND PERIOD_YYYYMMDD LIKE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6) || '%'
+		     GROUP BY ITEM_CODE, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		     
+		     UNION ALL
+		     
+		    /*
+		    당월 판매실적(1일부터 해당일까지의 데이터를 조회)
+		    */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , 0 AS YYYY_TRG_SALE_CONV_QTY
+		         , 0 AS MM_SALE_PLAN_QTY
+		         , 0 AS ESPN_SALE_QTY
+		         , SUM(ACTUAL_SALE_QTY * UOM_CONVERSION_VALUE) AS MM_SALE_QTY           --당월 판매실적
+		         , 0 AS ESPN_SALE_QTY_01
+		         , 0 AS ESPN_SALE_QTY_02
+		         , 0 AS ESPN_SALE_QTY_03
+		         , 0 AS ESPN_SALE_QTY_04
+		         , 0 AS ESPN_SALE_QTY_05
+		         , 0 AS BYM_ACT_SALE_QTY
+		         , 0 AS BM_ACT_SALE_QTY
+		         , 0 AS MAX_SALE_QTY                 
+		         , 0 AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_20D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_5D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BD_SALE_QTY
+		      FROM TBL_SOURCE_SALES_ACTUAL
+		     WHERE 1=1
+		       AND PERIOD_YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6) || '01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+		     GROUP BY ITEM_CODE, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		
+		     UNION ALL
+		
+		    /*
+		    영업예상 판매량 조회
+		    영업예상 판매량은 1차부터 최대 5차까지의 데이터 발생 가능성이 있어 5차까지 모두 조회 후 필요한 데이터만 사용
+		    */
+		    SELECT A.ITEM_CODE
+		         , B.LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , 0 AS YYYY_TRG_SALE_CONV_QTY
+		         , 0 AS MM_SALE_PLAN_QTY
+		         , 0 AS ESPN_SALE_QTY
+		         , 0 MM_SALE_QTY
+		         , SUM(DECODE(A.INP_DGR, 1, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_01    --영업예상판매량 1차
+		         , SUM(DECODE(A.INP_DGR, 2, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_02    --영업예상판매량 2차
+		         , SUM(DECODE(A.INP_DGR, 3, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_03    --영업예상판매량 3차
+		         , SUM(DECODE(A.INP_DGR, 4, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_04    --영업예상판매량 4차
+		         , SUM(DECODE(A.INP_DGR, 5, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_05    --영업예상판매량 5차
+		         , 0 AS BYM_ACT_SALE_QTY
+		         , 0 AS BM_ACT_SALE_QTY
+		         , 0 AS MAX_SALE_QTY                 
+		         , 0 AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_20D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_5D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BD_SALE_QTY
+		      FROM SCMU.W_SOP_TB_ESPN_SALE_F A
+		         , EDW.W_CM_TB_FG_ITEM_M B
+		     WHERE 1 = 1
+		       AND A.PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6)
+		       AND A.PERIOD_MMWW = '00'
+		       AND A.ITEM_CODE = B.ITEM_CODE
+		       AND B.ITEM_STATUS = 'Active'
+		       AND B.LIQUOR_CODE IN ('10', '20')
+	        <if test="liquorCode != null and liquorCode != '!ALL'">
+               AND B.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+	        </if>
+	        <if test="mainFlag != null and mainFlag != '!ALL'">
+	           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+	        </if>
+		     GROUP BY A.ITEM_CODE, B.LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		
+		     UNION ALL
+		
+		    /*
+		    전년동기 조회기준일-12개월의 1일부터 동일한 일자까지의 데이터
+		    */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , 0 AS YYYY_TRG_SALE_CONV_QTY
+		         , 0 AS MM_SALE_PLAN_QTY
+		         , 0 AS ESPN_SALE_QTY
+		         , 0 AS MM_SALE_QTY
+		         , 0 AS ESPN_SALE_QTY_01
+		         , 0 AS ESPN_SALE_QTY_02
+		         , 0 AS ESPN_SALE_QTY_03
+		         , 0 AS ESPN_SALE_QTY_04
+		         , 0 AS ESPN_SALE_QTY_05
+		         , SUM(ACTUAL_SALE_QTY * UOM_CONVERSION_VALUE) AS BYM_ACT_SALE_QTY                             --전년동기
+		         , 0 AS BM_ACT_SALE_QTY
+		         , 0 AS MAX_SALE_QTY                 
+		         , 0 AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_20D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_5D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BD_SALE_QTY
+		      FROM TBL_SOURCE_SALES_ACTUAL
+		     WHERE 1=1
+		       AND PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -12), 'YYYYMMDD'), 1, 6)||'01' AND TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -12), 'YYYYMMDD')
+		     GROUP BY ITEM_CODE, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		
+		     UNION ALL
+		
+		    /*
+		    전월동기 조회기준일-1개월의 1일부터 동일한 일자까지의 데이터
+		    */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , 0 AS YYYY_TRG_SALE_CONV_QTY
+		         , 0 AS MM_SALE_PLAN_QTY
+		         , 0 AS ESPN_SALE_QTY
+		         , 0 AS MM_SALE_QTY
+		         , 0 AS ESPN_SALE_QTY_01
+		         , 0 AS ESPN_SALE_QTY_02
+		         , 0 AS ESPN_SALE_QTY_03
+		         , 0 AS ESPN_SALE_QTY_04
+		         , 0 AS ESPN_SALE_QTY_05
+		         , 0 AS BYM_ACT_SALE_QTY
+		         , SUM(ACTUAL_SALE_QTY * UOM_CONVERSION_VALUE) AS BM_ACT_SALE_QTY                             --전월동기
+		         , 0 AS MAX_SALE_QTY                 
+		         , 0 AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_20D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_5D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BD_SALE_QTY
+		      FROM TBL_SOURCE_SALES_ACTUAL
+		     WHERE 1=1
+		       AND PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -1), 'YYYYMMDD'), 1, 6)||'01' AND TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -1), 'YYYYMMDD')
+		     GROUP BY ITEM_CODE, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		
+		     UNION ALL
+		
+		    /*
+		    당해년도 최대판매량
+		    */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , 0 AS YYYY_TRG_SALE_CONV_QTY
+		         , 0 AS MM_SALE_PLAN_QTY
+		         , 0 AS ESPN_SALE_QTY
+		         , 0 AS MM_SALE_QTY
+		         , 0 AS ESPN_SALE_QTY_01
+		         , 0 AS ESPN_SALE_QTY_02
+		         , 0 AS ESPN_SALE_QTY_03
+		         , 0 AS ESPN_SALE_QTY_04
+		         , 0 AS ESPN_SALE_QTY_05
+		         , 0 AS BYM_ACT_SALE_QTY
+		         , 0 AS BM_ACT_SALE_QTY
+		         , MAX(ACTUAL_SALE_QTY * UOM_CONVERSION_VALUE) AS MAX_SALE_QTY          --년중최대
+		         , 0 AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , 0 AS ACTUAL_20D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_5D_SALE_AVG_QTY
+		         , 0 AS ACTUAL_BD_SALE_QTY
+		      FROM TBL_SOURCE_SALES_ACTUAL
+		     WHERE 1=1
+		       AND PERIOD_YYYYMMDD LIKE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), 1, 4) || '%'
+		     GROUP BY ITEM_CODE, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		
+		    UNION ALL
+		
+		    /*
+		    최근1개월, 최근3개월, 최근20일, 최근5일, 전일
+		    마트에 당일날짜로 존재하는 데이터 조회용
+		    */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , 0 AS YYYY_TRG_SALE_CONV_QTY
+		         , 0 AS MM_SALE_PLAN_QTY
+		         , 0 AS ESPN_SALE_QTY
+		         , 0 AS MM_SALE_QTY
+		         , 0 AS ESPN_SALE_QTY_01
+		         , 0 AS ESPN_SALE_QTY_02
+		         , 0 AS ESPN_SALE_QTY_03
+		         , 0 AS ESPN_SALE_QTY_04
+		         , 0 AS ESPN_SALE_QTY_05
+		         , 0 AS BYM_ACT_SALE_QTY
+		         , 0 AS BM_ACT_SALE_QTY
+		         , 0 AS MAX_SALE_QTY
+		         , SUM(ACTUAL_BF1M_SALE_AVG_QTY * UOM_CONVERSION_VALUE) AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , SUM(ACTUAL_BF3M_SALE_AVG_QTY * UOM_CONVERSION_VALUE) AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , SUM(ACTUAL_20D_SALE_AVG_QTY * UOM_CONVERSION_VALUE) AS ACTUAL_20D_SALE_AVG_QTY
+		         , SUM(ACTUAL_5D_SALE_AVG_QTY * UOM_CONVERSION_VALUE) AS ACTUAL_5D_SALE_AVG_QTY
+		         , SUM(ACTUAL_SALE_QTY * UOM_CONVERSION_VALUE) AS ACTUAL_BD_SALE_QTY
+		      FROM TBL_SOURCE_SALES_ACTUAL
+		     WHERE 1=1
+		       AND PERIOD_YYYYMMDD = REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', '')
+		     GROUP BY ITEM_CODE, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		
+		)
+		, TBL_ACTUAL_SUM AS (
+		    /*
+		    품목별 데이터 합치기
+		    */
+		    SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN T1.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+		         , LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		         , SUM(YYYY_TRG_SALE_CONV_QTY) AS YYYY_TRG_SALE_CONV_QTY
+		         , SUM(MM_SALE_PLAN_QTY) AS MM_SALE_PLAN_QTY
+		         , SUM(ESPN_SALE_QTY) AS ESPN_SALE_QTY
+		         , SUM(MM_SALE_QTY) AS MM_SALE_QTY
+		         , SUM(ESPN_SALE_QTY_01) AS ESPN_SALE_QTY_01
+		         , SUM(ESPN_SALE_QTY_02) AS ESPN_SALE_QTY_02
+		         , SUM(ESPN_SALE_QTY_03) AS ESPN_SALE_QTY_03
+		         , SUM(ESPN_SALE_QTY_04) AS ESPN_SALE_QTY_04
+		         , SUM(ESPN_SALE_QTY_05) AS ESPN_SALE_QTY_05
+		         , SUM(BYM_ACT_SALE_QTY) AS BYM_ACT_SALE_QTY
+		         , SUM(BM_ACT_SALE_QTY) AS BM_ACT_SALE_QTY
+		         , SUM(MAX_SALE_QTY) AS MAX_SALE_QTY
+		         , SUM(ACTUAL_BF1M_SALE_AVG_QTY) AS ACTUAL_BF1M_SALE_AVG_QTY
+		         , SUM(ACTUAL_BF3M_SALE_AVG_QTY) AS ACTUAL_BF3M_SALE_AVG_QTY
+		         , SUM(ACTUAL_20D_SALE_AVG_QTY) AS ACTUAL_20D_SALE_AVG_QTY
+		         , SUM(ACTUAL_5D_SALE_AVG_QTY) AS ACTUAL_5D_SALE_AVG_QTY
+		         , SUM(ACTUAL_BD_SALE_QTY) AS ACTUAL_BD_SALE_QTY
+		         , CASE WHEN NVL(#{stdSaleDfnt, jdbcType=VARCHAR},'') != '' AND #{stdSaleDfnt, jdbcType=VARCHAR} != '!ALL' THEN
+		                    SCMU.FN_SOP_STD_SALE_DFN_QTY(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), CASE WHEN Z.TO_ITEM_CODE IS NULL THEN T1.ITEM_CODE ELSE Z.TO_ITEM_CODE END, #{stdSaleDfnt, jdbcType=VARCHAR})
+		                ELSE 0
+		           END AS ESPN_SALE_QTY_ADD
+		      FROM TBL_SOURCE_ACTUAL T1 LEFT JOIN 
+                   SCMU.W_SOP_TB_ITEM_MAP_M Z ON Z.FR_ITEM_CODE = T1.ITEM_CODE
+		     WHERE 1=1
+		     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN T1.ITEM_CODE ELSE Z.TO_ITEM_CODE END, LIQUOR_CODE, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE)
+		, TBL_LIQUOR_TOTAL AS (
+		    /*
+		    구성비 계산을 위한 주종별 SUM 
+		    */
+		    SELECT LIQUOR_CODE
+		         , SUM(YYYY_TRG_SALE_CONV_QTY) AS TOT_YYYY_TRG_SALE_CONV_QTY
+		         , SUM(MM_SALE_PLAN_QTY) AS TOT_MM_SALE_PLAN_QTY
+		         , SUM(MM_SALE_QTY) AS TOT_MM_SALE_QTY
+		         , SUM(ESPN_SALE_QTY_01) AS TOT_ESPN_SALE_QTY_01
+		         , SUM(ESPN_SALE_QTY_02) AS TOT_ESPN_SALE_QTY_02
+		         , SUM(ESPN_SALE_QTY_03) AS TOT_ESPN_SALE_QTY_03
+		         , SUM(ESPN_SALE_QTY_04) AS TOT_ESPN_SALE_QTY_04
+		         , SUM(ESPN_SALE_QTY_05) AS TOT_ESPN_SALE_QTY_05
+		      FROM TBL_SOURCE_ACTUAL
+		     GROUP BY LIQUOR_CODE
+		)
+		--구분항목별 데이터 조회
+		SELECT T1.LIQUOR_CODE, DECODE(SEQ, 0, '!ALL', '') AS "Def"
+		     , DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', '') AS LIQUOR_DESC
+		     , SEQ, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT
+		     , SUM(YYYY_TRG_SALE_CONV_QTY) AS YYYY_TRG_SALE_QTY
+		     , DECODE(NVL(MAX(TOT_YYYY_TRG_SALE_CONV_QTY),0), 0, 0, (SUM(YYYY_TRG_SALE_CONV_QTY) / MAX(TOT_YYYY_TRG_SALE_CONV_QTY))) AS TRG_SALE_RATE
+		     , SUM(MM_SALE_PLAN_QTY) AS MM_SALE_PLAN_QTY
+		     , DECODE(NVL(MAX(TOT_MM_SALE_PLAN_QTY),0), 0, 0, (SUM(MM_SALE_PLAN_QTY) / MAX(TOT_MM_SALE_PLAN_QTY))) AS TOTAL_SALE_PLAN_RATE
+		     , SUM(ESPN_SALE_QTY_01) AS ESPN_SALE_QTY_01
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_01),0), 0, 0, (SUM(ESPN_SALE_QTY_01) / MAX(TOT_ESPN_SALE_QTY_01))) AS ESPN_SALE_RATE_01
+		     , SUM(ESPN_SALE_QTY_02) AS ESPN_SALE_QTY_02
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_02),0), 0, 0, (SUM(ESPN_SALE_QTY_02) / MAX(TOT_ESPN_SALE_QTY_02))) AS ESPN_SALE_RATE_02
+		     , SUM(ESPN_SALE_QTY_03) AS ESPN_SALE_QTY_03
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_03),0), 0, 0, (SUM(ESPN_SALE_QTY_03) / MAX(TOT_ESPN_SALE_QTY_03))) AS ESPN_SALE_RATE_03
+		     , SUM(ESPN_SALE_QTY_04) AS ESPN_SALE_QTY_04
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_04),0), 0, 0, (SUM(ESPN_SALE_QTY_04) / MAX(TOT_ESPN_SALE_QTY_04))) AS ESPN_SALE_RATE_04
+		     , SUM(ESPN_SALE_QTY_05) AS ESPN_SALE_QTY_05
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_05),0), 0, 0, (SUM(ESPN_SALE_QTY_05) / MAX(TOT_ESPN_SALE_QTY_05))) AS ESPN_SALE_RATE_05
+		     , SUM(MM_SALE_QTY) AS ACTUAL_SALE_QTY
+		     , DECODE(NVL(MAX(TOT_MM_SALE_QTY),0), 0, 0, (SUM(MM_SALE_QTY) / MAX(TOT_MM_SALE_QTY))) AS ACTUAL_SALE_RATE                      --당월실적 구성비
+		     , DECODE(SUM(YYYY_TRG_SALE_CONV_QTY), 0, 0, ROUND((SUM(MM_SALE_QTY) / SUM(YYYY_TRG_SALE_CONV_QTY)), 4)) AS TRG_PRGS_RATE        --목표대비 진척률
+		     , DECODE(SUM(ESPN_SALE_QTY), 0, 0, ROUND((SUM(MM_SALE_QTY) / SUM(ESPN_SALE_QTY)), 4)) AS ESPN_PRGS_RATE                         --예상대비 진척률
+		     , SUM(BYM_ACT_SALE_QTY) AS BYM_ACT_SALE_QTY                                                                                     --전년동기
+		     , DECODE(SUM(MM_SALE_QTY), 0, 0, (SUM(MM_SALE_QTY) - SUM(BYM_ACT_SALE_QTY)) / SUM(MM_SALE_QTY)) AS BYM_ACT_SALE_QTY_RATE        --전년동기 증감 
+		     , SUM(BM_ACT_SALE_QTY) AS BM_ACT_SALE_QTY                                                                                       --전월동기
+		     , DECODE(SUM(MM_SALE_QTY), 0, 0, (SUM(MM_SALE_QTY) - SUM(BM_ACT_SALE_QTY)) / SUM(MM_SALE_QTY)) AS BM_ACT_SALE_QTY_RATE          --전월동기 증감
+		     , SUM(MAX_SALE_QTY) AS MAX_SALE_QTY                                                                                             --연중최대
+		     , SUM(ACTUAL_BF1M_SALE_AVG_QTY) AS ACTUAL_BF1M_SALE_AVG_QTY                                                                     --전월기준
+		     , SUM(ACTUAL_BF3M_SALE_AVG_QTY) AS ACTUAL_BF3M_SALE_AVG_QTY                                                                     --최근3개월
+		     , SUM(ACTUAL_20D_SALE_AVG_QTY) AS ACTUAL_20D_SALE_AVG_QTY                                                                       --최근20일
+		     , SUM(ACTUAL_5D_SALE_AVG_QTY) AS ACTUAL_5D_SALE_AVG_QTY                                                                         --최근5일
+		     , SUM(ACTUAL_BD_SALE_QTY) AS ACTUAL_BD_SALE_QTY                                                                                 --전일(실제 당일)
+		     , DECODE(NVL(SUM(ACTUAL_BF1M_SALE_AVG_QTY),0), 0, 0, (SUM(ACTUAL_5D_SALE_AVG_QTY) - SUM(ACTUAL_BF1M_SALE_AVG_QTY)) / SUM(ACTUAL_BF1M_SALE_AVG_QTY)) AS DIFF_01    --전월대비 5일 증감
+		     , DECODE(NVL(SUM(ACTUAL_20D_SALE_AVG_QTY),0), 0, 0, (SUM(ACTUAL_5D_SALE_AVG_QTY) - SUM(ACTUAL_20D_SALE_AVG_QTY)) / SUM(ACTUAL_20D_SALE_AVG_QTY)) AS DIFF_02     --20일대비 5일 증감
+		     , SUM(ESPN_SALE_QTY_ADD) AS ESPN_SALE_QTY_ADD                                                                                   --화면에서 선택된 기준판매 항목
+		  FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		          FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		         WHERE MENU_CD = 'M01020') T1 INNER JOIN
+		       TBL_ACTUAL_SUM T2
+		                            ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		                           AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		                           AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		                           AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		                           AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE)) INNER JOIN
+		       TBL_LIQUOR_TOTAL T3  ON T1.LIQUOR_CODE = T3.LIQUOR_CODE
+		 GROUP BY T1.LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ
+		
+		 UNION ALL
+		
+		--관심품목별 데이터 조회
+		SELECT T1.LIQUOR_CODE, '' AS "Def"
+		     , DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', '') AS LIQUOR_DESC
+		     , TO_NUMBER(SEQ) AS SEQ, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT
+		     , SUM(YYYY_TRG_SALE_CONV_QTY) AS YYYY_TRG_SALE_QTY
+		     , DECODE(NVL(MAX(TOT_YYYY_TRG_SALE_CONV_QTY),0), 0, 0, (SUM(YYYY_TRG_SALE_CONV_QTY) / MAX(TOT_YYYY_TRG_SALE_CONV_QTY))) AS TRG_SALE_RATE
+		     , SUM(MM_SALE_PLAN_QTY) AS MM_SALE_PLAN_QTY
+		     , DECODE(NVL(MAX(TOT_MM_SALE_PLAN_QTY),0), 0, 0, (SUM(MM_SALE_PLAN_QTY) / MAX(TOT_MM_SALE_PLAN_QTY))) AS TOTAL_SALE_PLAN_RATE
+		     , SUM(ESPN_SALE_QTY_01) AS ESPN_SALE_QTY_01
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_01),0), 0, 0, (SUM(ESPN_SALE_QTY_01) / MAX(TOT_ESPN_SALE_QTY_01))) AS ESPN_SALE_RATE_01
+		     , SUM(ESPN_SALE_QTY_02) AS ESPN_SALE_QTY_02
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_02),0), 0, 0, (SUM(ESPN_SALE_QTY_02) / MAX(TOT_ESPN_SALE_QTY_02))) AS ESPN_SALE_RATE_02
+		     , SUM(ESPN_SALE_QTY_03) AS ESPN_SALE_QTY_03
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_03),0), 0, 0, (SUM(ESPN_SALE_QTY_03) / MAX(TOT_ESPN_SALE_QTY_03))) AS ESPN_SALE_RATE_03
+		     , SUM(ESPN_SALE_QTY_04) AS ESPN_SALE_QTY_04
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_04),0), 0, 0, (SUM(ESPN_SALE_QTY_04) / MAX(TOT_ESPN_SALE_QTY_04))) AS ESPN_SALE_RATE_04
+		     , SUM(ESPN_SALE_QTY_05) AS ESPN_SALE_QTY_05
+		     , DECODE(NVL(MAX(TOT_ESPN_SALE_QTY_05),0), 0, 0, (SUM(ESPN_SALE_QTY_05) / MAX(TOT_ESPN_SALE_QTY_05))) AS ESPN_SALE_RATE_05
+		     , SUM(MM_SALE_QTY) AS ACTUAL_SALE_QTY
+		     , DECODE(NVL(MAX(TOT_MM_SALE_QTY),0), 0, 0, (SUM(MM_SALE_QTY) / MAX(TOT_MM_SALE_QTY))) AS ACTUAL_SALE_RATE                      --당월실적 구성비
+		     , DECODE(SUM(YYYY_TRG_SALE_CONV_QTY), 0, 0, ROUND((SUM(MM_SALE_QTY) / SUM(YYYY_TRG_SALE_CONV_QTY)), 4)) AS TRG_PRGS_RATE        --목표대비 진척률
+		     , DECODE(SUM(ESPN_SALE_QTY), 0, 0, ROUND((SUM(MM_SALE_QTY) / SUM(ESPN_SALE_QTY)), 4)) AS ESPN_PRGS_RATE                         --예상대비 진척률
+		     , SUM(BYM_ACT_SALE_QTY) AS BYM_ACT_SALE_QTY                                                                                     --전년동기
+		     , DECODE(SUM(MM_SALE_QTY), 0, 0, (SUM(MM_SALE_QTY) - SUM(BYM_ACT_SALE_QTY)) / SUM(MM_SALE_QTY)) AS BYM_ACT_SALE_QTY_RATE        --전년동기 증감 
+		     , SUM(BM_ACT_SALE_QTY) AS BM_ACT_SALE_QTY                                                                                       --전월동기
+		     , DECODE(SUM(MM_SALE_QTY), 0, 0, (SUM(MM_SALE_QTY) - SUM(BM_ACT_SALE_QTY)) / SUM(MM_SALE_QTY)) AS BM_ACT_SALE_QTY_RATE          --전월동기 증감
+		     , SUM(MAX_SALE_QTY) AS MAX_SALE_QTY                                                                                             --연중최대
+		     , SUM(ACTUAL_BF1M_SALE_AVG_QTY) AS ACTUAL_BF1M_SALE_AVG_QTY                                                                     --전월기준
+		     , SUM(ACTUAL_BF3M_SALE_AVG_QTY) AS ACTUAL_BF3M_SALE_AVG_QTY                                                                     --최근3개월
+		     , SUM(ACTUAL_20D_SALE_AVG_QTY) AS ACTUAL_20D_SALE_AVG_QTY                                                                       --최근20일
+		     , SUM(ACTUAL_5D_SALE_AVG_QTY) AS ACTUAL_5D_SALE_AVG_QTY                                                                         --최근5일
+		     , SUM(ACTUAL_BD_SALE_QTY) AS ACTUAL_BD_SALE_QTY                                                                                 --전일(실제 당일)
+		     , DECODE(NVL(SUM(ACTUAL_BF1M_SALE_AVG_QTY),0), 0, 0, (SUM(ACTUAL_5D_SALE_AVG_QTY) - SUM(ACTUAL_BF1M_SALE_AVG_QTY)) / SUM(ACTUAL_BF1M_SALE_AVG_QTY)) AS DIFF_01    --전월대비 5일 증감
+		     , DECODE(NVL(SUM(ACTUAL_20D_SALE_AVG_QTY),0), 0, 0, (SUM(ACTUAL_5D_SALE_AVG_QTY) - SUM(ACTUAL_20D_SALE_AVG_QTY)) / SUM(ACTUAL_20D_SALE_AVG_QTY)) AS DIFF_02     --20일대비 5일 증감
+		     , SUM(ESPN_SALE_QTY_ADD) AS ESPN_SALE_QTY_ADD                                                                                   --화면에서 선택된 기준판매 항목
+		  FROM (SELECT LIQUOR_CODE, ABBR_ITEM_NAME GUBUN1_TXT, ABBR_ITEM_NAME GUBUN2_TXT, ABBR_ITEM_NAME GUBUN3_TXT, ABBR_ITEM_NAME GUBUN4_TXT, '99999999'||A.ORDER_SEQ AS SEQ
+		             , A.ITEM_CODE
+		          FROM SCMU.W_SOP_TB_INTEREST_ITEM_M A INNER JOIN
+		               EDW.W_CM_TB_FG_ITEM_M B ON A.ITEM_CODE = B.ITEM_CODE
+		         WHERE A.PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)
+		           AND A.INP_DGR = (SELECT MAX(INP_DGR) FROM SCMU.W_SOP_TB_INTEREST_ITEM_M WHERE PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6))) T1 INNER JOIN
+		       TBL_ACTUAL_SUM T2
+		                            ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		                           AND T1.ITEM_CODE = T2.ITEM_CODE INNER JOIN
+		       TBL_LIQUOR_TOTAL T3  ON T1.LIQUOR_CODE = T3.LIQUOR_CODE
+		 GROUP BY T1.LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ
+		 ORDER BY LIQUOR_CODE, SEQ
+    </select>
+    
+    <!-- 영본 판매 예상량 차수 조회 -->
+    <select id="searchEspnSaleInpDgr" parameterType="map" resultType="map">
+        SELECT DISTINCT INP_DGR /* com.hitejinro.snop.work.dao.M01020DaoMapper.searchEspnSaleInpDgr */
+          FROM SCMU.W_SOP_TB_ESPN_SALE_F
+         WHERE PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)
+         ORDER BY 1
+    </select>
+
+    <!-- 데이터 조회 : 기준판매항목조회 -->
+    <select id="getStdSaleDfnList" parameterType="map" resultType="map">
+        <![CDATA[
+            SELECT /* com.hitejinro.snop.work.dao.M01020DaoMapper.getStdSaleDfnList */
+                   '!ALL' AS CODE
+                 , '선택하세요' AS NAME
+              FROM DUAL
+             UNION ALL
+            SELECT STD_SALE_DFNT_CODE AS CODE
+                 , SALE_DFNT_NAME AS NAME
+              FROM W_SOP_TB_STD_SALE_DFNT_M
+             WHERE USE_YN = 'Y'
+             ORDER BY 1
+        ]]>
+    </select>
+
+    <!-- 데이터 조회 : 판매현황 관리 그리드 -->
+    <select id="searchSaleCurstMng" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M01020DaoMapper.searchSaleCurstMng */
+               ITEM_GROUP_MNG_SEQNO DAILY_SALES_MNG_SEQNO
+             , LIQUOR_CODE
+             , GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT
+             , SEQ
+             , BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+             --, ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+          FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+         WHERE MENU_CD = 'M01020'
+         ORDER BY LIQUOR_CODE, SEQ, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, DAILY_SALES_MNG_SEQNO
+    </select>
+
+    <!-- 데이터 저장 : 판매현황 관리의 생성 -->
+    <update id="insertSaleCurstMng" parameterType="map">
+        INSERT /* com.hitejinro.snop.work.dao.M01020DaoMapper.insertSaleCurstMng */
+          INTO SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+               (MENU_CD, ITEM_GROUP_MNG_SEQNO
+                , LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT
+                , SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+                , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+        VALUES ('M01020', SCMU.SEQ_SOP_DAILY_SALES_MNG_SEQNO.NEXTVAL
+                , #{LIQUOR_CODE, jdbcType=VARCHAR}, #{GUBUN1_TXT, jdbcType=VARCHAR}, #{GUBUN2_TXT, jdbcType=VARCHAR}, #{GUBUN3_TXT, jdbcType=VARCHAR}, #{GUBUN4_TXT, jdbcType=VARCHAR}
+                , #{SEQ, jdbcType=VARCHAR}, #{BRAND_CODE, jdbcType=VARCHAR}, #{USAGE_CODE, jdbcType=VARCHAR}, #{VESSEL_CODE, jdbcType=VARCHAR}, #{VOLUME_VALUE, jdbcType=VARCHAR}
+                , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+
+    <!-- 데이터 저장 : 판매현황 관리의 수정 -->
+    <update id="updateSaleCurstMng" parameterType="map">
+        UPDATE /* com.hitejinro.snop.work.dao.M01020DaoMapper.updateSaleCurstMng */
+               SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+           SET LIQUOR_CODE      = #{LIQUOR_CODE, jdbcType=VARCHAR}
+             , GUBUN1_TXT       = #{GUBUN1_TXT, jdbcType=VARCHAR}
+             , GUBUN2_TXT       = #{GUBUN2_TXT, jdbcType=VARCHAR}
+             , GUBUN3_TXT       = #{GUBUN3_TXT, jdbcType=VARCHAR}
+             , GUBUN4_TXT       = #{GUBUN4_TXT, jdbcType=VARCHAR}
+             , SEQ              = #{SEQ, jdbcType=VARCHAR}
+             , BRAND_CODE       = #{BRAND_CODE, jdbcType=VARCHAR}
+             , USAGE_CODE       = #{USAGE_CODE, jdbcType=VARCHAR}
+             , VESSEL_CODE      = #{VESSEL_CODE, jdbcType=VARCHAR}
+             , VOLUME_VALUE     = #{VOLUME_VALUE, jdbcType=VARCHAR}
+             , LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+             , LAST_UPDATE_DATE = SYSDATE
+         WHERE 1 = 1
+           AND MENU_CD = 'M01020'
+           AND ITEM_GROUP_MNG_SEQNO = #{DAILY_SALES_MNG_SEQNO, jdbcType=VARCHAR}
+    </update>
+
+    <!-- 데이터 저장 : 판매현황 관리의 삭제 -->
+    <delete id="deleteSaleCurstMng" parameterType="map">
+        DELETE /* com.hitejinro.snop.work.dao.M01020DaoMapper.deleteSaleCurstMng */
+          FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+         WHERE 1 = 1
+           AND MENU_CD = 'M01020'
+           AND ITEM_GROUP_MNG_SEQNO = #{DAILY_SALES_MNG_SEQNO, jdbcType=VARCHAR}
+    </delete>
+
+    <!-- 데이터 조회 : 판매량관리항목조회 -->
+    <select id="searchStdSaleDfntMng1" parameterType="map" resultType="map">
+        <![CDATA[
+            SELECT /* com.hitejinro.snop.work.dao.M01020DaoMapper.searchStdSaleDfntMng1 */
+                   T1.STD_SALE_DFNT_CODE
+                 , T2.SALE_DFNT_NAME
+                 , T1.VIEW_TXT
+                 , T1.ORDER_SEQ
+              FROM W_SOP_TB_STD_DD_SALES_MNG_F T1
+                 , W_SOP_TB_STD_SALE_DFNT_M T2
+             WHERE T1.STD_SALE_DFNT_CODE NOT IN ('DFT001', 'DFT002')
+               AND T1.STD_SALE_DFNT_CODE = T2.STD_SALE_DFNT_CODE
+             ORDER BY T1.ORDER_SEQ
+        ]]>
+    </select>
+
+    <!-- 데이터 조회 : 마감count조회 -->
+    <select id="searchDayMagamCnt" parameterType="map" resultType="map">
+        <![CDATA[
+            SELECT /* com.hitejinro.snop.work.dao.M01020DaoMapper.searchDayMagamCnt */
+                   CASE WHEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), 5,1) = '0' THEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''),6,1)
+                        ELSE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), 5,2)
+                   END || '월 ' ||
+                   CASE WHEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), 7,1) = '0' THEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''),8,1)
+                        ELSE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-', ''), 7,2)
+                   END || '일' AS NOW_DAY
+                 , SUM(NOW_DAY_CNT) NOW_DAY_CNT
+                 , ROUND(SUM(NOW_DAY_CNT) / SUM(TOTAL_DAY_CNT) * 100, 1) AS COMP_RATE
+                 , SUM(MAGAM_DAY_CNT) MAGAM_DAY_CNT
+                 , SUM(TOTAL_DAY_CNT) TOTAL_DAY_CNT
+              FROM (SELECT COUNT(*) AS NOW_DAY_CNT
+                         , 0 AS MAGAM_DAY_CNT
+                         , 0 AS TOTAL_DAY_CNT
+                      FROM SCMU.W_SOP_VW_CALENDAR_M
+                     WHERE YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)||'01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                       AND BUSINESS_DAY_FLAG = 'Y'
+                     UNION ALL
+                    SELECT 0 AS NOW_DAY_CNT
+                         , COUNT(*) AS MAGAM_DAY_CNT
+                         , 0 AS TOTAL_DAY_CNT
+                      FROM SCMU.W_SOP_VW_CALENDAR_M
+                     WHERE YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)||'01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                       AND BUSINESS_DAY_FLAG = 'Y'
+                     UNION ALL
+                    SELECT 0 AS NOW_DAY_CNT
+                         , 0 AS MAGAM_DAY_CNT
+                         , COUNT(*) AS TOTAL_DAY_CNT
+                      FROM SCMU.W_SOP_VW_CALENDAR_M
+                     WHERE YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)
+                       AND BUSINESS_DAY_FLAG = 'Y')
+        ]]>
+    </select>
+
+
+
+
+
+
+    <!-- 데이터 조회 : 차감항목조회 -->
+    <select id="searchStdSaleDfntMng2" parameterType="map" resultType="map">
+        <![CDATA[
+            SELECT /* com.hitejinro.snop.work.dao.M01020DaoMapper.searchStdSaleDfntMng2 */
+                   T1.STD_SALE_DFNT_CODE
+                 , '차감항목'||T1.ORDER_SEQ AS SALE_DFNT_NAME
+                 , NVL(T1.VIEW_TXT,'') AS VIEW_TXT
+                 , NVL(T1.DIF_SEQ_1,'') AS DIF_SEQ_1
+                 , NVL(T1.DIF_SEQ_2,'') AS DIF_SEQ_2
+              FROM W_SOP_TB_STD_DD_SALES_MNG_F T1
+             WHERE T1.STD_SALE_DFNT_CODE IN ('DFT001', 'DFT002')
+             ORDER BY T1.ORDER_SEQ
+        ]]>
+    </select>
+
+    <!-- 데이터 저장 : 판매량 항목 관리의 생성 -->
+    <update id="insertStdSaleDfntMng" parameterType="map">
+        INSERT /* com.hitejinro.snop.work.dao.M01020DaoMapper.insertStdSaleDfntMng */
+          INTO SCMU.W_SOP_TB_STD_DD_SALES_MNG_F
+               (  STD_SALE_DFNT_CODE, VIEW_TXT, ORDER_SEQ
+                , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+        VALUES (  #{STD_SALE_DFNT_CODE, jdbcType=VARCHAR}, #{VIEW_TXT, jdbcType=VARCHAR}, #{ORDER_SEQ, jdbcType=VARCHAR}
+                , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+
+    <!-- 데이터 저장 : 판매량 항목 관리의 수정 -->
+    <update id="updateStdSaleDfntMng" parameterType="map">
+        UPDATE /* com.hitejinro.snop.work.dao.M01020DaoMapper.updateStdSaleDfntMng */
+               SCMU.W_SOP_TB_STD_DD_SALES_MNG_F
+           SET VIEW_TXT         = #{VIEW_TXT, jdbcType=VARCHAR}
+             , ORDER_SEQ        = #{ORDER_SEQ, jdbcType=VARCHAR}
+             , LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+             , LAST_UPDATE_DATE = SYSDATE
+         WHERE 1 = 1
+           AND STD_SALE_DFNT_CODE = #{STD_SALE_DFNT_CODE, jdbcType=VARCHAR}
+    </update>
+
+    <!-- 데이터 저장 : 판매량 항목 관리의 삭제 -->
+    <delete id="deleteStdSaleDfntMng" parameterType="map">
+        DELETE /* com.hitejinro.snop.work.dao.M01020DaoMapper.deleteStdSaleDfntMng */
+          FROM SCMU.W_SOP_TB_STD_DD_SALES_MNG_F
+         WHERE 1 = 1
+           AND STD_SALE_DFNT_CODE = #{STD_SALE_DFNT_CODE, jdbcType=VARCHAR}
+    </delete>
+
+    <!-- 데이터 저장 : 차감 항목 관리의 수정 -->
+    <update id="updateStdSaleDfntMng2" parameterType="map">
+        UPDATE /* com.hitejinro.snop.work.dao.M01020DaoMapper.updateStdSaleDfntMng */
+               SCMU.W_SOP_TB_STD_DD_SALES_MNG_F
+           SET VIEW_TXT         = #{VIEW_TXT, jdbcType=VARCHAR}
+             , DIF_SEQ_1        = #{DIF_SEQ_1, jdbcType=VARCHAR}
+             , DIF_SEQ_2        = #{DIF_SEQ_2, jdbcType=VARCHAR}
+             , LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+             , LAST_UPDATE_DATE = SYSDATE
+         WHERE 1 = 1
+           AND STD_SALE_DFNT_CODE = #{STD_SALE_DFNT_CODE, jdbcType=VARCHAR}
+    </update>
+
+
+
+
+
+
+
+
+    <select id="search_OLD" parameterType="map" resultType="map">
+        WITH TBL_ACT_SALE_QTY AS ( /* com.hitejinro.snop.work.dao.M01020DaoMapper.search */
+        SELECT A.ITEM_CODE
+             , SUM(A.ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+          FROM (
+                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                         WHERE 1=1
+                           AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6)||'01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                           AND A.LIQUOR_CODE IN ('10','20')
+        <if test="liquorCode != null and liquorCode != '!ALL'">
+                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        </if>
+                           AND A.ITEM_TYPE   IN ('FG', 'PH')
+                           AND A.MARKET_TYPE = 'D'
+                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+               ) A
+          JOIN EDW.W_CM_TB_FG_ITEM_M     B
+            ON A.ITEM_CODE = B.ITEM_CODE
+         WHERE 1 = 1
+           AND BRAND_CODE != '27'
+
+        <if test="mainFlag != null and mainFlag != '!ALL'">
+           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+        </if>
+         GROUP BY A.ITEM_CODE
+         )
+        , TBL_BD_ACTUAL_SALES  AS (
+        SELECT A.ITEM_CODE
+             , SUM(A.ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+          FROM (
+                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                         WHERE 1=1
+                           AND A.PERIOD_YYYYMMDD = REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                           AND A.LIQUOR_CODE IN ('10','20')
+        <if test="liquorCode != null and liquorCode != '!ALL'">
+                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        </if>
+                           AND A.ITEM_TYPE   IN ('FG', 'PH')
+                           AND A.MARKET_TYPE = 'D'
+                         GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+               ) A
+          JOIN EDW.W_CM_TB_FG_ITEM_M     C
+            ON A.ITEM_CODE = C.ITEM_CODE
+         WHERE 1 = 1
+           AND C.BRAND_CODE != '27'
+        <if test="mainFlag != null and mainFlag != '!ALL'">
+           AND C.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+        </if>
+         GROUP BY A.ITEM_CODE
+        )
+        , TBL_BYM_ACTUAL_SALES  AS (
+        SELECT A.ITEM_CODE
+             , SUM(A.ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+          FROM (
+                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                         WHERE 1=1
+                           AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -12), 'YYYYMMDD'), 1, 6)||'01' AND TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -12), 'YYYYMMDD')
+                           AND A.LIQUOR_CODE IN ('10','20')
+        <if test="liquorCode != null and liquorCode != '!ALL'">
+                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        </if>
+                           AND A.ITEM_TYPE   IN ('FG', 'PH')
+                           AND A.MARKET_TYPE = 'D'
+                         GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+               ) A
+          JOIN EDW.W_CM_TB_FG_ITEM_M B
+            ON A.ITEM_CODE = B.ITEM_CODE
+         WHERE 1 = 1
+           AND B.BRAND_CODE != '27'
+        <if test="mainFlag != null and mainFlag != '!ALL'">
+           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+        </if>
+         GROUP BY A.ITEM_CODE
+        )
+        , TBL_BM_ACTUAL_SALES AS (
+        SELECT A.ITEM_CODE
+             , SUM(A.ACTUAL_SALE_QTY) AS ACTUAL_SALE_QTY
+          FROM (
+                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                         WHERE 1=1
+                           AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -1), 'YYYYMMDD'), 1, 6)||'01' AND TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),'YYYYMMDD'), -1), 'YYYYMMDD')
+                           AND A.LIQUOR_CODE IN ('10','20')
+        <if test="liquorCode != null and liquorCode != '!ALL'">
+                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        </if>
+                           AND A.ITEM_TYPE   IN ('FG', 'PH')
+                           AND A.MARKET_TYPE = 'D'
+                         GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+               ) A
+          JOIN EDW.W_CM_TB_FG_ITEM_M     B
+            ON A.ITEM_CODE = B.ITEM_CODE
+         WHERE 1 = 1
+           AND B.BRAND_CODE != '27'
+        <if test="mainFlag != null and mainFlag != '!ALL'">
+           AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+        </if>
+         GROUP BY A.ITEM_CODE
+        )
+        , TBL_ESPN_SALE AS (
+        SELECT A.ITEM_CODE
+             , A.ESPN_SALE_QTY_01
+             , A.ESPN_SALE_QTY_02
+             , A.ESPN_SALE_QTY_03
+             , A.ESPN_SALE_QTY_04
+             , A.ESPN_SALE_QTY_05
+          FROM (
+                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                             , SUM(DECODE(A.INP_DGR, 1, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_01
+                             , SUM(DECODE(A.INP_DGR, 2, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_02
+                             , SUM(DECODE(A.INP_DGR, 3, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_03
+                             , SUM(DECODE(A.INP_DGR, 4, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_04
+                             , SUM(DECODE(A.INP_DGR, 5, A.ESPN_SALE_QTY, 0)) AS ESPN_SALE_QTY_05
+                          FROM SCMU.W_SOP_TB_ESPN_SALE_F A
+                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                         WHERE 1 = 1
+                           AND A.PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6)
+                           AND A.PERIOD_MMWW = '00'
+                         GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+               ) A
+          JOIN EDW.W_CM_TB_FG_ITEM_M B
+            ON A.ITEM_CODE = B.ITEM_CODE
+         WHERE 1 = 1
+           AND B.BRAND_CODE != '27'
+        <if test="mainFlag != null and mainFlag != '!ALL'">
+           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+        </if>
+        )
+      , TBL_TOTAL_MAX_SALE_QTY AS (
+            SELECT LIQUOR_CODE
+                 , ITEM_CODE
+                 , MAX(TOTAL_MAX_SALE_QTY) AS TOTAL_MAX_SALE_QTY
+              FROM (
+                    SELECT B.LIQUOR_CODE, B.ITEM_CODE, A.PERIOD_YYYYMMDD
+                         , SUM(A.ACTUAL_SALE_QTY * B.UOM_CONVERSION_VALUE) AS TOTAL_MAX_SALE_QTY
+                      FROM (
+                                    SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                         , A.PERIOD_YYYYMMDD
+                                         , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                      FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                 LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                        ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                     WHERE 1=1
+                                       AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 4)||'0101' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                                       AND A.LIQUOR_CODE IN ('10','20')
+        <if test="liquorCode != null and liquorCode != '!ALL'">
+                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+        </if>
+                                       AND A.ITEM_TYPE   IN ('FG', 'PH')
+                                       AND A.MARKET_TYPE = 'D'
+                                 GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                           ) A
+                      JOIN EDW.W_CM_TB_FG_ITEM_M     B
+                        ON A.ITEM_CODE = B.ITEM_CODE
+                     WHERE 1 = 1
+        <if test="mainFlag != null and mainFlag != '!ALL'">
+           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+        </if>
+                     GROUP BY B.LIQUOR_CODE, B.ITEM_CODE, A.PERIOD_YYYYMMDD
+                   )
+             GROUP BY LIQUOR_CODE, ITEM_CODE
+         )
+        <if test="stdSaleDfnt != null and stdSaleDfnt != '!ALL'">
+        , TBL_ESPN_SALE_QTY_ADD AS (
+        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+             , SUM(SCMU.FN_SOP_STD_SALE_DFN_QTY(A.PERIOD_YYYYMMDD, A.ITEM_CODE, #{stdSaleDfnt, jdbcType=VARCHAR})) AS ESPN_SALE_QTY_ADD
+          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+         WHERE 1=1
+           AND A.PERIOD_YYYYMMDD = REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+           AND A.LIQUOR_CODE IN ('10','20')
+           AND A.ITEM_TYPE IN ('FG', 'PH')
+           AND A.MARKET_TYPE = 'D'
+         GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+        )
+        </if>
+        SELECT T1.LIQUOR_CODE
+             , CASE WHEN GUBUN1_TXT = '전체' THEN '!ALL'
+                    WHEN GUBUN1_TXT = '소주류' THEN '!ALL'
+                    ELSE ''
+               END AS "Def"
+             , DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL) AS LIQUOR_DESC
+             , DECODE(GROUPING(T1.SEQ), 1, 1, T1.SEQ) SEQ
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN1_TXT) GUBUN1_TXT
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN2_TXT) GUBUN2_TXT
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN3_TXT) GUBUN3_TXT
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN4_TXT) GUBUN4_TXT
+             , DECODE(T1.SEQ, 0, T3.TOTAL_TRG_SALE_QTY, SUM(T2.YYYY_TRG_SALE_QTY)) AS YYYY_TRG_SALE_QTY
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_TRG_SALE_QTY, 0, 0, ROUND((SUM(T2.YYYY_TRG_SALE_QTY) / T3.TOTAL_TRG_SALE_QTY),4))) AS TRG_SALE_RATE
+             , DECODE(T1.SEQ, 0, T3.TOTAL_SALE_PLAN_QTY, SUM(T2.MM_SALE_PLAN_QTY)) AS MM_SALE_PLAN_QTY
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_SALE_PLAN_QTY, 0, 0, ROUND((SUM(T2.MM_SALE_PLAN_QTY) / T3.TOTAL_SALE_PLAN_QTY),4))) AS TOTAL_SALE_PLAN_RATE
+             <!-- 영본 예상 판매량 대략 월 5회 미만 입력 5회차까지 존재 가정하여 쿼리 생성 -->
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_01, SUM(ESPN_SALE_QTY_01)) AS ESPN_SALE_QTY_01        --영본판매예상량_01
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_01, 0, 0, ROUND((SUM(ESPN_SALE_QTY_01) / T3.TOTAL_ESPN_SALE_QTY_01), 4))) AS ESPN_SALE_RATE_01   --영본판매예상량구성비_01
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_02, SUM(ESPN_SALE_QTY_02)) AS ESPN_SALE_QTY_02        --영본판매예상량_02
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_02, 0, 0, ROUND((SUM(ESPN_SALE_QTY_02) / T3.TOTAL_ESPN_SALE_QTY_02), 4))) AS ESPN_SALE_RATE_02   --영본판매예상량구성비_02
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_03, SUM(ESPN_SALE_QTY_03)) AS ESPN_SALE_QTY_03        --영본판매예상량_03
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_03, 0, 0, ROUND((SUM(ESPN_SALE_QTY_03) / T3.TOTAL_ESPN_SALE_QTY_03), 4))) AS ESPN_SALE_RATE_03   --영본판매예상량구성비_03
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_04, SUM(ESPN_SALE_QTY_04)) AS ESPN_SALE_QTY_04        --영본판매예상량_04
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_04, 0, 0, ROUND((SUM(ESPN_SALE_QTY_04) / T3.TOTAL_ESPN_SALE_QTY_04), 4))) AS ESPN_SALE_RATE_04   --영본판매예상량구성비_04
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_05, SUM(ESPN_SALE_QTY_05)) AS ESPN_SALE_QTY_05        --영본판매예상량_05
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_05, 0, 0, ROUND((SUM(ESPN_SALE_QTY_05) / T3.TOTAL_ESPN_SALE_QTY_05), 4))) AS ESPN_SALE_RATE_05   --영본판매예상량구성비_05
+             <!-- 영본 예상 판매량 대략 월 5회 미만 입력 5회차까지 존재 가정하여 쿼리 생성 -->
+             , DECODE(T1.SEQ, 0, T3.TOTAL_ACT_SALE_QTY, SUM(T2.ACT_SALE_QTY)) AS ACTUAL_SALE_QTY     --당월실적
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ACT_SALE_QTY, 0, 0, ROUND((SUM(T2.ACT_SALE_QTY)/T3.TOTAL_ACT_SALE_QTY), 4))) AS ACTUAL_SALE_RATE       --당월실적구성비
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_TRG_SALE_QTY, 0, 0, ROUND((T3.TOTAL_ACT_SALE_QTY / T3.TOTAL_TRG_SALE_QTY), 4)), DECODE(SUM(T2.YYYY_TRG_SALE_QTY), 0, 0, ROUND((SUM(T2.ACT_SALE_QTY) / SUM(T2.YYYY_TRG_SALE_QTY)), 4))) AS TRG_PRGS_RATE    --목표대비 진척률
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_ESPN_SALE_QTY, 0, 0, ROUND((T3.TOTAL_ACT_SALE_QTY / T3.TOTAL_ESPN_SALE_QTY), 4)), DECODE(SUM(T2.ESPN_SALE_QTY), 0, 0, ROUND((SUM(T2.ACT_SALE_QTY) / SUM(T2.ESPN_SALE_QTY)), 4))) AS ESPN_PRGS_RATE     --예상대비 진척률
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BYM_ACT_SALE_QTY, SUM(BYM_ACT_SALE_QTY)) AS BYM_ACT_SALE_QTY                                          --전년동기
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_ACT_SALE_QTY, 0, 0, (T3.TOTAL_ACT_SALE_QTY - T3.TOTAL_BYM_ACT_SALE_QTY) / T3.TOTAL_ACT_SALE_QTY)
+                                         , DECODE(SUM(T2.ACT_SALE_QTY), 0, 0, (SUM(T2.ACT_SALE_QTY) - SUM(BYM_ACT_SALE_QTY)) / SUM(T2.ACT_SALE_QTY))) AS BYM_ACT_SALE_QTY_RATE        --전년동기 증감 
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BM_ACT_SALE_QTY, SUM(BM_ACT_SALE_QTY)) AS BM_ACT_SALE_QTY                                          --전월동기
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_ACT_SALE_QTY, 0, 0, (T3.TOTAL_ACT_SALE_QTY - T3.TOTAL_BM_ACT_SALE_QTY) / T3.TOTAL_ACT_SALE_QTY)
+                                         , DECODE(SUM(T2.ACT_SALE_QTY), 0, 0, (SUM(T2.ACT_SALE_QTY) - SUM(BM_ACT_SALE_QTY)) / SUM(T2.ACT_SALE_QTY))) AS BM_ACT_SALE_QTY_RATE        --전월동기 증감 
+             <!-- , DECODE(T1.SEQ, 0, (SELECT TOTAL_MAX_SALE_QTY FROM TBL_TOTAL_MAX_SALE_QTY WHERE LIQUOR_CODE = T1.LIQUOR_CODE), SUM(MAX_SALE_QTY)) AS MAX_SALE_QTY                                   년중최대 -->
+             , SUM(MAX_SALE_QTY) AS MAX_SALE_QTY																				 --년중최대
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY)) AS ACTUAL_BF1M_SALE_AVG_QTY           --전월 평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BF3M_SALE_AVG_QTY, SUM(ACTUAL_BF3M_SALE_AVG_QTY)) AS ACTUAL_BF3M_SALE_AVG_QTY           --직전3개월평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY)) AS ACTUAL_20D_SALE_AVG_QTY               --직전20일평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_5D_SALE_AVG_QTY, SUM(ACTUAL_5D_SALE_AVG_QTY)) AS ACTUAL_5D_SALE_AVG_QTY               --직전5일평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BD_SALE_QTY, SUM(ACTUAL_BD_SALE_QTY)) AS ACTUAL_BD_SALE_QTY                       --전일기준
+             , DECODE(DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY)), 0, 0, 
+                ROUND((DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY))
+                    - DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY)))
+                    / DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY))
+                   , 4)) AS DIFF_01
+             , DECODE(DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY)), 0, 0, 
+                ROUND((DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY))
+                    - DECODE(T1.SEQ, 0, T3.TOTAL_5D_SALE_AVG_QTY, SUM(ACTUAL_5D_SALE_AVG_QTY)))
+                    / DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY))
+                   , 4)) AS DIFF_02
+             , SUM(ESPN_SALE_QTY_ADD) AS ESPN_SALE_QTY_ADD
+          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+                 WHERE MENU_CD = 'M01020') T1
+          INNER JOIN
+               (SELECT SUBT1.LIQUOR_CODE, SUBT1.BRAND_CODE, SUBT1.USAGE_CODE, SUBT1.VESSEL_CODE, SUBT1.VOLUME_VALUE
+                     , SUBT2.YYYY_TRG_SALE_QTY
+                     , SUBT2.MM_SALE_PLAN_QTY
+                     , SUBT2.MAX_SALE_QTY
+                     , SUBT1.ACTUAL_SALE_QTY
+                     , SUBT1.ACT_SALE_QTY                                                 --당월실적
+                     , SUBT1.BYM_ACT_SALE_QTY                                             --전년동기
+                     , SUBT1.BM_ACT_SALE_QTY                                              --전월동기
+                     , SUBT1.ACTUAL_20D_SALE_AVG_QTY                                       --직전20일평균
+                     , SUBT1.ACTUAL_5D_SALE_AVG_QTY                                       --직전5일평균
+                     , SUBT1.ACTUAL_BF1M_SALE_AVG_QTY                                     --전월 평균
+                     , SUBT1.ACTUAL_BF3M_SALE_AVG_QTY                                     --직전3개월평균
+                     , SUBT1.ACTUAL_BD_SALE_QTY                                           --전일기준
+                     , SUBT2.ESPN_SALE_QTY
+                     , SUBT2.ESPN_SALE_QTY_01
+                     , SUBT2.ESPN_SALE_QTY_02
+                     , SUBT2.ESPN_SALE_QTY_03
+                     , SUBT2.ESPN_SALE_QTY_04
+                     , SUBT2.ESPN_SALE_QTY_05
+                     , SUBT1.ESPN_SALE_QTY_ADD
+                  FROM (SELECT /*월별 경영목표*/
+                               M2.LIQUOR_CODE, M2.BRAND_CODE, M2.USAGE_CODE, M2.VESSEL_CODE, M2.VOLUME_VALUE
+                             , SUM(ACTUAL_SALE_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_SALE_QTY                         --당일실적
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                                      FROM TBL_ACT_SALE_QTY
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) ACT_SALE_QTY          --당월실적
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                                      FROM TBL_BYM_ACTUAL_SALES 
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) BYM_ACT_SALE_QTY          --전년동기실적
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                                      FROM TBL_BM_ACTUAL_SALES 
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) BM_ACT_SALE_QTY          --전월동기
+                             , SUM(ACTUAL_20D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_20D_SALE_AVG_QTY           --직전20일평균
+                             , SUM(ACTUAL_5D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_5D_SALE_AVG_QTY           --직전5일평균
+                             , SUM(ACTUAL_BF1M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_BF1M_SALE_AVG_QTY       --전월 평균
+                             , SUM(ACTUAL_BF3M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_BF3M_SALE_AVG_QTY       --직전3개월평균
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY)
+                                      FROM TBL_BD_ACTUAL_SALES
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) ACTUAL_BD_SALE_QTY    --전일기준
+                        <if test="stdSaleDfnt != null and stdSaleDfnt != '!ALL'">
+                             , SUM((SELECT ESPN_SALE_QTY_ADD FROM TBL_ESPN_SALE_QTY_ADD WHERE ITEM_CODE = M1.ITEM_CODE)) AS ESPN_SALE_QTY_ADD
+                        </if>
+                        <if test="stdSaleDfnt != null and stdSaleDfnt == '!ALL'">
+                             , 0 AS ESPN_SALE_QTY_ADD
+                        </if>
+                          FROM (
+                                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                             , SUM(A.ACTUAL_20D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_20D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_5D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_5D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF1M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF1M_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF3M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF3M_SALE_AVG_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                         WHERE 1=1
+                                           AND A.PERIOD_YYYYMMDD = REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                                           AND A.LIQUOR_CODE IN ('10','20')
+                        <if test="liquorCode != null and liquorCode != '!ALL'">
+                                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                        </if>
+                                           AND A.ITEM_TYPE IN ('FG', 'PH')
+                                           AND A.MARKET_TYPE = 'D'
+                                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+                               ) M1
+                             , EDW.W_CM_TB_FG_ITEM_M M2
+                         WHERE 1=1
+                        <if test="mainFlag != null and mainFlag != '!ALL'">
+                           AND M2.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                        </if>
+                           AND M1.ITEM_CODE = M2.ITEM_CODE
+                           AND M2.BRAND_CODE != '27'
+                         GROUP BY M2.LIQUOR_CODE, M2.BRAND_CODE, M2.USAGE_CODE, M2.VESSEL_CODE, M2.VOLUME_VALUE) SUBT1
+                     , (SELECT T1.LIQUOR_CODE, T1.BRAND_CODE, T1.USAGE_CODE, T1.VESSEL_CODE, T1.VOLUME_VALUE
+                             , SUM(YYYY_TRG_SALE_QTY) YYYY_TRG_SALE_QTY --경영목표
+                             , SUM(MM_SALE_PLAN_QTY) MM_SALE_PLAN_QTY   --월간판매계획
+                             , MAX(ACTUAL_SALE_QTY) MAX_SALE_QTY        --년중최대
+                             , SUM(T1.ESPN_SALE_QTY) ESPN_SALE_QTY
+                             , SUM(ESPN_SALE_QTY_01) ESPN_SALE_QTY_01
+                             , SUM(ESPN_SALE_QTY_02) ESPN_SALE_QTY_02
+                             , SUM(ESPN_SALE_QTY_03) ESPN_SALE_QTY_03
+                             , SUM(ESPN_SALE_QTY_04) ESPN_SALE_QTY_04
+                             , SUM(ESPN_SALE_QTY_05) ESPN_SALE_QTY_05
+                          FROM (SELECT /*월별 경영목표*/
+                                       M1.ITEM_CODE, M2.LIQUOR_CODE, M2.BRAND_CODE, M2.USAGE_CODE, M2.VESSEL_CODE, M2.VOLUME_VALUE
+                                     , SUM(M1.YYYY_TRG_SALE_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                     , SUM(M1.MM_SALE_PLAN_QTY * M2.UOM_CONVERSION_VALUE) MM_SALE_PLAN_QTY   --월간판매계획
+                                     <!-- , MAX(M1.ACTUAL_SALE_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_SALE_QTY -->     --년중최대
+                                     , (SELECT TOTAL_MAX_SALE_QTY FROM TBL_TOTAL_MAX_SALE_QTY WHERE LIQUOR_CODE = M2.LIQUOR_CODE AND ITEM_CODE = M1.ITEM_CODE) AS ACTUAL_SALE_QTY --년중최대
+                                     , SUM(M1.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                  FROM (
+                                                SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                                     , A.PERIOD_YYYYMMDD
+                                                     , SUM(A.YYYY_TRG_SALE_CONV_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                                     , SUM(A.MM_SALE_PLAN_QTY * A.UOM_CONVERSION_VALUE) MM_SALE_PLAN_QTY   --월간판매계획
+                                                     , SUM(A.ACTUAL_SALE_QTY * A.UOM_CONVERSION_VALUE) ACTUAL_SALE_QTY
+                                                     , SUM(A.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                                  FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                             LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                                    ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                                 WHERE 1=1
+                                                   AND A.PERIOD_YYYYMMDD LIKE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)||'%'
+                                                   AND A.LIQUOR_CODE IN ('10','20')
+                                <if test="liquorCode != null and liquorCode != '!ALL'">
+                                                   AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                                </if>
+                                                   AND A.ITEM_TYPE IN ('FG', 'PH')
+                                                   AND A.MARKET_TYPE = 'D'
+                                             GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                                       ) M1
+                                     , EDW.W_CM_TB_FG_ITEM_M M2
+                                 WHERE 1=1
+                                <if test="mainFlag != null and mainFlag != '!ALL'">
+                                   AND M2.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                                </if>
+                                   AND M1.ITEM_CODE = M2.ITEM_CODE
+                                   AND M2.BRAND_CODE != '27'
+                                 GROUP BY M1.ITEM_CODE, M2.LIQUOR_CODE, M2.BRAND_CODE, M2.USAGE_CODE, M2.VESSEL_CODE, M2.VOLUME_VALUE ) T1
+                             , TBL_ESPN_SALE T2
+                         WHERE 1=1
+                           AND T1.ITEM_CODE = T2.ITEM_CODE(+)
+                         GROUP BY T1.LIQUOR_CODE, T1.BRAND_CODE, T1.USAGE_CODE, T1.VESSEL_CODE, T1.VOLUME_VALUE) SUBT2
+                 WHERE 1=1
+                   AND SUBT1.LIQUOR_CODE = SUBT2.LIQUOR_CODE
+                   AND SUBT1.BRAND_CODE = SUBT2.BRAND_CODE
+                   AND SUBT1.USAGE_CODE = SUBT2.USAGE_CODE
+                   AND SUBT1.VESSEL_CODE = SUBT2.VESSEL_CODE
+                   AND SUBT1.VOLUME_VALUE = SUBT2.VOLUME_VALUE) T2
+            ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+           AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+           AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+           AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+           AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+         INNER JOIN
+               (SELECT M1.LIQUOR_CODE 
+                     , SUM(TOTAL_TRG_SALE_QTY) TOTAL_TRG_SALE_QTY                --전체경영목표
+                     , SUM(TOTAL_SALE_PLAN_QTY) TOTAL_SALE_PLAN_QTY                --전체판매계획
+                     , SUM(TOTAL_SALE_QTY) TOTAL_SALE_QTY                      --전체당월실적
+                     , SUM(TOTAL_20D_SALE_AVG_QTY) TOTAL_20D_SALE_AVG_QTY       --직전5일평균
+                     , SUM(TOTAL_5D_SALE_AVG_QTY) TOTAL_5D_SALE_AVG_QTY       --직전5일평균
+                     , SUM(TOTAL_BF1M_SALE_AVG_QTY) TOTAL_BF1M_SALE_AVG_QTY   --전월 평균
+                     , SUM(TOTAL_BF3M_SALE_AVG_QTY) TOTAL_BF3M_SALE_AVG_QTY   --직전3개월평균
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                              FROM TBL_ACT_SALE_QTY
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_ACT_SALE_QTY          --전체당월실적
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                              FROM TBL_BYM_ACTUAL_SALES
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_BYM_ACT_SALE_QTY          --전년동기실적
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                              FROM TBL_BM_ACTUAL_SALES
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_BM_ACT_SALE_QTY          --전월동기
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY)
+                              FROM TBL_BD_ACTUAL_SALES
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_BD_SALE_QTY    --전일기준
+                     , SUM(TOTAL_ESPN_SALE_QTY) TOTAL_ESPN_SALE_QTY
+                     , SUM(ESPN_SALE_QTY_01) TOTAL_ESPN_SALE_QTY_01
+                     , SUM(ESPN_SALE_QTY_02) TOTAL_ESPN_SALE_QTY_02
+                     , SUM(ESPN_SALE_QTY_03) TOTAL_ESPN_SALE_QTY_03
+                     , SUM(ESPN_SALE_QTY_04) TOTAL_ESPN_SALE_QTY_04
+                     , SUM(ESPN_SALE_QTY_05) TOTAL_ESPN_SALE_QTY_05
+                  FROM (SELECT M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE
+                             , SUM(YYYY_TRG_SALE_QTY) TOTAL_TRG_SALE_QTY                --전체경영목표
+                             , SUM(MM_SALE_PLAN_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_SALE_PLAN_QTY                --전체판매계획
+                             , SUM(ACTUAL_SALE_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_SALE_QTY                      --전체당월실적
+                             , SUM(M1.ESPN_SALE_QTY) TOTAL_ESPN_SALE_QTY
+                          FROM (
+                                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                             , A.PERIOD_YYYYMMDD
+                                             , SUM(A.YYYY_TRG_SALE_CONV_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                             , SUM(A.MM_SALE_PLAN_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) MM_SALE_PLAN_QTY   --월간판매계획
+                                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) ACTUAL_SALE_QTY
+                                             , SUM(A.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                         WHERE 1=1
+                                           AND A.PERIOD_YYYYMM LIKE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)||'%'
+                                           AND A.LIQUOR_CODE IN ('10','20')
+                        <if test="liquorCode != null and liquorCode != '!ALL'">
+                                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                        </if>
+                                           AND A.ITEM_TYPE IN ('FG', 'PH')
+                                           AND A.MARKET_TYPE = 'D'
+                                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                               ) M1
+                             , EDW.W_CM_TB_FG_ITEM_M M2
+                         WHERE 1=1
+                        <if test="mainFlag != null and mainFlag != '!ALL'">
+                           AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                        </if>
+                           AND M1.ITEM_CODE = M2.ITEM_CODE
+                           AND M2.BRAND_CODE != '27'
+                         GROUP BY M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE) M1
+                     , (SELECT M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE
+                             , SUM(ACTUAL_20D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_20D_SALE_AVG_QTY       --직전20일평균
+                             , SUM(ACTUAL_5D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_5D_SALE_AVG_QTY       --직전5일평균
+                             , SUM(ACTUAL_BF1M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_BF1M_SALE_AVG_QTY   --전월 평균
+                             , SUM(ACTUAL_BF3M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_BF3M_SALE_AVG_QTY   --직전3개월평균
+                          FROM (
+                                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                             , A.PERIOD_YYYYMMDD
+                                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                             , SUM(A.ACTUAL_20D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_20D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_5D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_5D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF1M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF1M_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF3M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF3M_SALE_AVG_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                         WHERE 1=1
+                                           <!-- AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6)||'01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')  -->
+                                           AND A.PERIOD_YYYYMMDD = REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                                           AND A.LIQUOR_CODE IN ('10','20')
+                        <if test="liquorCode != null and liquorCode != '!ALL'">
+                                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                        </if>
+                                           AND A.ITEM_TYPE IN ('FG', 'PH')
+                                           AND A.MARKET_TYPE = 'D'
+                                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                               ) M1
+                             , EDW.W_CM_TB_FG_ITEM_M M2
+                         WHERE 1=1
+                        <if test="mainFlag != null and mainFlag != '!ALL'">
+                           AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                        </if>
+                           AND M1.ITEM_CODE = M2.ITEM_CODE
+                           AND M2.BRAND_CODE != '27'
+                         GROUP BY M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE) M2
+                     , TBL_ESPN_SALE M3
+                 WHERE 1=1
+                   AND M1.ITEM_CODE = M2.ITEM_CODE
+                   AND M1.ITEM_CODE = M3.ITEM_CODE(+)
+                 GROUP BY M1.LIQUOR_CODE) T3
+            ON T1.LIQUOR_CODE = T3.LIQUOR_CODE
+         WHERE 1=1
+         GROUP BY 
+         GROUPING SETS ( (T1.LIQUOR_CODE
+                        , T1.GUBUN1_TXT
+                        , T1.GUBUN2_TXT
+                        , T1.GUBUN3_TXT
+                        , T1.GUBUN4_TXT
+                        , T1.SEQ
+                        , T3.TOTAL_TRG_SALE_QTY
+                        , T3.TOTAL_SALE_PLAN_QTY
+                        , T3.TOTAL_ACT_SALE_QTY
+                        , T3.TOTAL_SALE_QTY
+                        , T3.TOTAL_20D_SALE_AVG_QTY
+                        , T3.TOTAL_5D_SALE_AVG_QTY
+                        , T3.TOTAL_BF1M_SALE_AVG_QTY
+                        , T3.TOTAL_BF3M_SALE_AVG_QTY
+                        , T3.TOTAL_BYM_ACT_SALE_QTY
+                        , T3.TOTAL_BM_ACT_SALE_QTY
+                        , T3.TOTAL_BD_SALE_QTY
+                        , T3.TOTAL_ESPN_SALE_QTY
+                        , T3.TOTAL_ESPN_SALE_QTY_01
+                        , T3.TOTAL_ESPN_SALE_QTY_02
+                        , T3.TOTAL_ESPN_SALE_QTY_03
+                        , T3.TOTAL_ESPN_SALE_QTY_04
+                        , T3.TOTAL_ESPN_SALE_QTY_05))
+         UNION ALL
+        SELECT T1.LIQUOR_CODE
+             , CASE WHEN GUBUN1_TXT = '전체' THEN '!ALL'
+                    WHEN GUBUN1_TXT = '소주류' THEN '!ALL'
+                    ELSE ''
+               END AS "Def"
+             , DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL) AS LIQUOR_DESC
+             , DECODE(GROUPING(T1.SEQ), 1, 1, T1.SEQ) SEQ
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN1_TXT) GUBUN1_TXT
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN2_TXT) GUBUN2_TXT
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN3_TXT) GUBUN3_TXT
+             , DECODE(GROUPING(T1.SEQ), 1, DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', NULL), T1.GUBUN4_TXT) GUBUN4_TXT
+             , DECODE(T1.SEQ, 0, T3.TOTAL_TRG_SALE_QTY, SUM(T2.YYYY_TRG_SALE_QTY)) AS YYYY_TRG_SALE_QTY
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_TRG_SALE_QTY, 0, 0, ROUND((SUM(T2.YYYY_TRG_SALE_QTY) / T3.TOTAL_TRG_SALE_QTY),4))) AS TRG_SALE_RATE
+             , DECODE(T1.SEQ, 0, T3.TOTAL_SALE_PLAN_QTY, SUM(T2.MM_SALE_PLAN_QTY)) AS MM_SALE_PLAN_QTY
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_SALE_PLAN_QTY, 0, 0, ROUND((SUM(T2.MM_SALE_PLAN_QTY) / T3.TOTAL_SALE_PLAN_QTY),4))) AS TOTAL_SALE_PLAN_RATE
+             <!-- 영본 예상 판매량 대략 월 5회 미만 입력 5회차까지 존재 가정하여 쿼리 생성 -->
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_01, SUM(ESPN_SALE_QTY_01)) AS ESPN_SALE_QTY_01        --영본판매예상량_01
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_01, 0, 0, ROUND((SUM(ESPN_SALE_QTY_01) / T3.TOTAL_ESPN_SALE_QTY_01), 4))) AS ESPN_SALE_RATE_01   --영본판매예상량구성비_01
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_02, SUM(ESPN_SALE_QTY_02)) AS ESPN_SALE_QTY_02        --영본판매예상량_02
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_02, 0, 0, ROUND((SUM(ESPN_SALE_QTY_02) / T3.TOTAL_ESPN_SALE_QTY_02), 4))) AS ESPN_SALE_RATE_02   --영본판매예상량구성비_02
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_03, SUM(ESPN_SALE_QTY_03)) AS ESPN_SALE_QTY_03        --영본판매예상량_03
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_03, 0, 0, ROUND((SUM(ESPN_SALE_QTY_03) / T3.TOTAL_ESPN_SALE_QTY_03), 4))) AS ESPN_SALE_RATE_03   --영본판매예상량구성비_03
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_04, SUM(ESPN_SALE_QTY_04)) AS ESPN_SALE_QTY_04        --영본판매예상량_04
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_04, 0, 0, ROUND((SUM(ESPN_SALE_QTY_04) / T3.TOTAL_ESPN_SALE_QTY_04), 4))) AS ESPN_SALE_RATE_04   --영본판매예상량구성비_04
+             , DECODE(T1.SEQ, 0, TOTAL_ESPN_SALE_QTY_05, SUM(ESPN_SALE_QTY_05)) AS ESPN_SALE_QTY_05        --영본판매예상량_05
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ESPN_SALE_QTY_05, 0, 0, ROUND((SUM(ESPN_SALE_QTY_05) / T3.TOTAL_ESPN_SALE_QTY_05), 4))) AS ESPN_SALE_RATE_05   --영본판매예상량구성비_05
+             <!-- 영본 예상 판매량 대략 월 5회 미만 입력 5회차까지 존재 가정하여 쿼리 생성 -->
+             , DECODE(T1.SEQ, 0, T3.TOTAL_ACT_SALE_QTY, SUM(T2.ACT_SALE_QTY)) AS ACTUAL_SALE_QTY     --당월실적
+             , DECODE(T1.SEQ, 0, 1, DECODE(T3.TOTAL_ACT_SALE_QTY, 0, 0, ROUND((SUM(T2.ACT_SALE_QTY)/T3.TOTAL_ACT_SALE_QTY), 4))) AS ACTUAL_SALE_RATE       --당월실적구성비
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_TRG_SALE_QTY, 0, 0, ROUND((T3.TOTAL_ACT_SALE_QTY / T3.TOTAL_TRG_SALE_QTY), 4)), DECODE(SUM(T2.YYYY_TRG_SALE_QTY), 0, 0, ROUND((SUM(T2.ACT_SALE_QTY) / SUM(T2.YYYY_TRG_SALE_QTY)), 4))) AS TRG_PRGS_RATE    --목표대비 진척률
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_ESPN_SALE_QTY, 0, 0, ROUND((T3.TOTAL_ACT_SALE_QTY / T3.TOTAL_ESPN_SALE_QTY), 4)), DECODE(SUM(T2.ESPN_SALE_QTY), 0, 0, ROUND((SUM(T2.ACT_SALE_QTY) / SUM(T2.ESPN_SALE_QTY)), 4))) AS ESPN_PRGS_RATE     --예상대비 진척률
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BYM_ACT_SALE_QTY, SUM(BYM_ACT_SALE_QTY)) AS BYM_ACT_SALE_QTY                                          --전년동기
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_ACT_SALE_QTY, 0, 0, (T3.TOTAL_ACT_SALE_QTY - T3.TOTAL_BYM_ACT_SALE_QTY) / T3.TOTAL_ACT_SALE_QTY)
+                                         , DECODE(SUM(T2.ACT_SALE_QTY), 0, 0, (SUM(T2.ACT_SALE_QTY) - SUM(BYM_ACT_SALE_QTY)) / SUM(T2.ACT_SALE_QTY))) AS BYM_ACT_SALE_QTY_RATE        --전년동기 증감 
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BM_ACT_SALE_QTY, SUM(BM_ACT_SALE_QTY)) AS BM_ACT_SALE_QTY                                          --전월동기
+             , DECODE(T1.SEQ, 0, DECODE(T3.TOTAL_ACT_SALE_QTY, 0, 0, (T3.TOTAL_ACT_SALE_QTY - T3.TOTAL_BM_ACT_SALE_QTY) / T3.TOTAL_ACT_SALE_QTY)
+                                         , DECODE(SUM(T2.ACT_SALE_QTY), 0, 0, (SUM(T2.ACT_SALE_QTY) - SUM(BM_ACT_SALE_QTY)) / SUM(T2.ACT_SALE_QTY))) AS BM_ACT_SALE_QTY_RATE        --전월동기 증감 
+             <!-- , DECODE(T1.SEQ, 0, (SELECT TOTAL_MAX_SALE_QTY FROM TBL_TOTAL_MAX_SALE_QTY WHERE LIQUOR_CODE = T1.LIQUOR_CODE), SUM(MAX_SALE_QTY)) AS MAX_SALE_QTY -->                                   --년중최대
+             , SUM(MAX_SALE_QTY) AS MAX_SALE_QTY --년중최대
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY)) AS ACTUAL_BF1M_SALE_AVG_QTY           --전월 평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BF3M_SALE_AVG_QTY, SUM(ACTUAL_BF3M_SALE_AVG_QTY)) AS ACTUAL_BF3M_SALE_AVG_QTY           --직전3개월평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY)) AS ACTUAL_20D_SALE_AVG_QTY               --직전20일평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_5D_SALE_AVG_QTY, SUM(ACTUAL_5D_SALE_AVG_QTY)) AS ACTUAL_5D_SALE_AVG_QTY               --직전5일평균
+             , DECODE(T1.SEQ, 0, T3.TOTAL_BD_SALE_QTY, SUM(ACTUAL_BD_SALE_QTY)) AS ACTUAL_BD_SALE_QTY                       --전일기준
+             , DECODE(DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY)), 0, 0, 
+                ROUND((DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY))
+                    - DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY)))
+                    / DECODE(T1.SEQ, 0, T3.TOTAL_BF1M_SALE_AVG_QTY, SUM(ACTUAL_BF1M_SALE_AVG_QTY))
+                   , 4)) AS DIFF_01
+             , DECODE(DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY)), 0, 0, 
+                ROUND((DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY))
+                    - DECODE(T1.SEQ, 0, T3.TOTAL_5D_SALE_AVG_QTY, SUM(ACTUAL_5D_SALE_AVG_QTY)))
+                    / DECODE(T1.SEQ, 0, T3.TOTAL_20D_SALE_AVG_QTY, SUM(ACTUAL_20D_SALE_AVG_QTY))
+                   , 4)) AS DIFF_02
+             , SUM(ESPN_SALE_QTY_ADD) AS ESPN_SALE_QTY_ADD
+          FROM (SELECT LIQUOR_CODE, ABBR_ITEM_NAME GUBUN1_TXT, ABBR_ITEM_NAME GUBUN2_TXT, ABBR_ITEM_NAME GUBUN3_TXT, ABBR_ITEM_NAME GUBUN4_TXT, '99999999'||A.ORDER_SEQ AS SEQ, A.ITEM_CODE
+                  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M A
+                     , EDW.W_CM_TB_FG_ITEM_M B
+                 WHERE A.PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)
+                   AND A.INP_DGR = (SELECT MAX(INP_DGR) FROM SCMU.W_SOP_TB_INTEREST_ITEM_M WHERE PERIOD_YYYYMM = SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6))
+                   AND A.ITEM_CODE = B.ITEM_CODE) T1
+          INNER JOIN
+               (SELECT SUBT1.LIQUOR_CODE, SUBT1.ITEM_CODE
+                     , SUBT2.YYYY_TRG_SALE_QTY
+                     , SUBT2.MM_SALE_PLAN_QTY
+                     , SUBT2.MAX_SALE_QTY
+                     , SUBT1.ACTUAL_SALE_QTY
+                     , SUBT1.ACT_SALE_QTY                                                 --당월실적
+                     , SUBT1.BYM_ACT_SALE_QTY                                             --전년동기
+                     , SUBT1.BM_ACT_SALE_QTY                                              --전월동기
+                     , SUBT1.ACTUAL_20D_SALE_AVG_QTY                                       --직전20일평균
+                     , SUBT1.ACTUAL_5D_SALE_AVG_QTY                                       --직전5일평균
+                     , SUBT1.ACTUAL_BF1M_SALE_AVG_QTY                                     --전월 평균
+                     , SUBT1.ACTUAL_BF3M_SALE_AVG_QTY                                     --직전3개월평균
+                     , SUBT1.ACTUAL_BD_SALE_QTY                                           --전일기준
+                     , SUBT2.ESPN_SALE_QTY
+                     , SUBT2.ESPN_SALE_QTY_01
+                     , SUBT2.ESPN_SALE_QTY_02
+                     , SUBT2.ESPN_SALE_QTY_03
+                     , SUBT2.ESPN_SALE_QTY_04
+                     , SUBT2.ESPN_SALE_QTY_05
+                     , SUBT1.ESPN_SALE_QTY_ADD
+                  FROM (SELECT /*월별 경영목표*/
+                               M2.LIQUOR_CODE, M1.ITEM_CODE
+                             , SUM(ACTUAL_SALE_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_SALE_QTY                         --당일실적
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                                      FROM TBL_ACT_SALE_QTY
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) ACT_SALE_QTY          --당월실적
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                                      FROM TBL_BYM_ACTUAL_SALES 
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) BYM_ACT_SALE_QTY          --전년동기실적
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                                      FROM TBL_BM_ACTUAL_SALES 
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) BM_ACT_SALE_QTY          --전월동기
+                             , SUM(ACTUAL_20D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_20D_SALE_AVG_QTY           --직전20일평균
+                             , SUM(ACTUAL_5D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_5D_SALE_AVG_QTY           --직전5일평균
+                             , SUM(ACTUAL_BF1M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_BF1M_SALE_AVG_QTY       --전월 평균
+                             , SUM(ACTUAL_BF3M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_BF3M_SALE_AVG_QTY       --직전3개월평균
+                             , SUM((SELECT SUM(ACTUAL_SALE_QTY)
+                                      FROM TBL_BD_ACTUAL_SALES
+                                     WHERE ITEM_CODE = M1.ITEM_CODE) * M2.UOM_CONVERSION_VALUE) ACTUAL_BD_SALE_QTY    --전일기준
+                        <if test="stdSaleDfnt != null and stdSaleDfnt != '!ALL'">
+                             , SUM((SELECT ESPN_SALE_QTY_ADD FROM TBL_ESPN_SALE_QTY_ADD WHERE ITEM_CODE = M1.ITEM_CODE)) AS ESPN_SALE_QTY_ADD
+                        </if>
+                        <if test="stdSaleDfnt != null and stdSaleDfnt == '!ALL'">
+                             , 0 AS ESPN_SALE_QTY_ADD
+                        </if>
+                          FROM (
+                                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                             , SUM(A.ACTUAL_20D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_20D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_5D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_5D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF1M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF1M_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF3M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF3M_SALE_AVG_QTY
+                                             , SUM(A.YYYY_TRG_SALE_CONV_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                             , SUM(A.MM_SALE_PLAN_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) MM_SALE_PLAN_QTY   --월간판매계획
+                                             , SUM(A.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                         WHERE 1=1
+                                           AND A.PERIOD_YYYYMMDD = REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                                           AND A.LIQUOR_CODE IN ('10','20')
+                        <if test="liquorCode != null and liquorCode != '!ALL'">
+                                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                        </if>
+                                           AND A.ITEM_TYPE IN ('FG', 'PH')
+                                           AND A.MARKET_TYPE = 'D'
+                                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+                               ) M1
+                             , EDW.W_CM_TB_FG_ITEM_M M2
+                         WHERE 1=1
+                        <if test="mainFlag != null and mainFlag != '!ALL'">
+                           AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                        </if>
+                           AND M1.ITEM_CODE = M2.ITEM_CODE
+                           AND M2.BRAND_CODE != '27'
+                         GROUP BY M2.LIQUOR_CODE, M1.ITEM_CODE) SUBT1
+                     , (SELECT T1.LIQUOR_CODE, T1.ITEM_CODE
+                             , SUM(YYYY_TRG_SALE_QTY) YYYY_TRG_SALE_QTY --경영목표
+                             , SUM(MM_SALE_PLAN_QTY) MM_SALE_PLAN_QTY   --월간판매계획
+                             <!-- , MAX(ACTUAL_SALE_QTY) MAX_SALE_QTY -->        --년중최대
+                             , (SELECT TOTAL_MAX_SALE_QTY FROM TBL_TOTAL_MAX_SALE_QTY WHERE LIQUOR_CODE = T1.LIQUOR_CODE AND ITEM_CODE = T1.ITEM_CODE) AS MAX_SALE_QTY --년중최대
+                             , SUM(T1.ESPN_SALE_QTY) ESPN_SALE_QTY
+                             , SUM(ESPN_SALE_QTY_01) ESPN_SALE_QTY_01
+                             , SUM(ESPN_SALE_QTY_02) ESPN_SALE_QTY_02
+                             , SUM(ESPN_SALE_QTY_03) ESPN_SALE_QTY_03
+                             , SUM(ESPN_SALE_QTY_04) ESPN_SALE_QTY_04
+                             , SUM(ESPN_SALE_QTY_05) ESPN_SALE_QTY_05
+                          FROM (SELECT /*월별 경영목표*/
+                                       M1.ITEM_CODE, M2.LIQUOR_CODE, M2.BRAND_CODE, M2.USAGE_CODE, M2.VESSEL_CODE, M2.VOLUME_VALUE
+                                     , SUM(YYYY_TRG_SALE_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                     , SUM(MM_SALE_PLAN_QTY * M2.UOM_CONVERSION_VALUE) MM_SALE_PLAN_QTY   --월간판매계획
+                                     <!-- , MAX(ACTUAL_SALE_QTY * M2.UOM_CONVERSION_VALUE) ACTUAL_SALE_QTY -->     --년중최대
+                                     <!-- , SUM(M1.ESPN_SALE_QTY * M2.UOM_CONVERSION_VALUE) ESPN_SALE_QTY -->
+                                     , SUM(M1.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                  FROM (
+                                                SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                                     , A.PERIOD_YYYYMMDD
+                                                     , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                                     , SUM(A.ACTUAL_20D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_20D_SALE_AVG_QTY
+                                                     , SUM(A.ACTUAL_5D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_5D_SALE_AVG_QTY
+                                                     , SUM(A.ACTUAL_BF1M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF1M_SALE_AVG_QTY
+                                                     , SUM(A.ACTUAL_BF3M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF3M_SALE_AVG_QTY
+                                                     , SUM(A.YYYY_TRG_SALE_CONV_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                                     , SUM(A.MM_SALE_PLAN_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) MM_SALE_PLAN_QTY   --월간판매계획
+                                                     , SUM(A.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                                  FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                             LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                                    ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                                 WHERE 1=1
+                                                   AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6)||'01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                                                   AND A.LIQUOR_CODE IN ('10','20')
+                                <if test="liquorCode != null and liquorCode != '!ALL'">
+                                                   AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                                </if>
+                                                   AND A.ITEM_TYPE IN ('FG', 'PH')
+                                                   AND A.MARKET_TYPE = 'D'
+                                             GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                                       ) M1
+                                     , EDW.W_CM_TB_FG_ITEM_M M2
+                                 WHERE 1=1
+                                <if test="mainFlag != null and mainFlag != '!ALL'">
+                                   AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                                </if>
+                                   AND M1.ITEM_CODE = M2.ITEM_CODE
+                                   AND M2.BRAND_CODE != '27'
+                                 GROUP BY M1.ITEM_CODE, M2.LIQUOR_CODE, M2.BRAND_CODE, M2.USAGE_CODE, M2.VESSEL_CODE, M2.VOLUME_VALUE ) T1
+                             , TBL_ESPN_SALE T2
+                         WHERE 1=1
+                           AND T1.ITEM_CODE = T2.ITEM_CODE(+)
+                         GROUP BY T1.LIQUOR_CODE, T1.ITEM_CODE) SUBT2
+                 WHERE 1=1
+                   AND SUBT1.LIQUOR_CODE = SUBT2.LIQUOR_CODE
+                   AND SUBT1.ITEM_CODE = SUBT2.ITEM_CODE) T2
+            ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+           AND T1.ITEM_CODE = T2.ITEM_CODE
+         INNER JOIN
+               (SELECT M1.LIQUOR_CODE
+                     , SUM(TOTAL_TRG_SALE_QTY) TOTAL_TRG_SALE_QTY                --전체경영목표
+                     , SUM(TOTAL_SALE_PLAN_QTY) TOTAL_SALE_PLAN_QTY                --전체판매계획
+                     , SUM(TOTAL_SALE_QTY) TOTAL_SALE_QTY                      --전체당월실적
+                     , SUM(TOTAL_20D_SALE_AVG_QTY) TOTAL_20D_SALE_AVG_QTY       --직전5일평균
+                     , SUM(TOTAL_5D_SALE_AVG_QTY) TOTAL_5D_SALE_AVG_QTY       --직전5일평균
+                     , SUM(TOTAL_BF1M_SALE_AVG_QTY) TOTAL_BF1M_SALE_AVG_QTY   --전월 평균
+                     , SUM(TOTAL_BF3M_SALE_AVG_QTY) TOTAL_BF3M_SALE_AVG_QTY   --직전3개월평균
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                              FROM TBL_ACT_SALE_QTY
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_ACT_SALE_QTY          --전체당월실적
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                              FROM TBL_BYM_ACTUAL_SALES
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_BYM_ACT_SALE_QTY          --전년동기실적
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY) 
+                              FROM TBL_BM_ACTUAL_SALES
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_BM_ACT_SALE_QTY          --전월동기
+                     , SUM((SELECT SUM(ACTUAL_SALE_QTY)
+                              FROM TBL_BD_ACTUAL_SALES
+                             WHERE ITEM_CODE = M1.ITEM_CODE) * M1.UOM_CONVERSION_VALUE) TOTAL_BD_SALE_QTY    --전일기준
+                     , SUM(TOTAL_ESPN_SALE_QTY) TOTAL_ESPN_SALE_QTY
+                     , SUM(ESPN_SALE_QTY_01) TOTAL_ESPN_SALE_QTY_01
+                     , SUM(ESPN_SALE_QTY_02) TOTAL_ESPN_SALE_QTY_02
+                     , SUM(ESPN_SALE_QTY_03) TOTAL_ESPN_SALE_QTY_03
+                     , SUM(ESPN_SALE_QTY_04) TOTAL_ESPN_SALE_QTY_04
+                     , SUM(ESPN_SALE_QTY_05) TOTAL_ESPN_SALE_QTY_05
+                  FROM (SELECT M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE
+                             , SUM(YYYY_TRG_SALE_QTY) TOTAL_TRG_SALE_QTY                --전체경영목표
+                             , SUM(MM_SALE_PLAN_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_SALE_PLAN_QTY                --전체판매계획
+                             , SUM(ACTUAL_SALE_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_SALE_QTY                      --전체당월실적
+                             <!-- , SUM(M1.ESPN_SALE_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_ESPN_SALE_QTY -->
+                             , SUM(M1.ESPN_SALE_QTY) TOTAL_ESPN_SALE_QTY
+                          FROM (
+                                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                             , A.PERIOD_YYYYMMDD
+                                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                             , SUM(A.ACTUAL_20D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_20D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_5D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_5D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF1M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF1M_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF3M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF3M_SALE_AVG_QTY
+                                             , SUM(A.YYYY_TRG_SALE_CONV_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                             , SUM(A.MM_SALE_PLAN_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) MM_SALE_PLAN_QTY   --월간판매계획
+                                             , SUM(A.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                         WHERE 1=1
+                                           AND A.PERIOD_YYYYMM LIKE SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''),1,6)||'%'
+                                           AND A.LIQUOR_CODE IN ('10','20')
+                        <if test="liquorCode != null and liquorCode != '!ALL'">
+                                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                        </if>
+                                           AND A.ITEM_TYPE IN ('FG', 'PH')
+                                           AND A.MARKET_TYPE = 'D'
+                                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                               ) M1
+                             , EDW.W_CM_TB_FG_ITEM_M M2
+                         WHERE 1=1
+                        <if test="mainFlag != null and mainFlag != '!ALL'">
+                           AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                        </if>
+                           AND M1.ITEM_CODE = M2.ITEM_CODE
+                           AND M2.BRAND_CODE != '27'
+                         GROUP BY M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE) M1
+                     , (SELECT M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE
+                             , SUM(ACTUAL_20D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_20D_SALE_AVG_QTY       --직전20일평균
+                             , SUM(ACTUAL_5D_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_5D_SALE_AVG_QTY       --직전5일평균
+                             , SUM(ACTUAL_BF1M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_BF1M_SALE_AVG_QTY   --전월 평균
+                             , SUM(ACTUAL_BF3M_SALE_AVG_QTY * M2.UOM_CONVERSION_VALUE) TOTAL_BF3M_SALE_AVG_QTY   --직전3개월평균
+                          FROM (
+                                        SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                                             , A.PERIOD_YYYYMMDD
+                                             , SUM(A.ACTUAL_SALE_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_SALE_QTY
+                                             , SUM(A.ACTUAL_20D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_20D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_5D_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_5D_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF1M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF1M_SALE_AVG_QTY
+                                             , SUM(A.ACTUAL_BF3M_SALE_AVG_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) AS ACTUAL_BF3M_SALE_AVG_QTY
+                                             , SUM(A.YYYY_TRG_SALE_CONV_QTY) YYYY_TRG_SALE_QTY --경영목표
+                                             , SUM(A.MM_SALE_PLAN_QTY * CASE WHEN Z.TO_ITEM_CODE IS NULL THEN 1 ELSE Z.CONVERSION_VALUE END) MM_SALE_PLAN_QTY   --월간판매계획
+                                             , SUM(A.ESPN_SALE_QTY) ESPN_SALE_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F A
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                                            ON Z.FR_ITEM_CODE = A.ITEM_CODE
+                                         WHERE 1=1
+                                           AND A.PERIOD_YYYYMMDD BETWEEN SUBSTR(REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-',''), 1, 6)||'01' AND REPLACE(#{bssYYYYMMDD, jdbcType=VARCHAR}, '-','')
+                                           AND A.LIQUOR_CODE IN ('10','20')
+                        <if test="liquorCode != null and liquorCode != '!ALL'">
+                                           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                        </if>
+                                           AND A.ITEM_TYPE IN ('FG', 'PH')
+                                           AND A.MARKET_TYPE = 'D'
+                                     GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN A.ITEM_CODE ELSE Z.TO_ITEM_CODE END, A.PERIOD_YYYYMMDD
+                               ) M1
+                             , EDW.W_CM_TB_FG_ITEM_M M2
+                         WHERE 1=1
+                        <if test="mainFlag != null and mainFlag != '!ALL'">
+                           AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                        </if>
+                           AND M1.ITEM_CODE = M2.ITEM_CODE
+                           AND M2.BRAND_CODE != '27'
+                         GROUP BY M2.LIQUOR_CODE, M1.ITEM_CODE, M2.UOM_CONVERSION_VALUE) M2
+                     , TBL_ESPN_SALE M3
+                 WHERE 1=1
+                   AND M1.ITEM_CODE = M2.ITEM_CODE
+                   AND M1.ITEM_CODE = M3.ITEM_CODE(+)
+                 GROUP BY M1.LIQUOR_CODE) T3
+            ON T1.LIQUOR_CODE = T3.LIQUOR_CODE
+         WHERE 1=1
+         GROUP BY 
+         GROUPING SETS ( (T1.LIQUOR_CODE
+                        , T1.GUBUN1_TXT
+                        , T1.GUBUN2_TXT
+                        , T1.GUBUN3_TXT
+                        , T1.GUBUN4_TXT
+                        , T1.SEQ
+                        , T3.TOTAL_TRG_SALE_QTY
+                        , T3.TOTAL_SALE_PLAN_QTY
+                        , T3.TOTAL_ACT_SALE_QTY
+                        , T3.TOTAL_SALE_QTY
+                        , T3.TOTAL_20D_SALE_AVG_QTY
+                        , T3.TOTAL_5D_SALE_AVG_QTY
+                        , T3.TOTAL_BF1M_SALE_AVG_QTY
+                        , T3.TOTAL_BF3M_SALE_AVG_QTY
+                        , T3.TOTAL_BYM_ACT_SALE_QTY
+                        , T3.TOTAL_BM_ACT_SALE_QTY
+                        , T3.TOTAL_BD_SALE_QTY
+                        , T3.TOTAL_ESPN_SALE_QTY
+                        , T3.TOTAL_ESPN_SALE_QTY_01
+                        , T3.TOTAL_ESPN_SALE_QTY_02
+                        , T3.TOTAL_ESPN_SALE_QTY_03
+                        , T3.TOTAL_ESPN_SALE_QTY_04
+                        , T3.TOTAL_ESPN_SALE_QTY_05))
+         ORDER BY LIQUOR_CODE, SEQ
+    </select>
+    
+</mapper>

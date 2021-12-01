@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.hitejinro.snop.common.dao.CommonComboDaoMapper">
+    
+    <!-- 년도선택 콤보리스트 조회 -->
+    <select id="getYearComboList" parameterType="map" resultType="map">
+    	<![CDATA[
+    SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getYearComboList */
+           TO_CHAR(TO_NUMBER(TO_CHAR(SYSDATE,'YYYY'))-LEVEL+2) AS CODE 
+         , TO_CHAR(TO_NUMBER(TO_CHAR(SYSDATE,'YYYY'))-LEVEL+2) AS NAME  
+      FROM DUAL
+   CONNECT BY LEVEL <= (TO_NUMBER(TO_CHAR(SYSDATE, 'YYYY'))+1 - 2014 + 1) -- 2014년 ~ 차년도
+     ORDER BY LEVEL
+    	]]>
+    </select>
+
+    <!-- 사업부문 콤보리스트 조회 -->
+    <select id="getLiquorComboList" parameterType="map" resultType="map">
+    	<![CDATA[
+			SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getLiquorComboList */
+			       LIQUOR_CODE AS CODE
+			     , LIQUOR_DESC AS NAME
+			  FROM EDW.W_CM_TB_LIQUOR_M
+			 WHERE 1 = 1
+               AND LIQUOR_CODE IN ('00', '10', '20') -- 00(공통), 10(맥주), 20(소주)
+               AND (    -- 공통 포함 여부에 따른 조건절
+                        (NVL(#{hasCommon, jdbcType=VARCHAR}, 'N') = 'Y' AND 1 = 1)
+                        OR
+                        (NVL(#{hasCommon, jdbcType=VARCHAR}, 'N') != 'Y' AND LIQUOR_CODE != '00')
+                   )
+    	]]>
+    </select>
+
+    <!-- 브랜드 콤보리스트 조회 -->
+    <select id="getBrandComboList" parameterType="map" resultType="map">
+    	<![CDATA[
+            SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getBrandComboList */
+			       T1.BRAND_CODE AS CODE
+                 , T1.BRAND_DESC AS NAME
+              FROM EDW.W_CM_TB_BRAND_M T1
+                 , (
+                    SELECT BRAND_CODE
+                         , BRAND_NAME
+                      FROM EDW.W_CM_TB_FG_ITEM_M
+                     WHERE ITEM_TYPE = 'FG'
+                       AND ITEM_STATUS = 'Active'
+                       AND LIQUOR_CODE IN ('10', '20')
+                       AND (
+                                (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                                OR
+                                (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = LIQUOR_CODE)
+                           )
+                     GROUP BY BRAND_CODE, BRAND_NAME
+                   ) T2
+             WHERE T1.OU_CODE = 'HJ0'
+               AND T1.BRAND_CODE = T2.BRAND_CODE
+             ORDER BY T1.SORT_NUMBER, T1.BRAND_CODE
+    	]]>
+			<!-- SELECT BRAND_CODE AS CODE
+			     , BRAND_DESC AS NAME
+			  FROM EDW.W_CM_TB_BRAND_M
+			 WHERE OU_CODE = 'HJ0'
+			 ORDER BY SORT_NUMBER, BRAND_CODE -->
+    </select>
+
+    <!-- 용도 콤보리스트 조회 -->
+    <select id="getUsageComboList" parameterType="map" resultType="map">
+    	<![CDATA[
+			SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getUsageComboList */
+			       USAGE_CODE AS CODE
+			     , USAGE_NAME AS NAME
+			  FROM EDW.W_CM_TB_FG_ITEM_M
+			 WHERE ITEM_TYPE = 'FG'
+			   AND ITEM_STATUS = 'Active'
+			   AND LIQUOR_CODE IN ('10', '20')
+			 GROUP BY USAGE_CODE, USAGE_NAME
+			 ORDER BY MAX(USAGE_SORT_ORDER)
+    	]]>
+    </select>
+
+    <!-- 용기 콤보리스트 조회 -->
+    <select id="getVesselComboList" parameterType="map" resultType="map">
+    	<![CDATA[
+			SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getVesselComboList */
+			       VESSEL_CODE AS CODE
+			     , VESSEL_SORT AS NAME
+			  FROM EDW.W_CM_TB_FG_ITEM_M
+			 WHERE ITEM_TYPE = 'FG'
+			   AND ITEM_STATUS = 'Active'
+			   AND LIQUOR_CODE IN ('10', '20')
+               AND (
+                        (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = LIQUOR_CODE)
+                   )
+			 GROUP BY VESSEL_CODE, VESSEL_SORT
+			 ORDER BY MAX(VESSEL_SORT_ORDER), VESSEL_CODE
+    	]]>
+    </select>
+
+    <!-- 용량 콤보리스트 조회 -->
+	<select id="getVolumeComboList" parameterType="map" resultType="map">
+    	<![CDATA[
+			SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getVolumeComboList */
+			       VOLUME_VALUE AS CODE
+			     , VOLUME_VALUE AS NAME
+			  FROM EDW.W_CM_TB_FG_ITEM_M
+			 WHERE ITEM_TYPE = 'FG'
+			   AND ITEM_STATUS = 'Active'
+			   AND LIQUOR_CODE IN ('10', '20')
+               AND (
+                        (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (NVL(#{liquorCode, jdbcType=VARCHAR}, '!ALL') = LIQUOR_CODE)
+                   )
+			 GROUP BY VOLUME_VALUE
+			 ORDER BY TO_NUMBER(MAX(VOLUME_VALUE))
+    	]]>
+    </select>
+
+    <!-- 공통코드 콤보리스트 조회 -->
+	<select id="getComCodeCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.common.dao.CommonComboDaoMapper.getComCodeCombo */
+		       CODE, NAME, DESCRIPTION
+             , SEGMENT1, SEGMENT2
+             , SEGMENT3, SEGMENT4
+             , SEGMENT5, SEGMENT6
+             , SEGMENT7, SEGMENT8
+             , SEGMENT9, SEGMENT10
+		  FROM W_SOP_TB_COM_CODE_M
+		 WHERE GROUP_CODE = #{groupCode, jdbcType=VARCHAR}
+		   AND USE_YN = 'Y'
+		   <if test="segment1 != null and segment1 != ''">
+		   AND SEGMENT1 = #{segment1, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment2 != null and segment2 != ''">
+		   AND SEGMENT2 = #{segment2, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment3 != null and segment3 != ''">
+		   AND SEGMENT3 = #{segment3, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment4 != null and segment4 != ''">
+		   AND SEGMENT4 = #{segment4, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment5 != null and segment5 != ''">
+		   AND SEGMENT5 = #{segment5, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment6 != null and segment6 != ''">
+		   AND SEGMENT6 = #{segment6, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment7 != null and segment7 != ''">
+		   AND SEGMENT7 = #{segment7, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment8 != null and segment8 != ''">
+		   AND SEGMENT8 = #{segment8, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment9 != null and segment9 != ''">
+		   AND SEGMENT9 = #{segment9, jdbcType=VARCHAR}
+		   </if>
+		   <if test="segment10 != null and segment10 != ''">
+		   AND SEGMENT10 = #{segment10, jdbcType=VARCHAR}
+		   </if>
+		 ORDER BY SEQ
+    </select>
+</mapper>

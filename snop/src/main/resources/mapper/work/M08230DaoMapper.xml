@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 사용자 로그 조회 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08230DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08190DaoMapper.search */
+       USER_LOG_SEQNO, SERVER_MODE
+     , TO_CHAR(TO_DATE(YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS YYYYMMDD
+     , TO_CHAR(LOG_DATE, 'YYYY-MM-DD HH24:MI:SS')           AS LOG_DATE
+     , MENU_CD, MENU_NM, MENU_URL
+     , USER_ID, USER_NM, EMPLOYEE_NUMBER, DEPT_CD, DEPT_NM, POSITION_CODE, POSITION_NAME, DUTY_CODE, DUTY_NAME, AUTH_CD, AUTH_NM
+     , CLIENT_IP, URL
+  FROM SCMU.W_SOP_TB_USER_LOG_F
+ WHERE 1 = 1
+   AND YYYYMMDD    BETWEEN #{frYYYYMMDD, jdbcType=VARCHAR} AND #{toYYYYMMDD, jdbcType=VARCHAR}
+   AND SERVER_MODE NOT IN ('LOCAL')             -- 로컬 제외
+   AND USER_ID     NOT LIKE 'sys%'              -- 관리자 제외
+   AND MENU_CD     NOT IN ('LOGIN', 'M08230')   -- 로그인과 사용자로그조회는 제외
+   AND (    -- 메뉴 Open만 체크
+            MENU_URL = 'work/' || MENU_CD
+            OR
+            MENU_URL = 'system/' || MENU_CD
+       )
+   AND USER_LOG_SEQNO > 5660 -- 운영Open 시점
+ ORDER BY USER_LOG_SEQNO DESC
+    </select>
+    
+</mapper>

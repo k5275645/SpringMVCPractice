@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 정량적 단종기준 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08050DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08050DaoMapper.search */
+			   DISCONT_GB_1
+		     , DISCONT_GB_2
+		     , DISCONT_GB_3
+		     , DISCONT_GB_4
+		     , DISCONT_GB_5
+		     , QNTY_STD_VAL
+		     , RPT_CNT
+		  FROM SCMU.W_SOP_TB_QNTY_DISCONT_M
+    </select>
+    
+    <!-- 데이터 저장 : 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH /* com.hitejinro.snop.work.dao.M08050DaoMapper.validate */ 
+    	UPDATE_TBL AS 
+    	(	
+    		SELECT A.ACTION
+    			 , A.DISCONT_GB_1
+    			 , A.DISCONT_GB_2
+    			 , A.DISCONT_GB_3
+    			 , A.DISCONT_GB_4
+    			 , A.DISCONT_GB_5
+			     , A.RNUM
+    		  FROM (
+				<foreach collection="saveData" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.action, jdbcType=VARCHAR}					AS ACTION
+						, #{list.DISCONT_GB_1, jdbcType=VARCHAR}			AS DISCONT_GB_1
+						, #{list.DISCONT_GB_2, jdbcType=VARCHAR}          	AS DISCONT_GB_2
+						, #{list.DISCONT_GB_3, jdbcType=VARCHAR}          	AS DISCONT_GB_3
+						, #{list.DISCONT_GB_4, jdbcType=VARCHAR}          	AS DISCONT_GB_4
+						, #{list.DISCONT_GB_5, jdbcType=VARCHAR}          	AS DISCONT_GB_5
+						, ROWNUM AS RNUM
+					FROM DUAL
+				</foreach>
+				) A
+    	)
+		SELECT COUNT(1) AS ERR_CNT
+			 , LISTAGG(RNUM || '행 :: ' || DISCONT_GB_1 || ', '|| DISCONT_GB_2 || ', '|| DISCONT_GB_4 || ', '|| DISCONT_GB_4 || ', ' || DISCONT_GB_5
+							||' :: ' || SUBSTR(ERR_MSG_INSERT, 3)
+               		   , '\r\n') WITHIN GROUP (ORDER BY RNUM, DISCONT_GB_1, DISCONT_GB_2, DISCONT_GB_3, DISCONT_GB_4, DISCONT_GB_5) AS ERR_MSG
+		  FROM (
+		        SELECT RNUM, DISCONT_GB_1, DISCONT_GB_2, DISCONT_GB_3, DISCONT_GB_4, DISCONT_GB_5 , MAX(ERR_MSG_INSERT) ERR_MSG_INSERT  
+		          FROM (
+		            SELECT X.RNUM
+		                 , X.DISCONT_GB_1
+		                 , X.DISCONT_GB_2
+		                 , X.DISCONT_GB_3
+		                 , X.DISCONT_GB_4
+		                 , X.DISCONT_GB_5
+		                 , CASE WHEN X.ACTION IN ('insert') AND A.DISCONT_GB_1 IS NOT NULL 
+		                 		THEN ', 존재하는 단종기준이 추가되었습니다.' 
+		                 		ELSE ''
+		                 		END AS ERR_MSG_INSERT
+		              FROM UPDATE_TBL                                   X
+		              LEFT JOIN SCMU.W_SOP_TB_QNTY_DISCONT_M          A
+		                     ON X.DISCONT_GB_1 = A.DISCONT_GB_1
+		                    AND X.DISCONT_GB_2 = A.DISCONT_GB_2
+		                    AND X.DISCONT_GB_3 = A.DISCONT_GB_3
+		                    AND X.DISCONT_GB_4 = A.DISCONT_GB_4
+		                    AND X.DISCONT_GB_5 = A.DISCONT_GB_5   )
+				 WHERE 1 = 1        
+	   			   AND ERR_MSG_INSERT IS NOT NULL 		                    
+		         GROUP BY RNUM, DISCONT_GB_1, DISCONT_GB_2, DISCONT_GB_3, DISCONT_GB_4, DISCONT_GB_5
+		        )
+		  
+    </select>
+    
+    <!-- 데이터 저장 : 수정 -->
+    <delete id="delete" parameterType="map">
+    	DELETE /* com.hitejinro.snop.system.dao.M08050DaoMapper.delete */ 
+    	SCMU.W_SOP_TB_QNTY_DISCONT_M 
+    	WHERE
+    	  <foreach collection="deleteList" item="list" separator="or" index="i" open="(" close=")">
+	    	      DISCONT_GB_1 = #{list.DISCONT_GB_1, jdbcType=VARCHAR}
+	    	  AND DISCONT_GB_2 = #{list.DISCONT_GB_2, jdbcType=VARCHAR}
+	    	  AND DISCONT_GB_3 = #{list.DISCONT_GB_3, jdbcType=VARCHAR}
+	    	  AND DISCONT_GB_4 = #{list.DISCONT_GB_4, jdbcType=VARCHAR}
+	    	  AND DISCONT_GB_5 = #{list.DISCONT_GB_5, jdbcType=VARCHAR}
+    	  </foreach>
+    </delete>
+    
+    <!-- 데이터 저장 : 수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO /* com.hitejinro.snop.system.dao.M08050DaoMapper.update */ 
+    	SCMU.W_SOP_TB_QNTY_DISCONT_M T 
+    	USING
+    	(	
+    		SELECT A.DISCONT_GB_1
+			     , A.DISCONT_GB_2
+			     , A.DISCONT_GB_3
+			     , A.DISCONT_GB_4
+			     , A.DISCONT_GB_5
+			     , A.QNTY_STD_VAL
+			     , A.RPT_CNT
+			     , ROWNUM RNUM
+    		  FROM (
+				<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+					SELECT
+						  #{list.action, jdbcType=VARCHAR}				AS ACTION
+						, #{list.DISCONT_GB_1, jdbcType=VARCHAR}		AS DISCONT_GB_1
+						, #{list.DISCONT_GB_2, jdbcType=VARCHAR}		AS DISCONT_GB_2
+						, #{list.DISCONT_GB_3, jdbcType=VARCHAR}		AS DISCONT_GB_3
+						, #{list.DISCONT_GB_4, jdbcType=VARCHAR}		AS DISCONT_GB_4
+						, #{list.DISCONT_GB_5, jdbcType=VARCHAR}		AS DISCONT_GB_5
+						, #{list.QNTY_STD_VAL, jdbcType=FLOAT}			AS QNTY_STD_VAL
+						, #{list.RPT_CNT, jdbcType=FLOAT}				AS RPT_CNT
+					FROM DUAL
+				</foreach>
+				) A
+    	) S ON (
+    					T.DISCONT_GB_1 = S.DISCONT_GB_1
+    				AND T.DISCONT_GB_2 = S.DISCONT_GB_2
+    				AND T.DISCONT_GB_3 = S.DISCONT_GB_3
+    				AND T.DISCONT_GB_4 = S.DISCONT_GB_4
+    				AND T.DISCONT_GB_5 = S.DISCONT_GB_5
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.QNTY_STD_VAL   		= S.QNTY_STD_VAL
+				, T.RPT_CNT   			= S.RPT_CNT
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+		      	T.DISCONT_GB_1, T.DISCONT_GB_2, T.DISCONT_GB_3, T.DISCONT_GB_4, T.DISCONT_GB_5
+		      , T.QNTY_STD_VAL, T.RPT_CNT
+		      , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+		      	S.DISCONT_GB_1, S.DISCONT_GB_2, S.DISCONT_GB_3, S.DISCONT_GB_4, S.DISCONT_GB_5
+		      , S.QNTY_STD_VAL, S.RPT_CNT
+			  , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+    <!-- 데이터 저장 : 추가 -->
+    <update id="insert" parameterType="map">
+    	INSERT INTO /* com.hitejinro.snop.system.dao.M08050DaoMapper.insert */ 
+    	SCMU.W_SOP_TB_QNTY_DISCONT_M T 
+   		SELECT A.DISCONT_GB_1
+		     , A.DISCONT_GB_2
+		     , A.DISCONT_GB_3
+		     , A.DISCONT_GB_4
+		     , A.DISCONT_GB_5
+		     , A.QNTY_STD_VAL
+		     , A.RPT_CNT
+		     , #{userId, jdbcType=VARCHAR}
+		     , SYSDATE
+		     , #{userId, jdbcType=VARCHAR}
+		     , SYSDATE
+   		  FROM (
+			<foreach collection="insertList" item="list" separator="UNION ALL" index="i">
+				SELECT
+					  #{list.action, jdbcType=VARCHAR}				AS ACTION
+					, #{list.DISCONT_GB_1, jdbcType=VARCHAR}		AS DISCONT_GB_1
+					, #{list.DISCONT_GB_2, jdbcType=VARCHAR}		AS DISCONT_GB_2
+					, #{list.DISCONT_GB_3, jdbcType=VARCHAR}		AS DISCONT_GB_3
+					, #{list.DISCONT_GB_4, jdbcType=VARCHAR}		AS DISCONT_GB_4
+					, #{list.DISCONT_GB_5, jdbcType=VARCHAR}		AS DISCONT_GB_5
+					, #{list.QNTY_STD_VAL, jdbcType=FLOAT}			AS QNTY_STD_VAL
+					, #{list.RPT_CNT, jdbcType=FLOAT}				AS RPT_CNT
+				FROM DUAL
+			</foreach>
+			) A
+    </update>
+</mapper>

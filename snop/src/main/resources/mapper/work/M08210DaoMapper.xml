@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 모제품 매핑 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08210DaoMapper">
+
+    <!-- 데이터 조회 -->
+    <select id="search" resultType="map" parameterType="map">
+    SELECT /* com.hitejinro.snop.system.dao.M08210DaoMapper.search */
+               DECODE(B.LIQUOR_CODE,'10','맥주','20','소주') AS LIQUOR_CODE_NAME -- 사업부문
+             , B.LIQUOR_CODE AS LIQUOR_CODE
+             , A.FR_ITEM_CODE
+             , B.DESCRIPTION AS FR_ITEM_NAME
+             , B.UOM_CONVERSION_VALUE AS FR_CONVERSION_BULK
+             , A.TO_ITEM_CODE
+             , C.DESCRIPTION AS TO_ITEM_NAME 
+             , TO_CHAR(A.CREATION_DATE, 'YYYY/MM/DD HH24:mm:ss') AS CREATION_DATE -- 생성일자
+             , TO_CHAR(A.LAST_UPDATE_DATE, 'YYYY/MM/DD HH24:mm:ss') AS LAST_UPDATE_DATE -- 최종수정일자 
+             , A.CREATED_BY -- 생성자
+             , A.LAST_UPDATED_BY -- 최종수정자
+             , A.RMKS   -- 비고
+             , B.BRAND_NAME -- 브랜드
+             , B.VESSEL_SORT -- 용기
+             , B.VOLUME_VALUE -- 용량
+             , A.CONVERSION_VALUE -- 환산지수
+            FROM SCMU.W_SOP_TB_ITEM_MAP_M  A
+            
+            LEFT JOIN EDW.W_CM_TB_FG_ITEM_M    B ON B.ITEM_CODE  = A.FR_ITEM_CODE
+            
+            LEFT JOIN EDW.W_CM_TB_FG_ITEM_M    C ON C.ITEM_CODE  = A.TO_ITEM_CODE
+            WHERE 1 = 1
+                AND B.LIQUOR_CODE = DECODE(#{liquorCode, jdbcType=VARCHAR}, '!ALL', B.LIQUOR_CODE, #{liquorCode, jdbcType=VARCHAR})
+            
+            ORDER BY C.LIQUOR_CODE, C.DESCRIPTION, A.TO_ITEM_CODE, B.DESCRIPTION, A.FR_ITEM_CODE
+    </select>   
+
+    <!-- FR-제품마스터 조회 -->
+    <select id="searchItemList" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.system.dao.M08210DaoMapper.selectFRItemList */
+               ITEM_CODE
+             , DESCRIPTION AS ITEM_NAME
+             , '['|| ITEM_CODE || ']' || DESCRIPTION AS ITEM_CODE_NAME 
+             , BRAND_CODE, BRAND_NAME
+             , VESSEL_CODE, VESSEL_SORT
+             , VOLUME_VALUE
+             , UOM_CONVERSION_VALUE AS CONVERSION_BULK -- 환산 수량
+             , LIQUOR_CODE
+             , DECODE(LIQUOR_CODE,'10','맥주','20','소주') AS LIQUOR_CODE_NAME 
+          FROM EDW.W_CM_TB_FG_ITEM_M
+          WHERE 1 = 1
+            AND ITEM_TYPE = 'FG'
+            AND ITEM_STATUS = 'Active'
+            AND LIQUOR_CODE=DECODE(#{liquorCode, jdbcType=VARCHAR},'!ALL',LIQUOR_CODE,#{liquorCode, jdbcType=VARCHAR})
+          ORDER BY BRAND_SORT_ORDER, DESCRIPTION
+    </select>
+
+    <!-- 삭제 -->
+    <delete id="delete" parameterType="map">
+        DELETE /* com.hitejinro.snop.system.dao.M08210DaoMapper.delete */
+        FROM SCMU.W_SOP_TB_ITEM_MAP_M
+        WHERE 1 = 1
+            AND FR_ITEM_CODE = #{FR_ITEM_CODE, jdbcType=VARCHAR}
+    </delete>
+    
+    <!-- 수정 및 저장 -->
+    <update id="update" parameterType="map">
+        MERGE INTO SCMU.W_SOP_TB_ITEM_MAP_M M /* com.hitejinro.snop.system.dao.M08210DaoMapper.update */
+        USING DUAL
+        ON (M.FR_ITEM_CODE = #{FR_ITEM_CODE, jdbcType=VARCHAR})
+        WHEN MATCHED THEN
+        UPDATE 
+        SET 
+            M.TO_ITEM_CODE = #{TO_ITEM_CODE, jdbcType=VARCHAR},
+            M.CONVERSION_VALUE = #{CONVERSION_VALUE, jdbcType=VARCHAR},
+            M.RMKS = #{RMKS, jdbcType=VARCHAR},
+            M.LAST_UPDATED_BY = #{userId, jdbcType=VARCHAR},
+            M.LAST_UPDATE_DATE = SYSDATE
+        WHEN NOT MATCHED THEN
+        INSERT 
+            (
+                  M.FR_ITEM_CODE, M.TO_ITEM_CODE 
+                , M.CONVERSION_VALUE, M.RMKS
+                , M.CREATED_BY, M.CREATION_DATE,M.LAST_UPDATED_BY, M.LAST_UPDATE_DATE
+            )
+        VALUES
+            (
+                  #{FR_ITEM_CODE, jdbcType=VARCHAR}, #{TO_ITEM_CODE, jdbcType=VARCHAR}
+                , #{CONVERSION_VALUE, jdbcType=VARCHAR}, #{RMKS, jdbcType=VARCHAR} 
+                , #{userId, jdbcType=VARCHAR}, SYSDATE,#{userId, jdbcType=VARCHAR}, SYSDATE
+            )
+        
+    </update>
+    
+    <!-- 유효성 검증 -->    
+    <select id="validate" parameterType="map" resultType="map">
+        WITH UPDATE_TBL AS /* com.hitejinro.snop.system.dao.M08210DaoMapper.validate */
+        (
+            <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+                SELECT
+                    #{list.action, jdbcType=VARCHAR}            AS ACTION,
+                    #{list.FR_ITEM_CODE, jdbcType=VARCHAR}      AS FR_ITEM_CODE,
+                    #{list.TO_ITEM_CODE, jdbcType=VARCHAR}      AS TO_ITEM_CODE
+                FROM DUAL
+            </foreach>
+        )
+        SELECT
+              A.FR_ITEM_CODE
+            , A.IDX || '번째 행에 오류 : ' || SUBSTR(A.FR_ITEM_CD_ERR || A.TO_ITEM_CD_ERR, 3) AS ERR_MSG
+        FROM
+        (
+            SELECT
+                  ROWNUM AS IDX
+                , T1.FR_ITEM_CODE
+                , (CASE WHEN T1.ACTION = 'insert' AND T2.FR_ITEM_CODE IS NOT NULL   THEN ', 중복된 기준제품코드'
+                        WHEN COUNT(1) OVER(PARTITION BY T1.FR_ITEM_CODE) > 1        THEN ', 중복입력된 기준제품코드'
+                        WHEN T1.FR_ITEM_CODE IS NULL                                THEN ', 기준제품코드번호는 필수 입력값' 
+                        WHEN T4.ITEM_CODE IS NULL                                   THEN ', 잘못입력된 기준제품코드'
+                        ELSE ''
+                   END) AS FR_ITEM_CD_ERR
+                , (CASE WHEN T3.ITEM_CODE IS NULL                                   THEN ', 잘못입력된 모제품코드'
+                        WHEN T1.TO_ITEM_CODE IS NULL                                THEN ', 모제품코드번호는 필수 입력값'
+                        ELSE ''
+                   END) AS TO_ITEM_CD_ERR
+            FROM UPDATE_TBL T1
+            LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M T2 ON T2.FR_ITEM_CODE = T1.FR_ITEM_CODE
+            LEFT JOIN EDW.W_CM_TB_FG_ITEM_M T3 ON T3.ITEM_CODE = T1.TO_ITEM_CODE 
+            LEFT JOIN EDW.W_CM_TB_FG_ITEM_M T4 ON T4.ITEM_CODE = T1.FR_ITEM_CODE
+        ) A
+        WHERE 1 = 1
+            AND SUBSTR(A.FR_ITEM_CD_ERR || A.TO_ITEM_CD_ERR, 3) IS NOT NULL
+        ORDER BY A.IDX
+    </select>
+    
+    <!-- 이력관리를 위해 이중매핑 대상 ROW select -->
+    <select id="searchConversion" parameterType="map" resultType="map">
+       SELECT /* com.hitejinro.snop.system.dao.M08210DaoMapper.searchConversion */
+              S1.FR_ITEM_CODE   AS FR_ITEM_CODE
+            , S2.TO_ITEM_CODE   AS TO_ITEM_CODE
+            , (CASE WHEN NVL(S4.UOM_CONVERSION_VALUE, 0) = 0 THEN 0
+                    ELSE NVL(S3.UOM_CONVERSION_VALUE, 0) / NVL(S4.UOM_CONVERSION_VALUE, 0)
+                    END) AS CONVERSION_VALUE
+            , S1.RMKS   AS RMKS
+        FROM SCMU.W_SOP_TB_ITEM_MAP_M S1
+        
+        INNER JOIN SCMU.W_SOP_TB_ITEM_MAP_M S2 ON S2.FR_ITEM_CODE = S1.TO_ITEM_CODE
+        
+        LEFT JOIN EDW.W_CM_TB_FG_ITEM_M S3 ON S3.ITEM_CODE = S1.FR_ITEM_CODE
+        
+        LEFT JOIN EDW.W_CM_TB_FG_ITEM_M S4 ON S4.ITEM_CODE = S2.TO_ITEM_CODE
+    </select>
+    
+    <!-- 이중매핑된 ROW 변경,및 저장 -->
+    <update id="updateConversion" parameterType="map">
+        MERGE INTO SCMU.W_SOP_TB_ITEM_MAP_M T /* com.hitejinro.snop.system.dao.M08210DaoMapper.updateConversion */
+        USING DUAL
+        ON
+        (
+            T.FR_ITEM_CODE = #{FR_ITEM_CODE, jdbcType=VARCHAR}
+        )
+        WHEN MATCHED THEN
+        UPDATE SET
+              T.TO_ITEM_CODE        = #{TO_ITEM_CODE, jdbcType=VARCHAR}
+            , T.CONVERSION_VALUE    = #{CONVERSION_VALUE, jdbcType=VARCHAR}
+            , T.LAST_UPDATED_BY     = #{userId, jdbcType=VARCHAR}
+            , T.LAST_UPDATE_DATE    = SYSDATE
+    </update>
+    
+    <!-- 이력관리 테이블에 업데이트 -->
+    <update id="insertHistory" parameterType="map">
+        INSERT INTO SCMU.W_SOP_TB_ITEM_MAP_HST_F /* com.hitejinro.snop.system.dao.M08210DaoMapper.insertHistory */
+        (
+              WORK_DTM
+            , WORK_TYPE
+            , FR_ITEM_CODE, TO_ITEM_CODE
+            , CONVERSION_VALUE, RMKS
+            , CREATED_BY
+            , CREATION_DATE
+        )
+        VALUES
+        (
+              TO_CHAR(SYSDATE, 'YYYYMMDDHH24MISS')
+            , (CASE WHEN #{action, jdbcType=VARCHAR} = 'insert' THEN 'C'
+                    WHEN #{action, jdbcType=VARCHAR} = 'update' THEN 'U'
+                    WHEN #{action, jdbcType=VARCHAR} = 'delete' THEN 'D'
+                    ELSE 'M'
+                    END) 
+            , #{FR_ITEM_CODE, jdbcType=VARCHAR}, #{TO_ITEM_CODE, jdbcType=VARCHAR}
+            , #{CONVERSION_VALUE, jdbcType=VARCHAR}, #{RMKS, jdbcType=VARCHAR}
+            , #{userId, jdbcType=VARCHAR}
+            , SYSDATE
+        )
+    </update>
+</mapper>

@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 관심품목 정의 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08010DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08010DaoMapper.search */
+			   A.ITEM_CODE                  -- 제품코드
+		     , B.DESCRIPTION                -- 제품명
+		     , A.ABBR_ITEM_NAME             -- 제품약어
+		     , A.ORDER_SEQ					-- 정렬순서
+		     , C.SAFT_STOCK_DCNT			-- 안전재고일수
+		     , TO_CHAR(A.CREATION_DATE, 'YYYY-MM-DD') AS FIRST_REG_DATE -- 최초등록일
+		     , B.LIQUOR_CODE                -- 주종
+		     , B.BRAND_CODE                 -- 브랜드
+		     , B.USAGE_CODE                 -- 용도
+		     , B.VESSEL_CODE                -- 용기
+		     , B.VOLUME_VALUE               -- 용량
+		     , B.MAIN_FLAG                  -- 주력구분
+		     , B.UOM_CONVERSION_VALUE		-- 환산계수
+		     , B.EVENT_ITEM_FLAG 			-- 기획여부
+		  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M A   	--  관심품목마스터
+		     , EDW.W_CM_TB_FG_ITEM_M B      		--  제품마스터
+		     , W_SOP_TB_ITEM_SAFT_STOCK_F C
+		 WHERE 1 = 1
+		   AND A.ITEM_CODE = B.ITEM_CODE
+		   AND A.ITEM_CODE = C.ITEM_CODE(+)
+		   AND B.ITEM_TYPE = 'FG'
+		   AND B.ITEM_STATUS = 'Active'
+		   AND B.LIQUOR_CODE IN ('10', '20')
+		   AND A.PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		   AND A.PERIOD_YYYYMM = C.PERIOD_YYYYMM(+)
+		   AND A.INP_DGR = #{version, jdbcType=VARCHAR}
+		   AND (
+                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+                OR
+                (B.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+           )
+		<if test="brandCode != null and brandCode != ''">
+            <foreach open="AND B.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+				#{brandCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+        <if test="usageCode != null and usageCode != ''">
+            <foreach open="AND B.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+				#{usageCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+		<if test="vesselCode != null and vesselCode != ''">
+            <foreach open="AND B.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+				#{vesselCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+        <if test="volumeCode != null and volumeCode != ''">
+            <foreach open="AND B.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+				#{volumeCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+		ORDER BY LIQUOR_CODE, ORDER_SEQ        
+    </select>
+    
+    <!-- 데이터 저장 : 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH /* com.hitejinro.snop.work.dao.M08010DaoMapper.validate */
+    	UPDATE_TBL AS 
+    	(
+			<foreach collection="saveData" item="list" separator="UNION ALL" index="i">
+				SELECT
+					  #{list.action, jdbcType=VARCHAR}					AS ACTION
+					, #{list.ITEM_CODE, jdbcType=VARCHAR}				AS ITEM_CODE
+					, #{list.ABBR_ITEM_NAME, jdbcType=VARCHAR}          AS ABBR_ITEM_NAME
+					, #{yearMonth, jdbcType=VARCHAR}					AS PERIOD_YYYYMM
+					, #{version, jdbcType=VARCHAR}						AS INP_DGR
+				FROM DUAL
+			</foreach>
+    	)
+		SELECT COUNT(1)		AS ERR_CNT
+     		 , LISTAGG('- 제품코드=' || ITEM_CODE || ' : ' || SUBSTR(ITEM_CODE_ERR || DO_NOT_EXIST_ERR, 3)
+               		   , '\r\n') WITHIN GROUP (ORDER BY IDX)    AS ERR_MSG		
+		FROM
+		(
+			SELECT ROWNUM AS IDX
+				 , T1.ITEM_CODE
+				 , (CASE WHEN T1.ITEM_CODE IS NULL	THEN ', 제품코드는 필수값'
+						 WHEN T1.ACTION = 'insert' AND T2.ITEM_CODE IS NOT NULL THEN ', 중복된 제품코드'
+						 WHEN COUNT(1) OVER (PARTITION BY T1.ITEM_CODE) > 1 	 THEN ', 중복입력된 제품코드'
+						 ELSE ''
+				    END) AS ITEM_CODE_ERR
+				 , (CASE WHEN T1.ITEM_CODE IS NOT NULL
+						 AND T3.ITEM_CODE IS NULL THEN ', 존재하지 않는 제품코드'
+						 ELSE ''
+				     END) AS DO_NOT_EXIST_ERR
+			  FROM UPDATE_TBL 								T1
+			  LEFT JOIN SCMU.W_SOP_TB_INTEREST_ITEM_M 		T2 
+				     ON T2.ITEM_CODE = T1.ITEM_CODE 
+				    AND T2.PERIOD_YYYYMM = T1.PERIOD_YYYYMM 
+				    AND T2.INP_DGR = T1.INP_DGR
+			  LEFT JOIN EDW.W_CM_TB_FG_ITEM_M 				T3 
+				     ON T3.ITEM_CODE = T1.ITEM_CODE
+		) A
+		WHERE 1 = 1
+		  AND SUBSTR(A.ITEM_CODE_ERR || DO_NOT_EXIST_ERR, 3) IS NOT NULL
+    </select>
+    
+    <!-- 데이터 저장 : 삭제 -->
+    <delete id="delete" parameterType="map">
+    	DELETE /* com.hitejinro.snop.work.dao.M08010DaoMapper.delete */
+    	  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M T1
+    	 WHERE 1 = 1
+    	   AND T1.ITEM_CODE
+    		IN (
+				<foreach collection="deleteList" item="list" separator="," index="i">
+					#{list.ITEM_CODE, jdbcType=VARCHAR}
+				</foreach>
+    		   )
+    	   AND T1.PERIOD_YYYYMM = #{yearMonth, jdbcType=VARCHAR}
+    	   AND T1.INP_DGR = #{version, jdbcType=VARCHAR}
+    </delete>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO /* com.hitejinro.snop.system.dao.M08010DaoMapper.update */ 
+    		  SCMU.W_SOP_TB_INTEREST_ITEM_M T 
+    	USING
+    	(
+			<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				SELECT #{list.ITEM_CODE, jdbcType=VARCHAR}						  AS ITEM_CODE
+					 , NVL(#{list.ABBR_ITEM_NAME, jdbcType=VARCHAR}, DESCRIPTION) AS ABBR_ITEM_NAME
+					 , NVL(#{list.ORDER_SEQ, jdbcType=NUMERIC}, 0)				  AS ORDER_SEQ
+					 , #{yearMonth, jdbcType=VARCHAR}							  AS PERIOD_YYYYMM
+					 , NVL(#{version, jdbcType=VARCHAR}, '1')					  AS INP_DGR
+				  FROM EDW.W_CM_TB_FG_ITEM_M
+				 WHERE ITEM_CODE = #{list.ITEM_CODE, jdbcType=VARCHAR}
+			</foreach>
+    	) S ON (
+    				 T.ITEM_CODE = S.ITEM_CODE
+    			 AND T.PERIOD_YYYYMM = S.PERIOD_YYYYMM
+    			 AND T.INP_DGR = S.INP_DGR
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.ABBR_ITEM_NAME   	= ABBR_ITEM_NAME
+				, T.ORDER_SEQ			= ORDER_SEQ
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+		      T.PERIOD_YYYYMM, T.ITEM_CODE, T.ABBR_ITEM_NAME, T.ORDER_SEQ, T.INP_DGR
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.PERIOD_YYYYMM, S.ITEM_CODE, S.ABBR_ITEM_NAME, S.ORDER_SEQ, S.INP_DGR
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+    <!-- 버전 콤보 조회 -->
+    <select id="versionCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.system.dao.M08010DaoMapper.versionCombo */
+		       DISTINCT INP_DGR AS CODE
+		     , TO_CHAR(TO_DATE(PERIOD_YYYYMM||'01', 'YYYYMMDD'),'YYYY-MM') || '-' || INP_DGR AS NAME
+		  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M
+		 WHERE PERIOD_YYYYMM = #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR}
+    </select>
+    
+    <!-- 버전 생성 -->
+    <insert id="insertNewVersion" parameterType="map">
+	    INSERT INTO /* com.hitejinro.snop.system.dao.M08010DaoMapper.insertNewVersion */ 
+	    SCMU.W_SOP_TB_INTEREST_ITEM_M
+	    	(PERIOD_YYYYMM, INP_DGR, ITEM_CODE, ABBR_ITEM_NAME, ORDER_SEQ, CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+	    SELECT TO_YM
+	         , TO_VER
+	         , ITEM_CODE
+	         , ABBR_ITEM_NAME
+	         , ORDER_SEQ
+	         , #{userId, jdbcType=VARCHAR}
+	         , SYSDATE
+	         , #{userId, jdbcType=VARCHAR}
+	         , SYSDATE
+	      FROM SCMU.W_SOP_TB_INTEREST_ITEM_M A
+	         , (
+			    SELECT SUBSTR(MAX_VER, 1, 6)    																AS FROM_YM
+			         , SUBSTR(MAX_VER, 7)       																AS FROM_VER
+			         , #{yearMonth, jdbcType=VARCHAR}                 											AS TO_YM
+			         , DECODE(SUBSTR(MAX_VER, 1, 6), #{yearMonth, jdbcType=VARCHAR}, SUBSTR(MAX_VER, 7) + 1, 1) 	AS TO_VER
+			      FROM (
+			           SELECT MAX(PERIOD_YYYYMM||INP_DGR) AS MAX_VER
+			             FROM SCMU.W_SOP_TB_INTEREST_ITEM_M
+			            WHERE PERIOD_YYYYMM <![CDATA[<=]]> #{yearMonth, jdbcType=VARCHAR}
+			           )
+	         ) B
+	     WHERE A.PERIOD_YYYYMM = B.FROM_YM
+	       AND A.INP_DGR       = B.FROM_VER
+    </insert>
+    
+	<!-- 팝업 데이터 조회 -->
+    <select id="searchPop" parameterType="map" resultType="map">
+    	
+		SELECT /* com.hitejinro.snop.work.dao.M08010DaoMapper.searchPop */
+			   A.ITEM_CODE                  -- 제품코드
+		     , A.DESCRIPTION                -- 제품명
+			 , B.SAFT_STOCK_DCNT		  -- 안전재고일수
+			 , A.LIQUOR_CODE                -- 주종
+		     , A.BRAND_CODE                 -- 브랜드
+		     , A.USAGE_CODE                 -- 용도
+		     , A.VESSEL_CODE                -- 용기
+		     , A.VOLUME_VALUE               -- 용량
+		     , A.MAIN_FLAG                  -- 주력구분
+		     , A.UOM_CONVERSION_VALUE		-- 환산계수
+		     , A.EVENT_ITEM_FLAG 			-- 기획여부
+		  FROM EDW.W_CM_TB_FG_ITEM_M A       		--  제품마스터
+		  	 , W_SOP_TB_ITEM_SAFT_STOCK_F B
+		 WHERE 1 = 1
+		   AND (A.ITEM_CODE LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%'	OR A.DESCRIPTION LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%')
+		   AND A.LIQUOR_CODE IN ('10', '20')
+		   AND A.ITEM_TYPE = 'FG'
+		   AND A.ITEM_STATUS = 'Active'
+		   AND A.ITEM_CODE = B.ITEM_CODE(+)
+		   AND #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR} = B.PERIOD_YYYYMM(+) 
+    </select>
+    
+	<!-- 버전 삭제 -->
+    <delete id="deleteVersion" parameterType="map">
+    	DELETE /* com.hitejinro.snop.work.dao.M08010DaoMapper.deleteVersion */
+    	  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M T1
+    	 WHERE 1 = 1
+    	   AND T1.PERIOD_YYYYMM = #{yearMonth, jdbcType=VARCHAR}
+    	   AND T1.INP_DGR = #{version, jdbcType=VARCHAR}
+    </delete>
+</mapper>

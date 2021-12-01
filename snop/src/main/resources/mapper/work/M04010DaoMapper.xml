@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 센터-품목별 재고 현황 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M04010DaoMapper">
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH STOCK_TBL AS /* com.hitejinro.snop.work.dao.M04010DaoMapper.search */
+		(
+		    SELECT 
+		          AA.MFG_ORG_CODE AS ORG_CODE
+		        , AA.MFG_ORG_TYPE AS ORG_TYPE
+		        , AA.ITEM_CODE
+		        , AA.ONHAND_QTY
+		        , AA.TRANS_QTY
+		    FROM SCMU.W_SCP_VW_MFG_ORG_RT_STOCK_M AA
+		    WHERE 1 = 1
+		        AND AA.MFG_ORG_TYPE = 'LOGISTICS'
+		        AND (AA.ONHAND_QTY  != 0 OR AA.TRANS_QTY != 0)
+		)
+		, SALES_TBL AS
+		(
+		    SELECT /*+ INDEX(A W_OM_TB_RESULT_DETAIL_F_I01) */
+		          BA.ORG_CODE, BA.ITEM_CODE
+		        , SUM(CASE WHEN BA.SALES_DATE BETWEEN BB.BF_5D_YYYYMMDD AND BB.YYYYMMDD THEN BA.ORDERED_QTY
+		                   ELSE 0
+		                   END) / 5  AS BF_5D_ORDERED_QTY
+		        , SUM(CASE WHEN BA.SALES_DATE BETWEEN BB.BF_20D_YYYYMMDD AND BB.YYYYMMDD THEN BA.ORDERED_QTY
+		                   ELSE 0
+		                   END) / 20 AS BF_20D_ORDERED_QTY
+		    FROM EDW.W_OM_TB_RESULT_DETAIL_F BA
+		
+		    INNER JOIN
+		    (
+		        SELECT YYYYMMDD, BF_5D_YYYYMMDD, BF_20D_YYYYMMDD
+		        FROM SCMU.W_SOP_VW_CALENDAR_M
+		        WHERE 1 = 1
+		            AND YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD')
+		    ) BB ON BA.SALES_DATE BETWEEN BB.BF_20D_YYYYMMDD AND BB.YYYYMMDD
+		
+		    INNER JOIN EDW.W_CM_TB_CENTER_M BC ON BC.OU_CODE  = BA.OU_CODE
+		                                      AND BC.ORG_CODE = BA.ORG_CODE
+		
+		    WHERE 1 = 1
+		        AND BA.OU_CODE     IN ('HJ0', 'S00')
+		        AND BA.ORDERED_QTY != 0
+		        AND BA.LIQUOR_CODE = DECODE(#{liquorCode, jdbcType=VARCHAR}, '!ALL', BA.LIQUOR_CODE, #{liquorCode, jdbcType=VARCHAR})
+		    GROUP BY BA.ORG_CODE, BA.ITEM_CODE
+		)
+		, REMAIN_TBL AS 
+		(
+		    -- ERP 운송대기재고 VIEW
+		    -- 운송대기재고 > 0 : 추후에 물류센터로 이송될 잔량
+		    -- 운송대기재고 = 0 : 전부 출고됨
+		    -- 그 외 : 이송확정수량보다 더 많이 출고된 경우(이미 출고되어 물류센터, 공장의 현재고 혹은 이송 중 재고에 반영되었기에 의미없음)
+		    SELECT
+		          CA.MFG_CODE, CA.ORG_CODE, CA.ITEM_CODE
+		        , CA.REMAIN_QTY
+		    FROM SCMU.W_SCP_VW_TRANS_REMAIN_RT_M CA
+		    WHERE 1 = 1
+		        AND CA.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD')
+		        AND CA.REMAIN_QTY      > 0
+		)
+		, CONFIRM_TBL AS (
+	         -- 금일배정량 조회
+             SELECT
+                   MFG_CODE, ORG_CODE, ITEM_CODE
+                 , SUM(CONFIRM_QTY)  AS TRANS_CFN_QTY
+             FROM SCMU.W_SCP_VW_TRANS_CONFIRM_RT_M
+             WHERE 1 = 1
+                AND PERIOD_YYYYMMDD = TO_DATE(TO_CHAR(SYSDATE, 'YYYYMMDD'), 'YYYYMMDD')
+	            AND CONFIRM_QTY		!= 0
+             GROUP BY MFG_CODE, ORG_CODE, ITEM_CODE
+     	)
+     	SELECT
+     		  K.ORG_CODE, K.ORG_DESC
+     		, K.ITEM_CODE, K.DESCRIPTION
+     		, K.BRAND_CODE, K.BRAND_NAME
+     		, K.USAGE_CODE, K.USAGE_NAME
+     		, K.VESSEL_CODE, K.VESSEL_SORT, K.VOLUME_VALUE
+     		, K.PACKING_UNIT, K.PACKING_TYPE
+     		
+     		, K.ONHAND_QTY, K.TRANS_QTY, K.REMAIN_QTY
+     		, K.TOTAL_STOCK_QTY1, K.TOTAL_STOCK_QTY2
+     		, K.BF_20D_ORDERED_QTY, K.BF_5D_ORDERED_QTY
+     		, K.BF_20D_STOCK_DAY, K.BF_5D_STOCK_DAY, K.STOCK_DAY_CENTER
+     		, K.STOCK_STATUS, K.STOCK_STATUS_CODE AS "STOCK_STATUSClass"
+     		, K.TRANS_CFN_QTY_10, K.TRANS_CFN_QTY_MH1, K.TRANS_CFN_QTY_MH3
+     		, K.TRANS_CFN_QTY_20, K.TRANS_CFN_QTY_MJ1, K.TRANS_CFN_QTY_MJ2
+     		, K.TRANS_CFN_QTY_MJ3, K.TRANS_CFN_QTY_MJ4
+     		, K.UOM_CONVERSION_VALUE, K.LAST_SYNC_TIME
+     	FROM
+     	(
+	     	SELECT
+	     		  I.ORG_CODE, I.ORG_DESC, I.ITEM_CODE, I.DESCRIPTION
+	     		, I.BRAND_CODE, I.BRAND_NAME
+	     		, I.USAGE_CODE, I.USAGE_NAME
+	     		, I.VESSEL_CODE, I.VESSEL_SORT, I.VOLUME_VALUE
+	     		, I.PACKING_UNIT, I.PACKING_TYPE
+	     		, I.ONHAND_QTY, I.TRANS_QTY, I.REMAIN_QTY
+	     		, I.TOTAL_STOCK_QTY1, I.TOTAL_STOCK_QTY2
+	     		, I.BF_20D_ORDERED_QTY, I.BF_5D_ORDERED_QTY
+	     		, I.BF_20D_STOCK_DAY, I.BF_5D_STOCK_DAY
+	     		, I.STOCK_DAY_CENTER, J.CODE AS STOCK_STATUS_CODE, J.NAME AS STOCK_STATUS
+	     		, I.TRANS_CFN_QTY_10, I.TRANS_CFN_QTY_MH1, I.TRANS_CFN_QTY_MH3
+	     		, I.TRANS_CFN_QTY_20, I.TRANS_CFN_QTY_MJ1, I.TRANS_CFN_QTY_MJ2
+	     		, I.TRANS_CFN_QTY_MJ3, I.TRANS_CFN_QTY_MJ4
+	     		, I.UOM_CONVERSION_VALUE, I.LAST_SYNC_TIME
+	     		, ROW_NUMBER() OVER (PARTITION BY I.ORG_CODE, I.ITEM_CODE ORDER BY I.ORG_CODE, I.ITEM_CODE, J.SEQ) AS RN
+	     	FROM
+	     	(
+				SELECT
+				      GA.ORG_CODE
+				    , MAX(GD.ORG_DESC)                                  AS ORG_DESC
+				    , GA.ITEM_CODE
+				    , MAX(GB.DESCRIPTION)                               AS DESCRIPTION
+				    , MAX(GB.BRAND_CODE)								AS BRAND_CODE
+				    , MAX(GB.BRAND_NAME)								AS BRAND_NAME
+				    , MAX(GB.USAGE_CODE)								AS USAGE_CODE
+				    , MAX(GB.USAGE_NAME)								AS USAGE_NAME
+				    , MAX(GB.VESSEL_CODE)								AS VESSEL_CODE
+				    , MAX(GB.VESSEL_SORT)								AS VESSEL_SORT
+				    , MAX(GB.VOLUME_VALUE)								AS VOLUME_VALUE
+				    , MAX(GB.PACKING_UNIT)								AS PACKING_UNIT
+					, MAX(GB.PACKING_TYPE)								AS PACKING_TYPE    
+				    
+				    , SUM(GA.ONHAND_QTY)                                AS ONHAND_QTY
+				    , SUM(GA.TRANS_QTY)                                 AS TRANS_QTY
+				    , SUM(GA.REMAIN_QTY)                                AS REMAIN_QTY
+				    , SUM(GA.ONHAND_QTY + GA.TRANS_QTY)                 AS TOTAL_STOCK_QTY1
+				    , SUM(GA.ONHAND_QTY + GA.TRANS_QTY + GA.REMAIN_QTY) AS TOTAL_STOCK_QTY2
+				    , SUM(GA.BF_20D_ORDERED_QTY)                        AS BF_20D_ORDERED_QTY
+				    , SUM(GA.BF_5D_ORDERED_QTY)                         AS BF_5D_ORDERED_QTY
+				
+				    , (CASE WHEN SUM(GA.BF_20D_ORDERED_QTY) = 0 THEN 0
+				            ELSE SUM(GA.ONHAND_QTY + GA.TRANS_QTY + GA.REMAIN_QTY) / SUM(GA.BF_20D_ORDERED_QTY)
+				            END) AS BF_20D_STOCK_DAY
+				    , (CASE WHEN SUM(GA.BF_5D_ORDERED_QTY) = 0 THEN 0
+				            ELSE SUM(GA.ONHAND_QTY + GA.TRANS_QTY + GA.REMAIN_QTY) / SUM(GA.BF_5D_ORDERED_QTY)
+				            END) AS BF_5D_STOCK_DAY
+				    , MAX(NVL(GC.STOCK_DAY_CENTER, 0))                  AS STOCK_DAY_CENTER
+				    , SUM(GA.TRANS_CFN_QTY_MH1 + GA.TRANS_CFN_QTY_MH3)  AS TRANS_CFN_QTY_10
+				    , SUM(GA.TRANS_CFN_QTY_MH1)                         AS TRANS_CFN_QTY_MH1
+				    , SUM(GA.TRANS_CFN_QTY_MH3)                         AS TRANS_CFN_QTY_MH3
+				
+				    , SUM
+				      (
+				          GA.TRANS_CFN_QTY_MJ1 + GA.TRANS_CFN_QTY_MJ2
+				        + GA.TRANS_CFN_QTY_MJ3 + GA.TRANS_CFN_QTY_MJ4
+				      )                                                 AS TRANS_CFN_QTY_20
+				    , SUM(GA.TRANS_CFN_QTY_MJ1)                         AS TRANS_CFN_QTY_MJ1
+				    , SUM(GA.TRANS_CFN_QTY_MJ2)                         AS TRANS_CFN_QTY_MJ2
+				    , SUM(GA.TRANS_CFN_QTY_MJ3)                         AS TRANS_CFN_QTY_MJ3
+				    , SUM(GA.TRANS_CFN_QTY_MJ4)                         AS TRANS_CFN_QTY_MJ4
+				
+				    , MAX(NVL(GB.UOM_CONVERSION_VALUE, 0))              AS UOM_CONVERSION_VALUE
+				    , TO_CHAR(SYSDATE, 'YYYY-MM-DD hh24:mm:ss')			AS LAST_SYNC_TIME
+				FROM
+				(
+				    -- 1. 물류센터 현재고, 운송 중 재고
+				    -- 기획제품 매핑
+				    SELECT
+				          DA.ORG_CODE
+				        , NVL(DB.ITEM_CODE_P, DA.ITEM_CODE) AS ITEM_CODE
+				        , SUM((CASE WHEN DB.ITEM_CODE_P IS NOT NULL THEN DA.ONHAND_QTY * NVL(DB.CONVERSION_VALUE, 0)
+				                    ELSE DA.ONHAND_QTY
+				                    END)) AS ONHAND_QTY
+				        , SUM((CASE WHEN DB.ITEM_CODE_P IS NOT NULL THEN DA.TRANS_QTY * NVL(DB.CONVERSION_VALUE, 0)
+				                    ELSE DA.TRANS_QTY
+				                    END)) AS TRANS_QTY
+				        , 0 AS REMAIN_QTY
+				        , 0 AS BF_5D_ORDERED_QTY
+				        , 0 AS BF_20D_ORDERED_QTY
+				        , 0 AS TRANS_CFN_QTY_MH1
+				        , 0 AS TRANS_CFN_QTY_MH3
+				        , 0 AS TRANS_CFN_QTY_MJ1
+				        , 0 AS TRANS_CFN_QTY_MJ2
+				        , 0 AS TRANS_CFN_QTY_MJ3
+				        , 0 AS TRANS_CFN_QTY_MJ4
+				    FROM STOCK_TBL DA
+				
+				    LEFT JOIN SCMU.W_OM_TB_ITEM_MAP_M DB ON DB.ITEM_CODE_S   = DA.ITEM_CODE
+				                                        AND DB.MAPPING_GUBUN = '2'
+				                                        AND DB.USED_YN       = 'Y'
+				                                        AND TO_CHAR(SYSDATE, 'YYYYMMDD') BETWEEN DB.START_YYYYMMDD AND NVL(DB.END_YYYYMMDD, '99991231')
+				    GROUP BY DA.ORG_CODE, NVL(DB.ITEM_CODE_P, DA.ITEM_CODE)
+				
+				    -- 2. 물류센터 운송대기 재고
+				    -- 기획제품 매핑
+				    UNION ALL
+				    SELECT
+				          EA.ORG_CODE
+				        , NVL(EB.ITEM_CODE_P, EA.ITEM_CODE) AS ITEM_CODE
+				        , 0 AS ONHAND_QTY
+				        , 0 AS TRANS_QTY
+				        , SUM((CASE WHEN EB.ITEM_CODE_P IS NOT NULL THEN EA.REMAIN_QTY * NVL(EB.CONVERSION_VALUE, 0)
+				                    ELSE EA.REMAIN_QTY
+				                    END)) AS REMAIN_QTY
+				        , 0 AS BF_5D_ORDERED_QTY
+				        , 0 AS BF_20D_ORDERED_QTY
+				        , 0 AS TRANS_CFN_QTY_MH1
+				        , 0 AS TRANS_CFN_QTY_MH3
+				        , 0 AS TRANS_CFN_QTY_MJ1
+				        , 0 AS TRANS_CFN_QTY_MJ2
+				        , 0 AS TRANS_CFN_QTY_MJ3
+				        , 0 AS TRANS_CFN_QTY_MJ4
+				    FROM REMAIN_TBL EA
+				
+				    LEFT JOIN SCMU.W_OM_TB_ITEM_MAP_M EB ON EB.ITEM_CODE_S   = EA.ITEM_CODE
+				                                        AND EB.MAPPING_GUBUN = '2'
+				                                        AND EB.USED_YN       = 'Y'
+				                                        AND TO_CHAR(SYSDATE, 'YYYYMMDD') BETWEEN EB.START_YYYYMMDD AND NVL(EB.END_YYYYMMDD, '99991231')
+				    GROUP BY EA.ORG_CODE, NVL(EB.ITEM_CODE_P, EA.ITEM_CODE)
+				
+				    -- 3.판매량
+				    UNION ALL
+				    SELECT 
+				          FA.ORG_CODE
+				        , FA.ITEM_CODE
+				        , 0 AS ONHAND_QTY
+				        , 0 AS TRANS_QTY
+				        , 0 AS REMAIN_QTY
+				        , FA.BF_5D_ORDERED_QTY
+				        , FA.BF_20D_ORDERED_QTY
+				        , 0 AS TRANS_CFN_QTY_MH1
+				        , 0 AS TRANS_CFN_QTY_MH3
+				        , 0 AS TRANS_CFN_QTY_MJ1
+				        , 0 AS TRANS_CFN_QTY_MJ2
+				        , 0 AS TRANS_CFN_QTY_MJ3
+				        , 0 AS TRANS_CFN_QTY_MJ4
+				    FROM SALES_TBL FA
+				
+				    -- 4. 배정수량
+				    -- 수정 필요(당일자 배송확정량)
+				    UNION ALL
+				    SELECT 
+				          HA.ORG_CODE, HA.ITEM_CODE
+				        , 0                                                            AS ONHAND_QTY
+				        , 0                                                            AS TRANS_QTY
+				        , 0                                                            AS REMAIN_QTY
+				        , 0                                                            AS BF_5D_ORDERED_QTY
+				        , 0                                                            AS BF_20D_ORDERED_QTY
+				        , SUM(DECODE(HA.MFG_CODE, 'MH1', NVL(HA.TRANS_CFN_QTY, 0), 0)) AS TRANS_CFN_QTY_MH1
+				        , SUM(DECODE(HA.MFG_CODE, 'MH3', NVL(HA.TRANS_CFN_QTY, 0), 0)) AS TRANS_CFN_QTY_MH3
+				        , SUM(DECODE(HA.MFG_CODE, 'MJ1', NVL(HA.TRANS_CFN_QTY, 0), 0)) AS TRANS_CFN_QTY_MJ1
+				        , SUM(DECODE(HA.MFG_CODE, 'MJ2', NVL(HA.TRANS_CFN_QTY, 0), 0)) AS TRANS_CFN_QTY_MJ2
+				        , SUM(DECODE(HA.MFG_CODE, 'MJ3', NVL(HA.TRANS_CFN_QTY, 0), 0)) AS TRANS_CFN_QTY_MJ3
+				        , SUM(DECODE(HA.MFG_CODE, 'MJ4', NVL(HA.TRANS_CFN_QTY, 0), 0)) AS TRANS_CFN_QTY_MJ4
+				    FROM CONFIRM_TBL HA
+				    GROUP BY HA.ORG_CODE, HA.ITEM_CODE
+				) GA
+				
+				INNER JOIN EDW.W_CM_TB_FG_ITEM_M GB ON GB.ITEM_CODE   = GA.ITEM_CODE
+												   AND GB.LIQUOR_CODE IN ('10', '20')
+				                                   AND GB.LIQUOR_CODE = DECODE(#{liquorCode, jdbcType=VARCHAR}, '!ALL', GB.LIQUOR_CODE, #{liquorCode, jdbcType=VARCHAR})
+				                                   AND GB.ITEM_STATUS = 'Active'
+				                                   AND GB.USAGE_CODE  IN ('1', '2', '3')
+				                                   AND GB.ITEM_TYPE   = 'FG' -- 배정제외 제품타입  (MG : 판매대행 제품, PH : 본 상품)
+				
+				LEFT JOIN
+				(
+				    -- 물류센터/제품별 안전재고 일수
+				    SELECT 
+				          IA.MFG_ORG_CODE AS ORG_CODE
+				        , IA.ITEM_CODE
+				        , MAX(NVL(IA.STOCK_DAY_CENTER, 0)) AS STOCK_DAY_CENTER
+				    FROM SCMU.W_WS_TB_ORG_STOCKDAYS_M IA
+				
+				    INNER JOIN SCMU.W_WS_TB_VERSION_M IB ON IB.TYPE       = '06'
+				                                        AND IB.VER_STATUS = 'A' 
+				    WHERE 1 = 1
+				        AND IA.END_YYYYMMDD = '20991231'
+				        AND IA.MFG_ORG_CODE NOT IN ('C38', 'C39', 'C87') 
+				        AND IA.MFG_ORG_TYPE IN ('RDC', 'CDC') -- 물류센터의 안전재고일수만 추출
+				    GROUP BY IA.MFG_ORG_CODE, IA.ITEM_CODE
+				) GC ON GC.ORG_CODE  = GA.ORG_CODE
+				    AND GC.ITEM_CODE = GA.ITEM_CODE
+				
+				INNER JOIN EDW.W_CM_TB_CENTER_M GD ON GD.OU_CODE  = 'HJ0'
+				                                  AND GD.ORG_CODE = GA.ORG_CODE
+				WHERE 1 = 1
+					AND GA.ORG_CODE IN
+		        <foreach collection="orgCode" item="i" open="(" close=")" separator=",">
+		            #{i, jdbcType=VARCHAR}
+		        </foreach>
+			         AND
+			         (
+			            GA.ITEM_CODE LIKE #{itemCode, jdbcType=VARCHAR} || '%'
+			            OR
+			            GB.DESCRIPTION LIKE #{itemCode, jdbcType=VARCHAR} || '%'
+			         )
+				GROUP BY GA.ORG_CODE, GA.ITEM_CODE
+			) I
+			
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M J ON J.GROUP_CODE = 'CENTER_ITEM_SAFETY_STOCK_STD'
+			                                    AND J.USE_YN     = 'Y'
+			WHERE 1 = 1
+				AND 'Y' = 
+				(CASE WHEN NVL(J.SEGMENT3, 'NA') = 'LESS_THAN' AND NVL(J.SEGMENT1, 'N') = 'Y' AND I.BF_5D_STOCK_DAY > I.STOCK_DAY_CENTER + NVL(TO_NUMBER(J.SEGMENT2), 0)              THEN 'Y'
+			          WHEN NVL(J.SEGMENT3, 'NA') = 'LESS_THAN' AND NVL(J.SEGMENT1, 'N') = 'N' AND I.BF_5D_STOCK_DAY > NVL(TO_NUMBER(J.SEGMENT2), 0)                                   THEN 'Y'
+			          WHEN NVL(J.SEGMENT3, 'NA') = 'LESS_THAN_OR_EQUAL_TO' AND NVL(J.SEGMENT1, 'N') = 'Y' AND I.BF_5D_STOCK_DAY >= I.STOCK_DAY_CENTER + NVL(TO_NUMBER(J.SEGMENT2), 0) THEN 'Y'
+			          WHEN NVL(J.SEGMENT3, 'NA') = 'LESS_THAN_OR_EQUAL_TO' AND NVL(J.SEGMENT1, 'N') = 'N' AND I.BF_5D_STOCK_DAY >= NVL(TO_NUMBER(J.SEGMENT2), 0)                      THEN 'Y'
+			          WHEN NVL(J.SEGMENT3, 'NA') = 'NA' THEN 'Y'
+			          ELSE 'N'
+			          END)
+				AND 'Y' =
+				(CASE WHEN NVL(J.SEGMENT4, 'NA') = 'LESS_THAN' AND NVL(J.SEGMENT5, 'N') = 'Y' AND I.STOCK_DAY_CENTER + NVL(TO_NUMBER(J.SEGMENT6), 99999999) > I.BF_5D_STOCK_DAY              THEN 'Y'
+		              WHEN NVL(J.SEGMENT4, 'NA') = 'LESS_THAN' AND NVL(J.SEGMENT5, 'N') = 'N' AND NVL(TO_NUMBER(J.SEGMENT6), 99999999) > I.BF_5D_STOCK_DAY                                   THEN 'Y'
+		              WHEN NVL(J.SEGMENT4, 'NA') = 'LESS_THAN_OR_EQUAL_TO' AND NVL(J.SEGMENT5, 'N') = 'Y' AND I.STOCK_DAY_CENTER + NVL(TO_NUMBER(J.SEGMENT6), 99999999) >= I.BF_5D_STOCK_DAY THEN 'Y'
+		              WHEN NVL(J.SEGMENT4, 'NA') = 'LESS_THAN_OR_EQUAL_TO' AND NVL(J.SEGMENT5, 'N') = 'N' AND NVL(TO_NUMBER(J.SEGMENT6), 99999999) >= I.BF_5D_STOCK_DAY                      THEN 'Y'
+		              WHEN NVL(J.SEGMENT4, 'NA') = 'NA' THEN 'Y'
+		              ELSE 'N'
+		              END)
+		) K
+		WHERE 1 = 1
+			AND K.RN = 1
+		ORDER BY K.ORG_CODE, K.ITEM_CODE
+	</select>
+	
+</mapper>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx" xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.1.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+		http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd">
+	
+    <!-- Local -->
+	<bean id="propertyPlaceholderConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+    	<property name="locations">
+        	<value>classpath:config/spring/context/application.properties</value>
+    	</property>
+	</bean> 
+    
+    <!-- PROD, DEV
+    <bean id="propertyPlaceholderConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <value>file:C:/HITEJINRO/snop/datasource/application.properties</value>
+        </property>
+    </bean> -->
+    
+	
+	<bean id="dataSource" class="org.apache.commons.dbcp2.BasicDataSource">
+		<property name="driverClassName" value="${jdbc.driverClassName}"></property>
+		<property name="url" value="${jdbc.url}"></property>
+		<property name="username" value="${jdbc.username}"></property>
+		<property name="password" value="${jdbc.password}"></property>
+		<property name="initialSize" value="30"></property>
+		<property name="maxTotal" value="200"></property>
+		<property name="maxIdle" value="30"></property>
+		<property name="minIdle" value="30"></property>
+		<property name="maxWaitMillis" value="1800000"></property>
+	</bean>
+	
+	<!-- Transaction Manager -->
+	<tx:annotation-driven transaction-manager="transactionManager" />
+	<bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+	    <property name="dataSource" ref="dataSource" />
+	</bean>
+	
+
+</beans>

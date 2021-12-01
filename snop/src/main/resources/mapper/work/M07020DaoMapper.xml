@@ -1,0 +1,788 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M07020 :  주간 판매계획 준수율
+ * 작성일자 :: 2021.09.07
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M07020DaoMapper">
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		/*
+		본테이블의 월별 주차컬럼(W1~W5)을 ROW로 변경 하기위한 월별 주차의 순번 구하기
+		*/
+		WITH TBL_WEEK_PLAN AS ( /* com.hitejinro.snop.work.dao.M07020DaoMapper.search */
+        SELECT PERIOD_YYYYWW
+             , NUM
+             , PERIOD_YYYYMM
+          FROM (SELECT PERIOD_YYYYWW
+                     , DENSE_RANK() OVER (PARTITION BY PERIOD_YYYYMM ORDER BY PERIOD_YYYYWW ASC) AS NUM
+                     , PERIOD_YYYYMM
+                  FROM (SELECT SCM_YYYYWW AS PERIOD_YYYYWW
+                             , CASE WHEN SUBSTR(MIN(YYYYMMDD), 1, 4)  <![CDATA[ <> ]]>   SUBSTR(MAX(YYYYMMDD), 1, 4) THEN MIN(SUBSTR(TO_CHAR(TO_DATE(START_DATE_BY_WEEK_DT, 'YYYYMMDD')+7, 'YYYYMMDD'), 1, 6))
+                                    ELSE MIN(SUBSTR(TO_CHAR(TO_DATE(START_DATE_BY_WEEK_DT, 'YYYYMMDD')+3, 'YYYYMMDD'), 1, 6))
+                               END AS PERIOD_YYYYMM
+                          FROM (SELECT SCM_YYYYWW
+                                     , YYYYMMDD
+                                     , MIN(YYYYMMDD) OVER (PARTITION BY SCM_YYYYWW) AS START_DATE_BY_WEEK_DT
+                                  FROM SCMU.W_SOP_VW_CALENDAR_M)
+                         GROUP BY SCM_YYYYWW
+                         ORDER BY SCM_YYYYWW))
+		 WHERE PERIOD_YYYYWW BETWEEN #{fromYyyyww, jdbcType=VARCHAR} AND #{toYyyyww, jdbcType=VARCHAR})
+		<!-- , TBL_KPI_TARGET AS (
+		SELECT TARGET_END
+		  FROM SCMU.W_SOP_TB_KPI_TARGET_M
+		 WHERE PERIOD_YYYY = #{year, jdbcType=VARCHAR}
+		   AND KPI_CODE = 'KPI010'
+		) -->
+		, TBL_KPI_TARGET AS (
+		SELECT *
+		  FROM SCMU.W_CM_TB_EMPORG_GOAL_RATE
+		)
+		/*
+		본테이블의 월별 주차컬럼(W1~W5)를 각주차별 ROW로 변경결과
+		*/
+		, TBL_SCM_SALES_PLAN_RATE_F AS (
+		SELECT T1.ORG_CODE
+		     , T1.ORG_TYPE
+             , T1.OU_CODE
+		     , T2.PERIOD_YYYYWW
+		     , T1.PERIOD_YYYYMM
+		     , CASE WHEN T2.NUM = 1 THEN A_PLAN_W1
+		            WHEN T2.NUM = 2 THEN A_PLAN_W2
+		            WHEN T2.NUM = 3 THEN A_PLAN_W3
+		            WHEN T2.NUM = 4 THEN A_PLAN_W4
+		            WHEN T2.NUM = 5 THEN A_PLAN_W5
+		       END A_PLAN
+		     , CASE WHEN T2.NUM = 1 THEN A_RATE_W1
+		            WHEN T2.NUM = 2 THEN A_RATE_W2
+		            WHEN T2.NUM = 3 THEN A_RATE_W3
+		            WHEN T2.NUM = 4 THEN A_RATE_W4
+		            WHEN T2.NUM = 5 THEN A_RATE_W5
+		       END A_RATE
+		     , T3.AGOAL_RATE AS TARGET_END
+		     , CASE WHEN T2.NUM = 1 THEN H_PLAN_W1
+		            WHEN T2.NUM = 2 THEN H_PLAN_W2
+		            WHEN T2.NUM = 3 THEN H_PLAN_W3
+		            WHEN T2.NUM = 4 THEN H_PLAN_W4
+		            WHEN T2.NUM = 5 THEN H_PLAN_W5
+		       END H_PLAN
+		     , CASE WHEN T2.NUM = 1 THEN H_ACTUAL_W1
+		            WHEN T2.NUM = 2 THEN H_ACTUAL_W2
+		            WHEN T2.NUM = 3 THEN H_ACTUAL_W3
+		            WHEN T2.NUM = 4 THEN H_ACTUAL_W4
+		            WHEN T2.NUM = 5 THEN H_ACTUAL_W5
+		       END H_ACTUAL
+		     , CASE WHEN T2.NUM = 1 THEN H_RATE_W1
+		            WHEN T2.NUM = 2 THEN H_RATE_W2
+		            WHEN T2.NUM = 3 THEN H_RATE_W3
+		            WHEN T2.NUM = 4 THEN H_RATE_W4
+		            WHEN T2.NUM = 5 THEN H_RATE_W5
+		       END H_RATE
+		     , CASE WHEN T2.NUM = 1 THEN J_PLAN_W1
+		            WHEN T2.NUM = 2 THEN J_PLAN_W2
+		            WHEN T2.NUM = 3 THEN J_PLAN_W3
+		            WHEN T2.NUM = 4 THEN J_PLAN_W4
+		            WHEN T2.NUM = 5 THEN J_PLAN_W5
+		       END J_PLAN
+		     , CASE WHEN T2.NUM = 1 THEN J_ACTUAL_W1
+		            WHEN T2.NUM = 2 THEN J_ACTUAL_W2
+		            WHEN T2.NUM = 3 THEN J_ACTUAL_W3
+		            WHEN T2.NUM = 4 THEN J_ACTUAL_W4
+		            WHEN T2.NUM = 5 THEN J_ACTUAL_W5
+		       END J_ACTUAL
+		     , CASE WHEN T2.NUM = 1 THEN J_RATE_W1
+		            WHEN T2.NUM = 2 THEN J_RATE_W2
+		            WHEN T2.NUM = 3 THEN J_RATE_W3
+		            WHEN T2.NUM = 4 THEN J_RATE_W4
+		            WHEN T2.NUM = 5 THEN J_RATE_W5
+		       END J_RATE
+		  FROM (SELECT *
+		          FROM SCMU.M_SCM_TB_SALE_PLAN_RATE_F
+		         WHERE 1=1
+		           AND GUBUN = #{gubun, jdbcType=VARCHAR}
+		           AND OU_CODE = 'HJ0'
+		           AND ORG_TYPE = #{gbCode, jdbcType=VARCHAR}) T1 INNER JOIN
+		       TBL_WEEK_PLAN T2 ON T1.PERIOD_YYYYMM = T2.PERIOD_YYYYMM LEFT JOIN
+		       TBL_KPI_TARGET T3 ON T1.ORG_TYPE = T3.ORG_TYPE 
+		                        AND T1.ORG_CODE = T3.ORG_CODE 
+		                        AND T1.PERIOD_YYYYMM BETWEEN T3.ST_YYYYMM AND T3.ED_YYYYMM
+		 WHERE 1=1
+		)
+		SELECT M1.PERIOD_YYYYWW
+		     , SUBSTR(M1.PERIOD_YYYYWW, 1, 4) || '년 ' ||
+		       CASE WHEN SUBSTR(M1.PERIOD_YYYYWW, 5, 1) = '0' THEN SUBSTR(M1.PERIOD_YYYYWW, 6,1)
+		            ELSE SUBSTR(M1.PERIOD_YYYYWW, 5, 2)
+		       END || '주' AS PERIOD_YYYYWW_DESC
+		     , M1.PERIOD_YYYYMM
+		     , SUBSTR(M1.PERIOD_YYYYMM, 1, 4) || '년 ' ||
+		       CASE WHEN SUBSTR(M1.PERIOD_YYYYMM, 5, 1) = '0' THEN SUBSTR(M1.PERIOD_YYYYMM, 6,1)
+		            ELSE SUBSTR(M1.PERIOD_YYYYMM, 5, 2)
+		       END || '월' AS PERIOD_YYYYMM_DESC
+		     , M2.TERRITORY_CODE
+		     , M2.TERRITORY_NAME
+		     , M2.DEPARTMENT_CODE
+		     , M2.DEPARTMENT_NAME
+		     , M2.PART_CODE
+		     , M2.PART_NAME
+		     , M2.SALESREP_NUMBER
+		     , M2.SALESREP_NAME
+		     , M2.ACCOUNT_NUMBER
+		     , M2.CUSTOMER_SHORT_NAME
+		     
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '1' THEN H_RATE / 100
+                    WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '2' THEN J_RATE / 100
+                    ELSE M1.A_RATE / 100
+                END AS A_RATE                    -- 종합준수율
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' THEN
+                        0
+                    ELSE
+                        M1.TARGET_END / 100
+                END AS A_TARGET                              -- 목표준수율
+             , CASE WHEN M1.ORG_TYPE = 'HJ0' THEN
+                        RANK() OVER (PARTITION BY M1.OU_CODE ORDER BY A_RATE / TARGET_END DESC)
+                    WHEN M1.ORG_TYPE = 'ACCOUNT' THEN
+                        RANK() OVER (PARTITION BY M1.OU_CODE ORDER BY CASE WHEN M2.BUSINESS_CODE = '1' THEN H_RATE
+                                                                           WHEN M2.BUSINESS_CODE = '2' THEN J_RATE
+                                                                       END DESC)
+                    ELSE
+                        RANK() OVER (PARTITION BY M1.PERIOD_YYYYWW ORDER BY A_RATE / TARGET_END  DESC)
+               END RANGKING
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '2' THEN 0 
+                    ELSE M1.H_PLAN
+                END AS H_PLAN                          -- 맥주 계획
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '2' THEN 0 
+                    ELSE M1.H_ACTUAL
+                END AS H_ACTUAL                        -- 맥주 실적
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '2' THEN 0 
+                    ELSE M1.H_PLAN - H_ACTUAL
+                END AS H_DIF                           -- 맥주 잔량
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '2' THEN 0 
+                    ELSE M1.H_RATE / 100
+                END AS H_RATE                          -- 맥주 준수율
+
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '1' THEN 0 
+                    ELSE M1.J_PLAN
+                END AS J_PLAN                          -- 소주 계획
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '1' THEN 0 
+                    ELSE M1.J_ACTUAL
+                END AS J_ACTUAL                        -- 소주 실적
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '1' THEN 0 
+                    ELSE M1.J_PLAN - J_ACTUAL
+                END AS J_DIF                           -- 소주 잔량
+             , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND M2.BUSINESS_CODE = '1' THEN 0 
+                    ELSE M1.J_RATE / 100
+                END AS J_RATE                          -- 소주 준수율
+                
+		     , M1.ORG_TYPE
+		     , M1.ORG_CODE
+		     , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                '전국계'
+		            WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                M2.TERRITORY_NAME
+		            WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                M2.DEPARTMENT_NAME
+		            WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                M2.PART_NAME
+		            WHEN #{gbCode, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                M2.SALESREP_NAME
+		            ELSE 
+		                M2.CUSTOMER_SHORT_NAME
+		       END AS ORG_DESC
+		     , M2.BUSINESS_CODE
+		  FROM TBL_SCM_SALES_PLAN_RATE_F M1
+		     , (SELECT DISTINCT 
+		               CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        OU_CODE
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        TERRITORY_CODE
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        DEPARTMENT_CODE
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        PART_CODE
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                        SALESREP_NUMBER
+		                    ELSE 
+		                        ACCOUNT_NUMBER
+		               END AS ORG_CODE
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        '!ALL'
+		                    ELSE 
+		                        TERRITORY_CODE
+		               END AS TERRITORY_CODE
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        '전국계'
+		                    ELSE 
+		                        TERRITORY_NAME
+		               END AS TERRITORY_NAME
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        0
+		                    ELSE 
+		                        TERRITORY_SORT_NUMBER
+		               END AS TERRITORY_SORT_NUMBER
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    ELSE 
+		                        DEPARTMENT_CODE
+		               END AS DEPARTMENT_CODE
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    ELSE 
+		                        DEPT_NAME
+		               END AS DEPARTMENT_NAME
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        0
+		                    ELSE 
+		                        DEPT_SORT_NUMBER
+		               END AS DEPARTMENT_SORT_NUMBER
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        ''
+		                    ELSE 
+		                        PART_CODE
+		               END AS PART_CODE
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        ''
+		                    ELSE 
+		                        PART_NAME
+		               END AS PART_NAME
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        0
+		                    ELSE 
+		                        PART_SORT_NUMBER
+		               END AS PART_SORT_NUMBER
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        ''
+		                    ELSE 
+		                        SALESREP_NUMBER
+		               END AS SALESREP_NUMBER
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        ''
+		                    ELSE 
+		                        SALESREP_NAME
+		               END AS SALESREP_NAME
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        0
+		                    ELSE 
+		                        SALESREP_SORT_NUMBER
+		               END AS SALESREP_SORT_NUMBER
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                        ''
+		                    ELSE 
+		                        ACCOUNT_NUMBER
+		               END AS ACCOUNT_NUMBER
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        ''
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                        ''
+		                    ELSE 
+		                        SITE_NAME
+		               END AS CUSTOMER_SHORT_NAME
+		             , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'PART' THEN
+		                        0
+		                    WHEN #{gbCode, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                        0
+		                    ELSE 
+		                        NVL(TO_NUMBER(CUSTOMER_SORT_NUMBER||BUSINESS_CODE), 0) 
+		               END AS CUSTOMER_SORT_NUMBER
+                     , CASE WHEN #{gbCode, jdbcType=VARCHAR} = 'ACCOUNT' THEN
+                                BUSINESS_CODE
+                            ELSE 
+                                '' 
+                       END AS BUSINESS_CODE
+		          FROM EDW.W_CM_TB_OM_DEPT_M
+		         WHERE OU_CODE = 'HJ0'
+		           AND LIQUOR_CODE IN ('10', '20')
+		           AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		           AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		           AND PART_CODE IS NOT NULL
+		           AND SALESREP_NUMBER IS NOT NULL) M2
+		 WHERE M1.ORG_CODE = M2.ORG_CODE
+		 ORDER BY M1.PERIOD_YYYYWW
+		        , M2.TERRITORY_SORT_NUMBER
+		        , M2.DEPARTMENT_SORT_NUMBER
+		        , M2.PART_SORT_NUMBER
+		        , M2.SALESREP_SORT_NUMBER
+		        , M2.ACCOUNT_NUMBER
+		        , M2.CUSTOMER_SHORT_NAME
+		        , M2.CUSTOMER_SORT_NUMBER
+	</select>
+	
+	<!-- 조회 -->
+	<select id="searchUpdtmStr" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M07020DaoMapper.searchUpdtmStr */
+		       LAST_UPDTM
+		  FROM (SELECT TO_CHAR(LAST_UPDATE_DATE, 'YYYY-MM-DD HH24:MI') AS LAST_UPDTM
+		          FROM M_SCM_TB_SALE_PLAN_RATE_F
+		         where OU_CODE = 'HJ0'
+		           AND GUBUN = #{gubun, jdbcType=VARCHAR}
+		           AND PERIOD_YYYYMM BETWEEN #{year, jdbcType=VARCHAR}||#{fromMonth, jdbcType=VARCHAR} AND #{year, jdbcType=VARCHAR}||#{toMonth, jdbcType=VARCHAR}
+		         ORDER BY 1 DESC)
+		 WHERE ROWNUM = 1
+	</select>
+
+	<!-- 상세 그리드 조회 -->
+	<select id="searchSubGrid" parameterType="map" resultType="map">
+		/*
+		본테이블의 주차컬럼(W1~W5)를 ROW로 변경하기 위한 월별 주차의 순번 구하기
+		*/
+		WITH TBL_WEEK_PLAN AS ( /* com.hitejinro.snop.work.dao.M07020DaoMapper.searchSubGrid */
+        SELECT PERIOD_YYYYWW
+             , NUM
+             , PERIOD_YYYYMM
+          FROM (SELECT PERIOD_YYYYWW
+                     , DENSE_RANK() OVER (PARTITION BY PERIOD_YYYYMM ORDER BY PERIOD_YYYYWW ASC) AS NUM
+                     , PERIOD_YYYYMM
+                  FROM (SELECT SCM_YYYYWW AS PERIOD_YYYYWW
+                             , CASE WHEN SUBSTR(MIN(YYYYMMDD), 1, 4)  <![CDATA[ <> ]]>   SUBSTR(MAX(YYYYMMDD), 1, 4) THEN MIN(SUBSTR(TO_CHAR(TO_DATE(START_DATE_BY_WEEK_DT, 'YYYYMMDD')+7, 'YYYYMMDD'), 1, 6))
+                                    ELSE MIN(SUBSTR(TO_CHAR(TO_DATE(START_DATE_BY_WEEK_DT, 'YYYYMMDD')+3, 'YYYYMMDD'), 1, 6))
+                               END AS PERIOD_YYYYMM
+                          FROM (SELECT SCM_YYYYWW
+                                     , YYYYMMDD
+                                     , MIN(YYYYMMDD) OVER (PARTITION BY SCM_YYYYWW) AS START_DATE_BY_WEEK_DT
+                                  FROM SCMU.W_SOP_VW_CALENDAR_M)
+                         GROUP BY SCM_YYYYWW
+                         ORDER BY SCM_YYYYWW))
+		 WHERE PERIOD_YYYYWW = #{periodWeek, jdbcType=VARCHAR})
+		/*
+		본테이블의 주차컬럼(W1~W5)를 ROW로 변경한 결과 테이블 만들기
+		*/
+		, TBL_SCM_SALES_PLAN_RATE_ITEM_F AS (
+		SELECT T1.ORG_CODE
+		     , T1.ORG_TYPE
+		     , T1.GUBUN
+		     , T2.PERIOD_YYYYWW
+		     , T1.BUSINESS_CODE
+		     , T1.ITEM_CODE
+		     , CASE WHEN T2.NUM = 1 THEN PLAN_W1
+		            WHEN T2.NUM = 2 THEN PLAN_W2
+		            WHEN T2.NUM = 3 THEN PLAN_W3
+		            WHEN T2.NUM = 4 THEN PLAN_W4
+		            WHEN T2.NUM = 5 THEN PLAN_W5
+		       END PLAN
+		     , CASE WHEN T2.NUM = 1 THEN ACTUAL_W1
+		            WHEN T2.NUM = 2 THEN ACTUAL_W2
+		            WHEN T2.NUM = 3 THEN ACTUAL_W3
+		            WHEN T2.NUM = 4 THEN ACTUAL_W4
+		            WHEN T2.NUM = 5 THEN ACTUAL_W5
+		       END ACTUAL
+		     , CASE WHEN T2.NUM = 1 THEN RATE_W1
+		            WHEN T2.NUM = 2 THEN RATE_W2
+		            WHEN T2.NUM = 3 THEN RATE_W3
+		            WHEN T2.NUM = 4 THEN RATE_W4
+		            WHEN T2.NUM = 5 THEN RATE_W5
+		       END RATE
+		  FROM (SELECT *
+		          FROM SCMU.M_SCM_TB_SALE_PLAN_RATE_ITEM_F
+		         WHERE 1=1
+		           AND GUBUN IN ('0', #{gubun, jdbcType=VARCHAR})
+		           AND OU_CODE = 'HJ0'
+		           AND PERIOD_YYYYMM = #{periodYearMonth, jdbcType=VARCHAR}
+		           AND DECODE(#{businessCode, jdbcType=VARCHAR}, '', 'A', BUSINESS_CODE) = DECODE(#{businessCode, jdbcType=VARCHAR}, '', 'A', #{businessCode, jdbcType=VARCHAR})
+		           AND ORG_TYPE IN ('PART', #{orgType, jdbcType=VARCHAR})
+		           AND ORG_CODE IN (#{partCode, jdbcType=VARCHAR}, #{orgCode, jdbcType=VARCHAR})) T1 INNER JOIN
+		       TBL_WEEK_PLAN T2 ON T1.PERIOD_YYYYMM = T2.PERIOD_YYYYMM
+		 WHERE 1=1
+		)
+		/*
+		선택된 항목의 상세보기
+		*/
+		, TBL_DTL AS (
+		    SELECT A.*
+		         , NVL(A.PLAN,0) - NVL(A.ACTUAL,0) AS DIFF_QTY
+		         <![CDATA[
+		         , CASE WHEN A.PLAN = 0 OR A.ACTUAL = 0 THEN 0
+		                WHEN (ABS(A.PLAN - A.ACTUAL)) / A.PLAN > 1 THEN 0
+		                WHEN (ACTUAL BETWEEN PLAN AND PLAN * 1.1) THEN 1
+		                ELSE (1 - (ABS(A.PLAN - A.ACTUAL)) / A.PLAN)
+		            END AS ITEM_RATE
+		         , CASE WHEN (A.PLAN < 0 AND A.ACTUAL < 0) THEN 0
+		                ELSE
+		                   CASE WHEN  A.GUBUN = '1' THEN
+		                              CASE WHEN A.PLAN >= A.ACTUAL THEN A.PLAN ELSE A.ACTUAL 
+		                              END 
+		                        ELSE DECODE(SIGN(A.PLAN), -1, 0, A.PLAN)
+		                    END 
+		            END AS PLREQTY
+		         , CASE WHEN  A.GUBUN = '1' THEN
+		                     CASE WHEN SUM(CASE WHEN DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) >= A.ACTUAL THEN DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) ELSE A.ACTUAL END) OVER(PARTITION BY A.BUSINESS_CODE) = 0 THEN 0 
+		                     ELSE (CASE WHEN DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) >=  A.ACTUAL THEN DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) ELSE A.ACTUAL END 
+		                                / SUM(CASE WHEN DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) >= A.ACTUAL THEN DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) ELSE A.ACTUAL END) OVER(PARTITION BY A.BUSINESS_CODE)) 
+		                     END 
+		                ELSE 
+		                     CASE WHEN SUM(DECODE(SIGN(A.PLAN), -1, 0, A.PLAN)) OVER(PARTITION BY A.BUSINESS_CODE) = 0 THEN 0
+		                     ELSE (DECODE(SIGN(A.PLAN), -1, 0, A.PLAN) / SUM(DECODE(SIGN(A.PLAN), -1, 0, A.PLAN)) OVER(PARTITION BY A.BUSINESS_CODE))
+		                     END 
+		            END AS PLAN_COMPO_RATE
+		         ]]>
+		      FROM TBL_SCM_SALES_PLAN_RATE_ITEM_F A
+		     WHERE PERIOD_YYYYWW = #{periodWeek, jdbcType=VARCHAR}
+		       AND GUBUN = #{gubun, jdbcType=VARCHAR}
+		       AND ORG_TYPE = #{orgType, jdbcType=VARCHAR}
+		       AND ORG_CODE = #{orgCode, jdbcType=VARCHAR}
+		)
+		/*
+		조회기준이 [평가기준]이면서 조회구분이 [담당/전체거래처] 일경우 파트물량소계를 추가로 조회한다.
+		*/
+		, TBL_SUM AS (
+		    SELECT A.*
+		         , NVL(A.PLAN,0) - NVL(A.ACTUAL,0) AS DIFF_QTY
+		         , CASE WHEN #{orgType, jdbcType=VARCHAR} = 'SALESREP' AND #{gubun, jdbcType=VARCHAR} = '1' THEN '1'
+		                WHEN #{orgType, jdbcType=VARCHAR} = 'ACCOUNT' AND #{gubun, jdbcType=VARCHAR} = '1' THEN '1'
+		                ELSE '2'
+		           END SALES_GB
+		      FROM TBL_SCM_SALES_PLAN_RATE_ITEM_F A
+		     WHERE PERIOD_YYYYWW = #{periodWeek, jdbcType=VARCHAR}
+		       AND GUBUN = '0'
+		       AND ORG_TYPE = 'PART'
+		       AND ORG_CODE = #{partCode, jdbcType=VARCHAR}
+		)
+		SELECT T1.BUSINESS_CODE
+		     , DECODE(T1.BUSINESS_CODE, 1, '맥주', 2, '소주') BUSINESS_NAME
+		     , DECODE(GROUPING(T1.ITEM_CODE),1,'소계',T2.DESCRIPTION) AS ITEM_NAME
+		     , DECODE(GROUPING(T1.ITEM_CODE),1,'0',T1.ITEM_CODE) AS ITEM_CODE
+		     , SUM(T1.PLAN) AS PLAN_QTY
+		     , SUM(T1.ACTUAL) AS ACTUAL_QTY
+		     , SUM(DIFF_QTY) AS DIFF_QTY
+		     , DECODE(GROUPING(T1.ITEM_CODE), 1, 0, SUM(T1.ITEM_RATE)) AS ITEM_RATE
+		     , SUM(T1.PLAN_COMPO_RATE) AS PLAN_COMPO_RATE
+             , SUM(T1.PLREQTY) AS PLREQTY
+		     , SUM(T1.RATE) / 100 AS SALE_OBS_RATE
+		     , T2.BRAND_CODE
+		     , T2.BRAND_NAME
+		     , DECODE(GROUPING(T1.ITEM_CODE), 1, '1', T2.BRAND_SORT_ORDER) AS BRAND_SORT_ORDER
+		     , T2.USAGE_CODE
+		     , T2.USAGE_NAME
+		     , T2.USAGE_SORT_ORDER
+		     , T2.VESSEL_CODE
+		     , T2.VESSEL_SORT
+		     , T2.VESSEL_SORT_ORDER
+		     , T2.VOLUME_VALUE
+		     , T2.PACKING_TYPE
+		     , T2.MAIN_FLAG
+		  FROM TBL_DTL T1
+		     , EDW.W_CM_TB_FG_ITEM_M T2
+		 WHERE T1.ITEM_CODE = T2.ITEM_CODE
+		 GROUP BY GROUPING SETS (( T1.BUSINESS_CODE
+		                         , T2.DESCRIPTION
+		                         , T1.ITEM_CODE
+		                         , T2.BRAND_CODE
+		                         , T2.BRAND_NAME
+		                         , T2.BRAND_SORT_ORDER
+		                         , T2.USAGE_CODE
+		                         , T2.USAGE_NAME
+		                         , T2.USAGE_SORT_ORDER
+		                         , T2.VESSEL_CODE
+		                         , T2.VESSEL_SORT
+		                         , T2.VESSEL_SORT_ORDER
+		                         , T2.VOLUME_VALUE
+		                         , T2.PACKING_TYPE
+		                         , T2.MAIN_FLAG), 
+		                         ( T1.BUSINESS_CODE))
+		 UNION ALL
+		SELECT T1.BUSINESS_CODE
+		     , DECODE(T1.BUSINESS_CODE, 1, '맥주', 2, '소주') BUSINESS_NAME
+		     , '파트물량소계' AS ITEM_NAME
+		     , '0' AS ITEM_CODE
+		     , SUM(T1.PLAN) AS PLAN_QTY
+		     , SUM(T1.ACTUAL) AS ACTUAL_QTY
+		     , SUM(DIFF_QTY) AS DIFF_QTY
+		     , 0 AS ITEM_RATE
+		     , 0 AS PLAN_COMPO_RATE
+		     , 0 AS PLREQTY
+		     , SUM(T1.RATE) / 100 AS SALE_OBS_RATE
+		     , NULL AS BRAND_CODE
+		     , NULL AS BRAND_NAME
+		     , '0' AS BRAND_SORT_ORDER
+		     , NULL AS USAGE_CODE
+		     , NULL AS USAGE_NAME
+		     , NULL AS USAGE_SORT_ORDER
+		     , NULL AS VESSEL_CODE
+		     , NULL AS VESSEL_SORT
+		     , NULL AS VESSEL_SORT_ORDER
+		     , NULL AS VOLUME_VALUE
+		     , NULL AS PACKING_TYPE
+		     , NULL AS MAIN_FLAG
+		  FROM TBL_SUM T1
+		 WHERE 1=1
+		   AND SALES_GB = '1'
+		 GROUP BY T1.BUSINESS_CODE
+		 ORDER BY BUSINESS_CODE, BRAND_SORT_ORDER, USAGE_SORT_ORDER, VESSEL_SORT_ORDER, VOLUME_VALUE, ITEM_CODE
+	</select>
+	
+	<!-- Chart 조회 -->
+	<select id="searchChart" parameterType="map" resultType="map">
+		SELECT M1.PERIOD_YYYYMM /* com.hitejinro.snop.work.dao.M07020DaoMapper.searchChart */
+		     , CHR(39) || SUBSTR(M1.PERIOD_YYYYMM, 3, 2) || '년 ' ||
+		       CASE WHEN SUBSTR(M1.PERIOD_YYYYMM, 5, 1) = '0' THEN SUBSTR(M1.PERIOD_YYYYMM, 6,1)
+		            ELSE SUBSTR(M1.PERIOD_YYYYMM, 5, 2)
+		       END || '월' AS PERIOD_YYYYMM_DESC
+		     , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND #{businessCode, jdbcType=VARCHAR} = '1' THEN 
+				       M1.H_RATE_W0
+		            WHEN M1.ORG_TYPE = 'ACCOUNT' AND #{businessCode, jdbcType=VARCHAR} = '2' THEN
+				       M1.J_RATE_W0
+		            ELSE
+				       M1.A_RATE_W0
+		        END AS A_RATE							 -- 종합준수율
+		     --, M1.A_RATE_W0 AS A_RATE                    -- 종합준수율
+		     , M1.H_PLAN_W0 AS H_PLAN                    -- 맥주 계획
+		     , M1.H_ACTUAL_W0 AS H_ACTUAL                -- 맥주 실적
+		     , M1.H_PLAN_W0 - H_ACTUAL_W0 AS H_DIF       -- 맥주 잔량
+		     , M1.H_RATE_W0 AS H_RATE                    -- 맥주 준수율
+		     , M1.J_PLAN_W0 AS J_PLAN                    -- 소주 계획
+		     , M1.J_ACTUAL_W0 AS J_ACTUAL                -- 소주 실적
+		     , M1.J_PLAN_W0 - J_ACTUAL_W0 AS H_DIF       -- 소주 잔량
+		     , M1.J_RATE_W0 AS J_RATE                    -- 소주 준수율
+		     , M1.ORG_TYPE
+		     , M1.ORG_CODE
+		     , #{orgDesc, jdbcType=VARCHAR} AS ORG_DESC
+		  FROM SCMU.M_SCM_TB_SALE_PLAN_RATE_M M1
+		     , (SELECT DISTINCT 
+		               CASE WHEN #{orgType, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        OU_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        TERRITORY_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        DEPARTMENT_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'PART' THEN
+		                        PART_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                        SALESREP_NUMBER
+		                    ELSE 
+		                        ACCOUNT_NUMBER
+		               END AS ORG_CODE
+		          FROM EDW.W_CM_TB_OM_DEPT_M
+		         WHERE OU_CODE = 'HJ0'
+		           AND LIQUOR_CODE IN ('10', '20')
+		           AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		           AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		           AND PART_CODE IS NOT NULL
+		           AND SALESREP_NUMBER IS NOT NULL) M2
+		 WHERE M1.GUBUN = '0'
+		   AND M1.OU_CODE = 'HJ0'
+		   AND M1.PERIOD_YYYYMM BETWEEN #{year, jdbcType=VARCHAR}||#{fromMonth, jdbcType=VARCHAR} AND #{year, jdbcType=VARCHAR}||#{toMonth, jdbcType=VARCHAR}
+		   AND M1.ORG_CODE = M2.ORG_CODE
+	       AND M1.ORG_TYPE = #{orgType, jdbcType=VARCHAR}
+	       AND M1.ORG_CODE = #{orgCode, jdbcType=VARCHAR}
+		 ORDER BY M1.PERIOD_YYYYMM
+	</select>
+
+	<!-- 주차별 Chart 조회 -->
+	<select id="searchWeekChart" parameterType="map" resultType="map">
+		/*
+		본테이블의 월별 주차컬럼(W1~W5)을 ROW로 변경 하기위한 월별 주차의 순번 구하기
+		*/
+		WITH TBL_WEEK_PLAN AS ( /* com.hitejinro.snop.work.dao.M07020DaoMapper.searchWeekChart */
+        SELECT PERIOD_YYYYWW
+             , NUM
+             , PERIOD_YYYYMM
+          FROM (SELECT PERIOD_YYYYWW
+                     , DENSE_RANK() OVER (PARTITION BY PERIOD_YYYYMM ORDER BY PERIOD_YYYYWW ASC) AS NUM
+                     , PERIOD_YYYYMM
+                  FROM (SELECT SCM_YYYYWW AS PERIOD_YYYYWW
+                             , CASE WHEN SUBSTR(MIN(YYYYMMDD), 1, 4)  <![CDATA[ <> ]]>   SUBSTR(MAX(YYYYMMDD), 1, 4) THEN MIN(SUBSTR(TO_CHAR(TO_DATE(START_DATE_BY_WEEK_DT, 'YYYYMMDD')+7, 'YYYYMMDD'), 1, 6))
+                                    ELSE MIN(SUBSTR(TO_CHAR(TO_DATE(START_DATE_BY_WEEK_DT, 'YYYYMMDD')+3, 'YYYYMMDD'), 1, 6))
+                               END AS PERIOD_YYYYMM
+                          FROM (SELECT SCM_YYYYWW
+                                     , YYYYMMDD
+                                     , MIN(YYYYMMDD) OVER (PARTITION BY SCM_YYYYWW) AS START_DATE_BY_WEEK_DT
+                                  FROM SCMU.W_SOP_VW_CALENDAR_M)
+                         GROUP BY SCM_YYYYWW
+                         ORDER BY SCM_YYYYWW))
+		 WHERE PERIOD_YYYYWW BETWEEN #{fromYyyyww, jdbcType=VARCHAR} AND #{toYyyyww, jdbcType=VARCHAR})
+		, TBL_KPI_TARGET AS (
+		SELECT TARGET_END
+		  FROM SCMU.W_SOP_TB_KPI_TARGET_M
+		 WHERE PERIOD_YYYY = #{year, jdbcType=VARCHAR}
+		   AND KPI_CODE = 'KPI010'
+		)
+		/*
+		본테이블의 월별 주차컬럼(W1~W5)를 각주차별 ROW로 변경결과
+		*/
+		, TBL_SCM_SALES_PLAN_RATE_F AS (
+		SELECT T1.ORG_CODE
+		     , T1.ORG_TYPE
+		     , T2.PERIOD_YYYYWW
+		     , CASE WHEN T2.NUM = 1 THEN A_PLAN_W1
+		            WHEN T2.NUM = 2 THEN A_PLAN_W2
+		            WHEN T2.NUM = 3 THEN A_PLAN_W3
+		            WHEN T2.NUM = 4 THEN A_PLAN_W4
+		            WHEN T2.NUM = 5 THEN A_PLAN_W5
+		       END A_PLAN
+		     , CASE WHEN T2.NUM = 1 THEN A_RATE_W1
+		            WHEN T2.NUM = 2 THEN A_RATE_W2
+		            WHEN T2.NUM = 3 THEN A_RATE_W3
+		            WHEN T2.NUM = 4 THEN A_RATE_W4
+		            WHEN T2.NUM = 5 THEN A_RATE_W5
+		       END A_RATE
+		     , T3.TARGET_END
+		     , CASE WHEN T2.NUM = 1 THEN H_PLAN_W1
+		            WHEN T2.NUM = 2 THEN H_PLAN_W2
+		            WHEN T2.NUM = 3 THEN H_PLAN_W3
+		            WHEN T2.NUM = 4 THEN H_PLAN_W4
+		            WHEN T2.NUM = 5 THEN H_PLAN_W5
+		       END H_PLAN
+		     , CASE WHEN T2.NUM = 1 THEN H_ACTUAL_W1
+		            WHEN T2.NUM = 2 THEN H_ACTUAL_W2
+		            WHEN T2.NUM = 3 THEN H_ACTUAL_W3
+		            WHEN T2.NUM = 4 THEN H_ACTUAL_W4
+		            WHEN T2.NUM = 5 THEN H_ACTUAL_W5
+		       END H_ACTUAL
+		     , CASE WHEN T2.NUM = 1 THEN H_RATE_W1
+		            WHEN T2.NUM = 2 THEN H_RATE_W2
+		            WHEN T2.NUM = 3 THEN H_RATE_W3
+		            WHEN T2.NUM = 4 THEN H_RATE_W4
+		            WHEN T2.NUM = 5 THEN H_RATE_W5
+		       END H_RATE
+		     , CASE WHEN T2.NUM = 1 THEN J_PLAN_W1
+		            WHEN T2.NUM = 2 THEN J_PLAN_W2
+		            WHEN T2.NUM = 3 THEN J_PLAN_W3
+		            WHEN T2.NUM = 4 THEN J_PLAN_W4
+		            WHEN T2.NUM = 5 THEN J_PLAN_W5
+		       END J_PLAN
+		     , CASE WHEN T2.NUM = 1 THEN J_ACTUAL_W1
+		            WHEN T2.NUM = 2 THEN J_ACTUAL_W2
+		            WHEN T2.NUM = 3 THEN J_ACTUAL_W3
+		            WHEN T2.NUM = 4 THEN J_ACTUAL_W4
+		            WHEN T2.NUM = 5 THEN J_ACTUAL_W5
+		       END J_ACTUAL
+		     , CASE WHEN T2.NUM = 1 THEN J_RATE_W1
+		            WHEN T2.NUM = 2 THEN J_RATE_W2
+		            WHEN T2.NUM = 3 THEN J_RATE_W3
+		            WHEN T2.NUM = 4 THEN J_RATE_W4
+		            WHEN T2.NUM = 5 THEN J_RATE_W5
+		       END J_RATE
+		  FROM (SELECT *
+		          FROM SCMU.M_SCM_TB_SALE_PLAN_RATE_F
+		         WHERE 1=1
+		           AND GUBUN = #{gubun, jdbcType=VARCHAR}
+		           AND OU_CODE = 'HJ0'
+		           AND ORG_TYPE = #{orgType, jdbcType=VARCHAR}) T1 INNER JOIN
+		       TBL_WEEK_PLAN T2 ON T1.PERIOD_YYYYMM = T2.PERIOD_YYYYMM INNER JOIN
+		       TBL_KPI_TARGET T3 ON 1=1
+		 WHERE 1=1
+		)
+		SELECT M1.PERIOD_YYYYWW
+		     , CASE WHEN SUBSTR(M1.PERIOD_YYYYWW, 5, 1) = '0' THEN SUBSTR(M1.PERIOD_YYYYWW, 6,1)
+		            ELSE SUBSTR(M1.PERIOD_YYYYWW, 5, 2)
+		       END || '주' AS PERIOD_YYYYWW_DESC
+		     , CASE WHEN M1.ORG_TYPE = 'ACCOUNT' AND #{businessCode, jdbcType=VARCHAR} = '1' THEN 
+				       M1.H_RATE
+		            WHEN M1.ORG_TYPE = 'ACCOUNT' AND #{businessCode, jdbcType=VARCHAR} = '2' THEN
+				       M1.J_RATE
+		            ELSE
+				       M1.A_RATE
+		        END AS A_RATE							    -- 종합준수율
+		     --, M1.A_RATE AS A_RATE                    		-- 종합준수율
+		     , M1.TARGET_END AS A_TARGET             		-- 목표준수율
+		     , RANK() OVER (PARTITION BY M1.PERIOD_YYYYWW, M1.ORG_TYPE ORDER BY A_RATE DESC) AS RANGKING
+		     , M1.H_PLAN AS H_PLAN                          -- 맥주 계획
+		     , M1.H_ACTUAL AS H_ACTUAL                      -- 맥주 실적
+		     , M1.H_PLAN - H_ACTUAL AS H_DIF                -- 맥주 잔량
+		     , M1.H_RATE AS H_RATE                    		-- 맥주 준수율
+		     , M1.J_PLAN AS J_PLAN                          -- 소주 계획
+		     , M1.J_ACTUAL AS J_ACTUAL                      -- 소주 실적
+		     , M1.J_PLAN - J_ACTUAL AS H_DIF                -- 소주 잔량
+		     , M1.J_RATE AS J_RATE                    		-- 소주 준수율
+		     , M1.ORG_TYPE
+		     , M1.ORG_CODE
+		     , #{orgDesc, jdbcType=VARCHAR} AS ORG_DESC
+		  FROM TBL_SCM_SALES_PLAN_RATE_F M1
+		     , (SELECT DISTINCT 
+		               CASE WHEN #{orgType, jdbcType=VARCHAR} = 'HJ0' THEN
+		                        OU_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'TERRITORY' THEN
+		                        TERRITORY_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'DEPARTMENT' THEN
+		                        DEPARTMENT_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'PART' THEN
+		                        PART_CODE
+		                    WHEN #{orgType, jdbcType=VARCHAR} = 'SALESREP' THEN
+		                        SALESREP_NUMBER
+		                    ELSE 
+		                        ACCOUNT_NUMBER
+		               END AS ORG_CODE
+		          FROM EDW.W_CM_TB_OM_DEPT_M
+		         WHERE OU_CODE = 'HJ0'
+		           AND LIQUOR_CODE IN ('10', '20')
+		           AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		           AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		           AND PART_CODE IS NOT NULL
+		           AND SALESREP_NUMBER IS NOT NULL) M2
+		 WHERE M1.ORG_CODE = M2.ORG_CODE
+		   AND M1.ORG_TYPE = #{orgType, jdbcType=VARCHAR}
+		   AND M1.ORG_CODE = #{orgCode, jdbcType=VARCHAR}
+		 ORDER BY M1.PERIOD_YYYYWW
+	</select>
+
+	<!-- 차수 Combo List 조회 -->
+	<select id="yyyywwCombo" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M07020DaoMapper.yyyywwCombo */
+               SCM_YYYYWW AS CODE
+             , CASE WHEN SUBSTR(SCM_YYYYWW,5,1) = '0' THEN SUBSTR(SCM_YYYYWW,6,1)
+                    ELSE SUBSTR(SCM_YYYYWW,5,2)
+               END ||'주차' AS NAME
+             , MAX(DECODE(TO_CHAR(SYSDATE, 'YYYYMMDD'), YYYYMMDD, 'Y', 'N')) D_FLAG
+          FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMM = #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR}
+         GROUP BY SCM_YYYYWW
+	</select>
+	
+</mapper>

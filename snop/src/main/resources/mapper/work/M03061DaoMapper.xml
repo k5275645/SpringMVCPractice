@@ -1,0 +1,513 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제병사실적 조회 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03061DaoMapper">
+
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03061DaoMapper.searchHeader */
+		      A.MANURS_CODE, A.MANURS_NAME, A.MANURS_SEQ
+		    , A.ACCT_CODE, A.ACCT_NAME, A.ACCT_TYPE, A.ACCT_SEQ
+		    , A.MANURS_SPAN, A.MANURS_ROWNUM, A.ACCT_TYPE_SPAN, A.ACCT_TYPE_ROWNUM
+		
+		    , 'COL' || (ROW_NUMBER() OVER (ORDER BY A.MANURS_SEQ, A.ACCT_SEQ) -1) AS NAME
+		    , (CASE WHEN A.ACCT_CODE = 'PBOX_STOCK_QTY' THEN 'total'
+		            ELSE 'numeric'
+		            END) AS DEF
+		    , (CASE WHEN A.ACCT_CODE IN ('PBOX_PRDT_QTY', 'SHIP_QTY', 'PBOX_STOCK_QTY') THEN '1'
+		            ELSE '0'
+		            END) AS VISIBLE
+
+		    , (CASE WHEN A.MANURS_ROWNUM = 1 THEN A.MANURS_NAME
+		            ELSE NULL
+		            END) AS HEADER1_DESC
+		    , (CASE WHEN A.MANURS_ROWNUM = 1 THEN A.MANURS_SPAN
+		            ELSE NULL
+		            END) AS HEADER1_SPAN    
+		    
+		    , (CASE WHEN A.ACCT_TYPE = 'MFG' AND A.ACCT_TYPE_ROWNUM = 1     THEN '공장 출고'
+		            WHEN A.ACCT_TYPE = 'MFG' AND A.ACCT_TYPE_ROWNUM != 1    THEN NULL
+		            ELSE A.ACCT_NAME
+		            END) AS HEADER2_DESC
+		    , (CASE WHEN A.ACCT_TYPE = 'MFG' AND A.ACCT_TYPE_ROWNUM = 1 THEN A.ACCT_TYPE_SPAN
+		            ELSE NULL
+		            END) AS HEADER2_SPAN
+            , (CASE WHEN A.ACCT_CODE = 'PBOX_PRDT_QTY' 	THEN 3
+                    WHEN A.ACCT_CODE = 'PBOX_STOCK_QTY' THEN 2
+                    ELSE NULL
+                    END) AS HEADER2_EXPAND
+		    
+		    , (CASE WHEN A.ACCT_TYPE = 'MFG' THEN A.ACCT_NAME
+		            ELSE NULL
+		            END) AS HEADER3_DESC
+		    , (CASE WHEN A.ACCT_TYPE = 'MFG' AND A.ACCT_TYPE_ROWNUM = 1 THEN A.ACCT_TYPE_SPAN
+		            ELSE NULL
+		            END) AS HEADER3_EXPAND
+		FROM
+		(
+		    SELECT
+		          T1.MANURS_CODE, T1.MANURS_NAME, T1.MANURS_SEQ
+		        , T2.ACCT_CODE, T2.ACCT_NAME, T2.ACCT_TYPE, T2.ACCT_SEQ
+		        -- 제병사별 순번 및 개수
+		        , ROW_NUMBER() OVER (PARTITION BY T1.MANURS_CODE ORDER BY T1.MANURS_SEQ, T2.ACCT_SEQ)               AS MANURS_ROWNUM
+		        , COUNT(1) OVER (PARTITION BY T1.MANURS_CODE)                                                       AS MANURS_SPAN
+		        -- 제병사/계정별 순번 및 개수
+		        , ROW_NUMBER() OVER (PARTITION BY T1.MANURS_CODE, T2.ACCT_TYPE ORDER BY T1.MANURS_SEQ, T2.ACCT_SEQ) AS ACCT_TYPE_ROWNUM
+		        , COUNT(1) OVER (PARTITION BY T1.MANURS_CODE, T2.ACCT_TYPE)                                         AS ACCT_TYPE_SPAN
+		    FROM
+		    (
+		        SELECT
+		              DECODE(GROUPING_ID(A.CODE), 1, 'TOTAL', A.CODE) 	AS MANURS_CODE
+		            , DECODE(GROUPING_ID(A.CODE), 1, '총계', A.NAME) 	AS MANURS_NAME
+		            , DECODE(GROUPING_ID(A.CODE), 1, -1, MAX(A.SEQ)) 	AS MANURS_SEQ
+		        FROM SCMU.W_SOP_TB_COM_CODE_M A
+		        WHERE 1 = 1
+		            AND A.GROUP_CODE = 'BOTL_MANURS_LIST'
+		            AND A.USE_YN     = 'Y'
+		        GROUP BY GROUPING SETS((A.CODE, A.NAME), ())
+		    ) T1
+		
+		    CROSS JOIN
+		    (
+		        SELECT 'PBOX_PRDT_QTY'      AS ACCT_CODE  , 'P\n생산량' AS ACCT_NAME                , '-' AS ACCT_TYPE,   10 AS ACCT_SEQ FROM DUAL
+		        UNION ALL
+		        SELECT 'BULK_PRDT_QTY'      AS ACCT_CODE  , '벌크\n생산량' AS ACCT_NAME             , '-' AS ACCT_TYPE,   20 AS ACCT_SEQ FROM DUAL
+		        UNION ALL
+		        SELECT 'CONV_BULK_TO_P_QTY' AS ACCT_CODE  , '전환량\n(벌크→P)' AS ACCT_NAME        , '-' AS ACCT_TYPE,   40 AS ACCT_SEQ FROM DUAL
+		        UNION ALL
+		        SELECT 'SHIP_QTY'           AS ACCT_CODE  , '총계' AS ACCT_NAME                     , 'MFG' AS ACCT_TYPE, 50 AS ACCT_SEQ FROM DUAL
+		        UNION ALL
+		
+		        SELECT
+		              CODE AS ACCT_CODE
+		            , (CASE WHEN SEGMENT4 = 'MH1' THEN '강원'
+		            		WHEN SEGMENT4 = 'MH3' THEN '전주'
+		            		WHEN SEGMENT4 = 'MJ1' THEN '이천'
+		            		WHEN SEGMENT4 = 'MJ2' THEN '청주'
+		            		WHEN SEGMENT4 = 'MJ3' THEN '익산'
+		            		WHEN SEGMENT4 = 'MJ4' THEN '마산'
+		            		ELSE NULL
+		               END) AS ACCT_NAME
+		            , 'MFG' AS ACCT_TYPE
+		            , (ROW_NUMBER() OVER (ORDER BY CODE) + 5) * 10 AS ACCT_SEQ
+		        FROM SCMU.W_SOP_TB_COM_CODE_M
+		        WHERE 1 = 1
+		            AND GROUP_CODE = 'BOTL_MANURS_ACCT_LIST'
+		            AND SEGMENT6   = #{liquorCode, jdbcType=VARCHAR}
+		            AND USE_YN     = 'Y'
+		
+		        UNION ALL
+		        SELECT 'PBOX_STOCK_QTY'     AS ACCT_CODE  , 'P재고' AS ACCT_NAME            , '-' AS ACCT_TYPE, 100 AS ACCT_SEQ FROM DUAL
+		        UNION ALL
+		        SELECT 'BULK_STOCK_QTY'     AS ACCT_CODE  , '벌크재고' AS ACCT_NAME         , '-' AS ACCT_TYPE, 110 AS ACCT_SEQ FROM DUAL
+		    ) T2
+		) A
+		ORDER BY A.MANURS_SEQ, A.ACCT_SEQ
+	</select>
+    
+    <!-- 연간 조회 -->
+    <select id="searchYearly" parameterType="map" resultType="map">
+            SELECT /* com.hitejinro.snop.work.dao.M03061DaoMapper.searchYearly */
+                  T1.PERIOD_YYYYMMDD
+                , MAX(T1.LIQUOR_CODE) 		AS LIQUOR_CODE
+                , MAX(T1.LIQUOR_DESC)		AS LIQUOR_DESC
+                , T1.ITEM_CODE
+                , MAX(T1.DESCRIPTION)		AS DESCRIPTION
+                , MAX(T1.VOLUME_VALUE)		AS VOLUME_VALUE
+                
+	<foreach collection="header" item="list" index="i">
+		<choose>
+			<!-- 총계 -->
+			<when test='list.MANURS_CODE != null and "TOTAL".equals(list.MANURS_CODE)'>
+				, (CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_CS_QTY' AND NVL(MAX(T1.PBOX_PACKING_UNIT), 0) = 0 THEN 0
+						ELSE NVL(SUM(T1.${list.ACCT_CODE}), 0) / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, MAX(T1.PBOX_PACKING_UNIT))
+						END) AS ${list.NAME}
+			</when>
+			<!-- 제병사 -->
+			<otherwise>
+				, SUM(CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_CS_QTY' AND NVL(T1.PBOX_PACKING_UNIT, 0) = 0 THEN 0
+						   WHEN T1.BOTL_MANURS_CODE = #{list.MANURS_CODE, jdbcType=VARCHAR} THEN NVL(T1.${list.ACCT_CODE}, 0) / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, T1.PBOX_PACKING_UNIT)
+						   ELSE 0 
+						   END) AS ${list.NAME}
+			</otherwise>
+		</choose>
+	</foreach>
+            FROM
+            (
+                SELECT
+                      SUBSTR(A.PERIOD_YYYYMMDD, 0, 4)   AS PERIOD_YYYYMMDD
+                    , A.BOTL_MANURS_CODE
+                    , A.ITEM_CODE
+                    , MAX(D.DESCRIPTION)                AS DESCRIPTION
+                    , MAX(C.LIQUOR_CODE)                AS LIQUOR_CODE
+                    , MAX(E.LIQUOR_DESC)                AS LIQUOR_DESC
+                    , MAX(C.VOLUME_VALUE)               AS VOLUME_VALUE
+                    , MAX(C.PBOX_PACKING_UNIT)          AS PBOX_PACKING_UNIT
+                    
+                    -- P 생산량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'PBOX' AND A.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS PBOX_PRDT_QTY
+                        
+                    -- 벌크 생산량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS BULK_PRDT_QTY
+                
+                    -- 전환량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'CONV_BULK_TO_P_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS CONV_BULK_TO_P_QTY
+                            
+                    -- SHIP_QTY
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE IN ('SHIP_MH1', 'SHIP_MH3', 'SHIP_MJ1', 'SHIP_MJ2', 'SHIP_MJ3', 'SHIP_MJ4') 
+                    			 AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY
+                                ELSE 0
+                            	END)) AS SHIP_QTY
+
+                    -- MH1
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MH1' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MH1
+                    
+                    -- MH3
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MH3' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MH3
+                
+                    -- MJ1
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ1' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ1
+                        
+                    -- MJ2
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ2' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ2
+                        
+                    -- MJ3
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ3' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ3
+                        
+                    -- MJ4
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ4' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ4
+
+                    -- P재고(기간말 재고 추출)
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE        = 'PBOX'
+                                 AND A.BOTL_MANURS_ACCT_CODE    = 'STOCK_QTY'
+                                 AND B.ITEM_CODE IS NOT NULL    THEN A.QTY
+                                ELSE 0
+                            	END)) AS PBOX_STOCK_QTY
+                            
+                    -- BULK 재고(기간말 재고 추출)
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE        = 'BULK'
+                                 AND A.BOTL_MANURS_ACCT_CODE    = 'STOCK_QTY'
+                                 AND B.ITEM_CODE IS NOT NULL    THEN A.QTY
+                                ELSE 0
+                            	END)) AS BULK_STOCK_QTY
+                FROM SCMU.W_SOP_TB_BOTL_MANURS_PRDT_F A
+                
+                -- 조회조건의 기간말 산출
+                LEFT JOIN
+                (
+                    SELECT
+                          ITEM_CODE
+                        , SUBSTR(PERIOD_YYYYMMDD, 0, 4)   AS PERIOD_YYYYMMDD                  
+                        , MAX(PERIOD_YYYYMMDD)            AS MAX_PERIOD_YYYYMMDD
+                    FROM W_SOP_TB_BOTL_MANURS_PRDT_F
+                    WHERE 1 = 1
+                        AND PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                        AND ITEM_CODE        = DECODE(#{itemCode, jdbcType=VARCHAR}, '!ALL', ITEM_CODE, #{itemCode, jdbcType=VARCHAR})
+                    GROUP BY ITEM_CODE, SUBSTR(PERIOD_YYYYMMDD, 0, 4)
+                ) B ON B.MAX_PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+                   AND B.ITEM_CODE           = A.ITEM_CODE
+
+				INNER JOIN SCMU.W_SOP_TB_VESSEL_M C  ON C.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+													AND C.VESSEL_CODE	= '1'
+                                                    AND C.BOTL_TYPE     = 'NEW'
+                                                    AND C.COMPANY_TYPE  = 'OWNER'
+                                                    AND C.USE_YN        = 'Y'
+                                                    AND C.ITEM_CODE     = A.ITEM_CODE
+
+                LEFT JOIN EDW.W_WS_TB_RI_ITEM_M D ON D.ITEM_CODE = A.ITEM_CODE
+
+                LEFT JOIN EDW.W_CM_TB_LIQUOR_M E ON E.LIQUOR_CODE = C.LIQUOR_CODE
+
+                WHERE 1 = 1
+                    AND A.PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                    AND A.ITEM_CODE        = DECODE(#{itemCode, jdbcType=VARCHAR}, '!ALL', A.ITEM_CODE, #{itemCode, jdbcType=VARCHAR})
+                GROUP BY SUBSTR(A.PERIOD_YYYYMMDD, 0, 4), A.BOTL_MANURS_CODE, A.ITEM_CODE
+            ) T1
+            
+            GROUP BY T1.PERIOD_YYYYMMDD, T1.ITEM_CODE
+            ORDER BY T1.PERIOD_YYYYMMDD, T1.ITEM_CODE
+    </select>
+    
+    <!-- 월간 조회 -->
+	<select id="searchMonthly" parameterType="map" resultType="map">
+            SELECT /* com.hitejinro.snop.work.dao.M03061DaoMapper.searchMonthly */
+                  TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMM'), 'YYYY-MM') AS PERIOD_YYYYMMDD
+                , MAX(T1.LIQUOR_CODE) 		AS LIQUOR_CODE
+                , MAX(T1.LIQUOR_DESC)		AS LIQUOR_DESC
+                , T1.ITEM_CODE
+                , MAX(T1.DESCRIPTION)		AS DESCRIPTION
+                , MAX(T1.VOLUME_VALUE)		AS VOLUME_VALUE
+                
+	<foreach collection="header" item="list" index="i">
+		<choose>
+			<!-- 총계 -->
+			<when test='list.MANURS_CODE != null and "TOTAL".equals(list.MANURS_CODE)'>
+				, (CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_CS_QTY' AND NVL(MAX(T1.PBOX_PACKING_UNIT), 0) = 0 THEN 0
+						ELSE NVL(SUM(T1.${list.ACCT_CODE}), 0) / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, MAX(T1.PBOX_PACKING_UNIT))
+						END) AS ${list.NAME}
+			</when>
+			<!-- 제병사 -->
+			<otherwise>
+				, SUM(CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_CS_QTY' AND NVL(T1.PBOX_PACKING_UNIT, 0) = 0 THEN 0
+						   WHEN T1.BOTL_MANURS_CODE = #{list.MANURS_CODE, jdbcType=VARCHAR} THEN NVL(T1.${list.ACCT_CODE}, 0) / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, T1.PBOX_PACKING_UNIT)
+						   ELSE 0 
+						   END) AS ${list.NAME}
+			</otherwise>
+		</choose>
+	</foreach>
+            FROM
+            (
+                SELECT
+                      SUBSTR(A.PERIOD_YYYYMMDD, 0, 6)   AS PERIOD_YYYYMMDD
+                    , A.BOTL_MANURS_CODE
+                    , A.ITEM_CODE
+                    , MAX(D.DESCRIPTION)                AS DESCRIPTION
+                    , MAX(C.LIQUOR_CODE)                AS LIQUOR_CODE
+                    , MAX(E.LIQUOR_DESC)                AS LIQUOR_DESC
+                    , MAX(C.VOLUME_VALUE)               AS VOLUME_VALUE
+                    , MAX(C.PBOX_PACKING_UNIT)          AS PBOX_PACKING_UNIT
+                    
+                    -- P 생산량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'PBOX' AND A.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS PBOX_PRDT_QTY
+                        
+                    -- 벌크 생산량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS BULK_PRDT_QTY
+                
+                    -- 전환량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'CONV_BULK_TO_P_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS CONV_BULK_TO_P_QTY
+                            
+                    -- SHIP_QTY
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE IN ('SHIP_MH1', 'SHIP_MH3', 'SHIP_MJ1', 'SHIP_MJ2', 'SHIP_MJ3', 'SHIP_MJ4') 
+                    			 AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY
+                                ELSE 0
+                            	END)) AS SHIP_QTY
+
+                    -- MH1
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MH1' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MH1
+                    
+                    -- MH3
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MH3' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MH3
+                
+                    -- MJ1
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ1' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ1
+                        
+                    -- MJ2
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ2' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ2
+                        
+                    -- MJ3
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ3' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ3
+                        
+                    -- MJ4
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ4' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ4
+
+                    -- P재고(기간말 재고 추출)
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE        = 'PBOX'
+                                 AND A.BOTL_MANURS_ACCT_CODE    = 'STOCK_QTY'
+                                 AND B.ITEM_CODE IS NOT NULL    THEN A.QTY
+                                ELSE 0
+                            	END)) AS PBOX_STOCK_QTY
+                            
+                    -- BULK 재고(기간말 재고 추출)
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE        = 'BULK'
+                                 AND A.BOTL_MANURS_ACCT_CODE    = 'STOCK_QTY'
+                                 AND B.ITEM_CODE IS NOT NULL    THEN A.QTY
+                                ELSE 0
+                            	END)) AS BULK_STOCK_QTY
+                FROM SCMU.W_SOP_TB_BOTL_MANURS_PRDT_F A
+                
+                -- 조회조건의 기간말 산출
+                LEFT JOIN
+                (
+                    SELECT
+                          ITEM_CODE
+                        , SUBSTR(PERIOD_YYYYMMDD, 0, 6)   AS PERIOD_YYYYMMDD                  
+                        , MAX(PERIOD_YYYYMMDD)            AS MAX_PERIOD_YYYYMMDD
+                    FROM W_SOP_TB_BOTL_MANURS_PRDT_F
+                    WHERE 1 = 1
+                        AND PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                        AND ITEM_CODE        = DECODE(#{itemCode, jdbcType=VARCHAR}, '!ALL', ITEM_CODE, #{itemCode, jdbcType=VARCHAR})
+                    GROUP BY ITEM_CODE, SUBSTR(PERIOD_YYYYMMDD, 0, 6)
+                ) B ON B.MAX_PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+                   AND B.ITEM_CODE           = A.ITEM_CODE
+
+				INNER JOIN SCMU.W_SOP_TB_VESSEL_M C  ON C.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+													AND C.VESSEL_CODE	= '1'
+                                                    AND C.BOTL_TYPE     = 'NEW'
+                                                    AND C.COMPANY_TYPE  = 'OWNER'
+                                                    AND C.USE_YN        = 'Y'
+                                                    AND C.ITEM_CODE     = A.ITEM_CODE
+
+                LEFT JOIN EDW.W_WS_TB_RI_ITEM_M D ON D.ITEM_CODE = A.ITEM_CODE
+
+                LEFT JOIN EDW.W_CM_TB_LIQUOR_M E ON E.LIQUOR_CODE = C.LIQUOR_CODE
+
+                WHERE 1 = 1
+                    AND A.PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                    AND A.ITEM_CODE        = DECODE(#{itemCode, jdbcType=VARCHAR}, '!ALL', A.ITEM_CODE, #{itemCode, jdbcType=VARCHAR})
+                GROUP BY SUBSTR(A.PERIOD_YYYYMMDD, 0, 6), A.BOTL_MANURS_CODE, A.ITEM_CODE
+            ) T1
+            
+            GROUP BY T1.PERIOD_YYYYMMDD, T1.ITEM_CODE
+            ORDER BY T1.PERIOD_YYYYMMDD, T1.ITEM_CODE
+    </select>
+	
+    <!-- 일간 조회 -->
+	<select id="searchDaily" parameterType="map" resultType="map">
+            SELECT /* com.hitejinro.snop.work.dao.M03061DaoMapper.searchDaily */
+                  TO_CHAR(TO_DATE(T1.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS PERIOD_YYYYMMDD
+                , MAX(T1.LIQUOR_CODE) 		AS LIQUOR_CODE
+                , MAX(T1.LIQUOR_DESC)		AS LIQUOR_DESC
+                , T1.ITEM_CODE
+                , MAX(T1.DESCRIPTION)		AS DESCRIPTION
+                , MAX(T1.VOLUME_VALUE)		AS VOLUME_VALUE
+                
+	<foreach collection="header" item="list" index="i">
+		<choose>
+			<!-- 총계 -->
+			<when test='list.MANURS_CODE != null and "TOTAL".equals(list.MANURS_CODE)'>
+				, (CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_CS_QTY' AND NVL(MAX(T1.PBOX_PACKING_UNIT), 0) = 0 THEN 0
+						ELSE NVL(SUM(T1.${list.ACCT_CODE}), 0) / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, MAX(T1.PBOX_PACKING_UNIT))
+						END) AS ${list.NAME}
+			</when>
+			<!-- 제병사 -->
+			<otherwise>
+				, SUM(CASE WHEN #{acctType, jdbcType=VARCHAR} = 'ACCT_CS_QTY' AND NVL(T1.PBOX_PACKING_UNIT, 0) = 0 THEN 0
+						   WHEN T1.BOTL_MANURS_CODE = #{list.MANURS_CODE, jdbcType=VARCHAR} THEN NVL(T1.${list.ACCT_CODE}, 0) / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, T1.PBOX_PACKING_UNIT)
+						   ELSE 0 
+						   END) AS ${list.NAME}
+			</otherwise>
+		</choose>
+	</foreach>
+            FROM
+            (
+                SELECT
+                      A.PERIOD_YYYYMMDD
+                    , A.BOTL_MANURS_CODE
+                    , A.ITEM_CODE
+                    , MAX(D.DESCRIPTION)                AS DESCRIPTION
+                    , MAX(C.LIQUOR_CODE)                AS LIQUOR_CODE
+                    , MAX(E.LIQUOR_DESC)                AS LIQUOR_DESC
+                    , MAX(C.VOLUME_VALUE)               AS VOLUME_VALUE
+                    , MAX(C.PBOX_PACKING_UNIT)          AS PBOX_PACKING_UNIT
+                    
+                    -- P 생산량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'PBOX' AND A.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS PBOX_PRDT_QTY
+                        
+                    -- 벌크 생산량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'PRDT_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS BULK_PRDT_QTY
+                
+                    -- 전환량
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'CONV_BULK_TO_P_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS CONV_BULK_TO_P_QTY
+                            
+                    -- SHIP_QTY
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE IN ('SHIP_MH1', 'SHIP_MH3', 'SHIP_MJ1', 'SHIP_MJ2', 'SHIP_MJ3', 'SHIP_MJ4')
+                    			 AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY
+                                ELSE 0
+                            	END)) AS SHIP_QTY
+
+                    -- MH1
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MH1' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MH1
+                    
+                    -- MH3
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MH3' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MH3
+                
+                    -- MJ1
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ1' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ1
+                        
+                    -- MJ2
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ2' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ2
+                        
+                    -- MJ3
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ3' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ3
+                        
+                    -- MJ4
+                    , SUM((CASE WHEN A.BOTL_MANURS_ACCT_CODE = 'SHIP_MJ4' AND A.BOTL_PACKING_TYPE = 'PBOX' THEN A.QTY 
+                                ELSE 0
+                            	END)) AS SHIP_MJ4
+
+                    -- P재고(기간말 재고 추출)
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'PBOX' AND A.BOTL_MANURS_ACCT_CODE = 'STOCK_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS PBOX_STOCK_QTY
+                            
+                    -- BULK 재고(기간말 재고 추출)
+                    , SUM((CASE WHEN A.BOTL_PACKING_TYPE = 'BULK' AND A.BOTL_MANURS_ACCT_CODE = 'STOCK_QTY' THEN A.QTY
+                                ELSE 0
+                            	END)) AS BULK_STOCK_QTY
+                FROM SCMU.W_SOP_TB_BOTL_MANURS_PRDT_F A
+                
+				INNER JOIN SCMU.W_SOP_TB_VESSEL_M C  ON C.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+													AND C.VESSEL_CODE	= '1'
+                                                    AND C.BOTL_TYPE     = 'NEW'
+                                                    AND C.COMPANY_TYPE  = 'OWNER'
+                                                    AND C.USE_YN        = 'Y'
+                                                    AND C.ITEM_CODE     = A.ITEM_CODE
+
+                LEFT JOIN EDW.W_WS_TB_RI_ITEM_M D ON D.ITEM_CODE = A.ITEM_CODE
+
+                LEFT JOIN EDW.W_CM_TB_LIQUOR_M E ON E.LIQUOR_CODE = C.LIQUOR_CODE
+
+                WHERE 1 = 1
+                    AND A.PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                    AND A.ITEM_CODE        = DECODE(#{itemCode, jdbcType=VARCHAR}, '!ALL', A.ITEM_CODE, #{itemCode, jdbcType=VARCHAR})
+                GROUP BY A.PERIOD_YYYYMMDD, A.BOTL_MANURS_CODE, A.ITEM_CODE
+            ) T1
+            
+            GROUP BY T1.PERIOD_YYYYMMDD, T1.ITEM_CODE
+            ORDER BY T1.PERIOD_YYYYMMDD, T1.ITEM_CODE
+    </select>
+	
+</mapper>

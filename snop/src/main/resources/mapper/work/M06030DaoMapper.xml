@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제품수명관리 > 전사 원부자재 현황(포장자재) -->
+<mapper namespace="com.hitejinro.snop.work.dao.M06030DaoMapper">
+    
+    <select id="search" parameterType="map" resultType="map">
+    WITH DISCONT_TBL AS (
+				SELECT *
+				  FROM W_SOP_TB_DISCONT_RSLT WHERE PERIOD_YYYYMM = #{yearMonth, jdbcType=VARCHAR}
+				<!--  
+				  FROM TABLE (FN_SOP_DISCONT_FLAG(#{yearMonth, jdbcType=VARCHAR}, #{yearMonth, jdbcType=VARCHAR}))
+				-->
+				  
+	   )
+        SELECT BOM_TBL.ITEM_CODE                                                                                                                -- 원제품코드
+             , MAX(BOM_TBL.DESCRIPTION) AS DESCRIPTION                                                                                          -- 원제품명
+             , MAX(BOM_TBL.SEGMENT3) AS SEGMENT3                                                                                                -- 자재구분
+             , BOM_TBL.ITEM_NUMBER                                                                                                              -- 자재코드
+             , MAX(BOM_TBL.ITEM_DESCRIPTION) AS ITEM_DESCRIPTION                                                                                -- 자재명
+             , MAX(PRICE_TBL.LIST_PRICE) AS LIST_PRICE                                                                                          -- 단가
+             , MAX(BOM_TBL.EXTENDED_QUANTITY) AS EXTENDED_QUANTITY                                                                              -- 확장수량
+             , MAX(BOM_TBL.COMMON_USE_YN) AS COMMON_USE_YN                                                                                      -- 공용여부
+             , NVL(MAX(STOCK_TBL.STOCK_QTY), 0) AS STOCK_QTY                                                                                    -- 사내재고
+             , NVL(MAX(EX_STOCK_TBL.REMAIN_ORDER_QTY), 0) AS REMAIN_ORDER_QTY                                                                   -- 업체재고
+             , NVL(MAX(STOCK_TBL.STOCK_QTY), 0) + NVL(MAX(EX_STOCK_TBL.REMAIN_ORDER_QTY), 0) AS STOCK_SUM                                       -- 자재 총 재고
+             , (NVL(MAX(STOCK_TBL.STOCK_QTY), 0) + NVL(MAX(EX_STOCK_TBL.REMAIN_ORDER_QTY), 0)) * MAX(PRICE_TBL.LIST_PRICE) AS STOCK_PRICE       -- 자재 비용
+             , SUM(BOM_TBL.PRDT_PLAN_WW_QTY) AS PRDT_PLAN_WW_QTY                                                                                -- 제품 생산계획
+             , SUM(BOM_TBL.NEED_ITEM_CNT) AS NEED_ITEM_CNT                                                                                      -- 자재 필요량
+             , NVL(MAX(STOCK_TBL.STOCK_QTY), 0) + NVL(MAX(EX_STOCK_TBL.REMAIN_ORDER_QTY), 0) - SUM(BOM_TBL.NEED_ITEM_CNT)  AS UN_USED_STOCK_QTY -- 불용 자재 계
+             , (NVL(MAX(STOCK_TBL.STOCK_QTY), 0) + NVL(MAX(EX_STOCK_TBL.REMAIN_ORDER_QTY), 0) - SUM(BOM_TBL.NEED_ITEM_CNT)) * MAX(PRICE_TBL.LIST_PRICE) AS UN_USED_STOCK_PRICE    -- 불용자재 비용
+          FROM (SELECT A.ITEM_CODE
+                     , MAX(A.DESCRIPTION) 																										AS DESCRIPTION
+                     , A.ITEM_NUMBER
+                     , MAX(A.ITEM_DESCRIPTION) 																									AS ITEM_DESCRIPTION
+                     , MAX(A.EXTENDED_QUANTITY) 																								AS EXTENDED_QUANTITY
+                     , MAX(A.SEGMENT3) 																											AS SEGMENT3
+                     , MAX(A.COMMON_USE_YN) 																									AS COMMON_USE_YN
+                     , SUM(CASE WHEN NVL(B.PRDT_PLAN_WW_QTY, 0) <![CDATA[ <= ]]> 0 THEN 0 ELSE B.PRDT_PLAN_WW_QTY END) 							AS PRDT_PLAN_WW_QTY
+                     , SUM(CASE WHEN NVL(B.PRDT_PLAN_WW_QTY, 0) <![CDATA[ <= ]]> 0 THEN 0 ELSE A.EXTENDED_QUANTITY * B.PRDT_PLAN_WW_QTY END) 	AS NEED_ITEM_CNT
+                  FROM (
+                        SELECT DISTINCT C.ITEM_CODE
+                             , C.DESCRIPTION
+                             , A.ORG_CODE
+                             , A.ORG_NAME
+                             , A.ITEM_NUMBER
+                             , A.ITEM_DESCRIPTION 
+                             , A.EXTENDED_QUANTITY
+                             , B.SEGMENT3
+                             , D.COMMON_USE_YN
+                          FROM EDW.W_PRD_TB_BOM_F A
+                             , EDW.W_CM_TB_ITEM_M B
+                             , (
+                             <choose>
+         	 				 	<when test='discontGb == "N"' >
+                                SELECT A.ITEM_CODE   -- 단종 대상
+                                     , A.ITEM_NAME as DESCRIPTION
+                                     , 'N' AS DISCONT_GB
+                                  FROM DISCONT_TBL A
+                                     , EDW.W_CM_TB_FG_ITEM_M B
+                                 WHERE A.ITEM_CODE = B.ITEM_CODE
+                                   AND B.LIQUOR_CODE IN ('10', '20')
+                                   AND (
+							                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+							                OR
+							                (B.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+							           )
+                                   AND ( 
+	                                       A.PROFIT_FLAG = 1
+	                                    OR A.SALES_FLAG = 1
+	                                    OR A.PRDT_FLAG = 1
+	                           --       OR A.STOCK_FLAG = 1
+	                           --       OR A.QLT_FLAG = 1
+                                     )
+                                </when>
+                                <when test='discontGb == "Y"'>
+                                SELECT ITEM_CODE   -- 단종 완료
+                                     , DESCRIPTION
+                                     , 'Y' AS DISCONT_GB
+                                  FROM EDW.W_CM_TB_FG_ITEM_M
+                                 WHERE 1 = 1
+                                   AND ITEM_TYPE = 'FG'
+                                   AND ITEM_STATUS = 'SalesEnd'
+                                   AND LIQUOR_CODE IN ('10', '20')
+                                   AND (
+							                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+							                OR
+							                (LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+							           )
+                                </when>
+                             </choose>
+                             ) C
+                             , (
+                                 SELECT ITEM_NUMBER
+                                 	  , CASE WHEN COUNT(ITEM_NUMBER) > 1 THEN 'Y' ELSE 'N' END 			AS COMMON_USE_YN
+                                   FROM (
+	                                     SELECT TOP_ITEM_CODE
+	                                     	  , ITEM_NUMBER
+	                                       FROM EDW.W_PRD_TB_BOM_F 
+	                                      WHERE ITEM_TYPE = 'PK'
+	                                        AND TOP_ALTERNATE_DESIGNATOR IS NULL
+	                                        AND ORG_CODE IN ('MJ1','MJ2','MJ3','MJ4','MH1','MH3','S01')
+	                                      GROUP BY TOP_ITEM_CODE , ITEM_NUMBER
+                                      )
+                                  GROUP BY ITEM_NUMBER
+                             ) D
+                         WHERE A.ITEM_TYPE = 'PK'
+                           AND A.TOP_ALTERNATE_DESIGNATOR IS NULL
+                           AND A.ORG_CODE IN ('MJ1','MJ2','MJ3','MJ4','MH1','MH3','S01')
+                           AND A.ITEM_NUMBER = B.ITEM_CODE
+                           AND A.TOP_ITEM_CODE = C.ITEM_CODE
+                           AND A.ITEM_NUMBER = D.ITEM_NUMBER
+                           AND (
+				                ('!ALL' = #{resourceGb, jdbcType=VARCHAR} AND 1 = 1)
+				                OR
+				                (B.SEGMENT3 = #{resourceGb, jdbcType=VARCHAR})
+				           )
+				           AND (
+				                ('!ALL' = #{commonYn, jdbcType=VARCHAR} AND 1 = 1)
+				                OR
+				                (D.COMMON_USE_YN = #{commonYn, jdbcType=VARCHAR})
+				           )
+                     ) A
+                  LEFT JOIN (	-- 생산
+                        SELECT ITEM_CODE
+                             , ORG_CODE
+                             , SUM(PRDT_PLAN_WW_QTY) - SUM(PRDT_ACTUAL_QTY) AS PRDT_PLAN_WW_QTY
+                          FROM M_SOP_TB_ITEM_STOCK_PRDT_F
+                         WHERE PERIOD_YYYYMMDD LIKE #{yearMonth, jdbcType=VARCHAR} || '%'
+                           AND ITEM_TYPE = 'FG'
+                           AND LIQUOR_CODE IN ('10', '20')
+                           AND (
+				                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+				                OR
+				                (LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+				           ) 
+						<if test="orgGb != null and orgGb != ''">
+				            <foreach open="AND ORG_CODE IN (" collection="orgGb" index="index" item="orgGb" separator=", " close=")">
+								#{orgGb, jdbcType=VARCHAR}
+				            </foreach>
+				        </if>
+                         GROUP BY ITEM_CODE, ORG_CODE
+                     ) B
+                    ON A.ITEM_CODE = B.ITEM_CODE
+                   AND A.ORG_CODE = B.ORG_CODE
+                 GROUP BY A.ITEM_CODE, A.ITEM_NUMBER
+             ) BOM_TBL
+          LEFT JOIN
+             (  -- 사내재고 테이블 (공장별로 보지 않음)
+                SELECT ITEM_CODE
+                     , SUM(ENDING_ONHAND_QTY) AS STOCK_QTY
+                  FROM EDW.W_PRD_TB_DAILY_TXN_BAL_F
+                 WHERE OU_CODE = 'HJ0'						-- LAST_DAY OR YESTERDAY
+                   AND PERIOD_YYYYMMDD = DECODE(#{yearMonth, jdbcType=VARCHAR}, TO_CHAR(SYSDATE, 'YYYYMM'), TO_CHAR(SYSDATE - 1, 'YYYYMMDD'), TO_CHAR(LAST_DAY(TO_DATE(#{yearMonth, jdbcType=VARCHAR} || '01', 'YYYYMMDD')), 'YYYYMMDD')) 
+                   AND ENDING_ONHAND_QTY != 0
+                 GROUP BY ITEM_CODE
+             ) STOCK_TBL
+            ON BOM_TBL.ITEM_NUMBER = STOCK_TBL.ITEM_CODE
+          LEFT JOIN 
+          	 (  -- 업체재고 테이블 
+                SELECT A.ITEM_CODE                              AS ITEM_CODE
+                     , SUM(NVL(A.PO_QTY, 0) - NVL(A.IN_QTY, 0)) AS REMAIN_ORDER_QTY
+                  FROM VIEWER.XXPO_ORDERS_V@DL_VIEWER_TO_PROD      A
+                  JOIN VIEWER.MTL_SYSTEM_ITEMS_B@DL_VIEWER_TO_PROD B
+                    ON A.ORGANIZATION_ID = B.ORGANIZATION_ID
+                   AND A.ITEM_ID       = B.INVENTORY_ITEM_ID
+                 WHERE 1 = 1
+                   AND A.ORG_ID            IN (224, 83)  -- 회사ID : 224(하이트진로), 83(진로소주)
+                   AND A.ORGANIZATION_ID   IN (244, 246, 247, 248, 344, 444, 90) -- 공장ID : 244(MH1:강원), 246(MH3:전주), 247(MJ1:이천), 248(MJ2:청주), 344(MJ3:익산), 444(MJ4:마산), 90(S01:진로소주), 245(MH2:마산 구 공장)
+                   AND TRUNC(A.NEED_BY_DATE) BETWEEN TO_DATE(#{yearMonth, jdbcType=VARCHAR}||'01', 'YYYYMMDD') AND LAST_DAY(TO_DATE(#{yearMonth, jdbcType=VARCHAR}||'01', 'YYYYMMDD'))
+                   AND B.ITEM_TYPE         = 'PK'
+                   AND NVL(A.PO_QTY, 0) - NVL(A.IN_QTY, 0) != 0
+                 GROUP BY A.ITEM_CODE
+                HAVING SUM(NVL(A.PO_QTY, 0) - NVL(A.IN_QTY, 0)) != 0
+       		 ) EX_STOCK_TBL
+            ON BOM_TBL.ITEM_NUMBER = EX_STOCK_TBL.ITEM_CODE
+          LEFT JOIN 
+          	 (
+                SELECT XBP.INVENTORY_ITEM_ID
+                     , XBP.ITEM_CODE
+                     , XBP.ITEM_DESC
+                     , MAX(XBP.LIST_PRICE) LIST_PRICE
+                  FROM XXPO_BPA_ITEM_PRICE_V@DL_VIEWER_TO_PROD XBP,
+                  XXINV_ITEM_MASTER@DL_VIEWER_TO_PROD XIM
+                 WHERE XBP.START_DATE <![CDATA[ <= ]]> TRUNC(SYSDATE)    -- 유효일자 from 
+                   AND NVL(XBP.END_DATE, TRUNC(SYSDATE)) <![CDATA[ >= ]]> TRUNC(SYSDATE) -- 유효일자 to
+                   AND XBP.ITEM_CODE = XIM.ITEM_CODE
+                   AND XIM.SEGMENT2 ='포장자재'
+                 GROUP BY XBP.INVENTORY_ITEM_ID
+                        , XBP.ITEM_CODE
+                        , XBP.ITEM_DESC
+       		 ) PRICE_TBL
+            ON BOM_TBL.ITEM_NUMBER = PRICE_TBL.ITEM_CODE
+         GROUP BY BOM_TBL.ITEM_CODE                                                                                                                -- 원제품코드
+                , BOM_TBL.ITEM_NUMBER                                                                                                              -- 자재코드
+         ORDER BY BOM_TBL.ITEM_CODE
+                , BOM_TBL.ITEM_NUMBER             
+    </select>
+
+	<select id="getCombo" parameterType="map" resultType="map">
+		SELECT DISTINCT SEGMENT3 AS CODE, SEGMENT3 AS NAME 
+		  FROM EDW.W_CM_TB_ITEM_M
+         WHERE ITEM_TYPE = 'PK'
+         AND BUSINESS_CODE IN ('1', '2')
+	</select>
+</mapper>

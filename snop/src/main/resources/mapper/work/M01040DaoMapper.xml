@@ -1,0 +1,1436 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 판매진척도분석(품목) -->
+<mapper namespace="com.hitejinro.snop.work.dao.M01040DaoMapper">
+
+	<select id="searchPivotParam" parameterType="map" resultType="map">
+        SELECT DISTINCT 'M' || YYYYMM AS COL_ID
+             , YYYYMM AS YEAR_MONTH
+             , SUBSTR(YYYYMM, 0, 4) AS YEAR_ID
+             , SUBSTR(YYYYMM, 5, 2) AS MONTH_ID
+             , DECODE(YYYYMM, TO_CHAR(SYSDATE, 'YYYYMM'), 'Y', 'N') AS CURRENT_YN
+             , DECODE(YYYYMM, #{toYYYYMM, jdbcType=VARCHAR}, 'Y', 'N') AS PARAM_YN
+          FROM W_SOP_VW_CALENDAR_M 
+         WHERE 1 = 1
+           AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	</select>
+	
+	<select id="searchHeader" parameterType="map" resultType="map">
+	WITH TBL AS (
+		SELECT DISTINCT 'M' || YYYYMM AS COL_ID
+			 ,  YYYYMM 																	AS YEAR_MONTH
+             , SUBSTR(YYYYMM, 0, 4) 													AS YEAR_ID
+             , SUBSTR(YYYYMM, 5, 2) 													AS MONTH_ID
+             , DECODE(YYYYMM, TO_CHAR(SYSDATE, 'YYYYMM'), 1, 0) 						AS CURRENT_YN
+             , DECODE(YYYYMM, #{toYYYYMM, jdbcType=VARCHAR}, 1, 0) 						AS PARAM_YN
+          FROM W_SOP_VW_CALENDAR_M 
+         WHERE 1 = 1
+           AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+	) ,
+	RES_TBL AS (
+		SELECT A.COL_ID || '_' || B.COL_ID 	AS COL_ID
+		     , A.YEAR_MONTH
+		     , A.YEAR_ID
+		     , A.MONTH_ID
+		     , '0'							AS WEEK_ID
+		     , A.CURRENT_YN
+		     , A.PARAM_YN
+		     , B.COL_ID 					AS DATA_TYPE
+		     , B.COL_TYPE
+		     , B.COL_DESC
+		     , B.COL_HRNK_DESC
+		     , B.HEADER_COL_SPAN
+		     , B.SORT_SEQ
+		     , A.PARAM_YN					AS VISIBLE
+		  FROM TBL A
+		 CROSS JOIN 
+		     ( SELECT 'PLAN_QTY'     AS COL_ID, 'Int' AS COL_TYPE, '경영목표' AS COL_DESC, '' AS COL_HRNK_DESC	  , 1 AS HEADER_COL_SPAN, 1 AS SORT_SEQ FROM DUAL UNION ALL
+		       SELECT 'MONTH_PLAN'	 AS COL_ID, 'Int' AS COL_TYPE, '계획' 	AS COL_DESC, '월간계획' AS COL_HRNK_DESC, 4 AS HEADER_COL_SPAN, 2 AS SORT_SEQ FROM DUAL UNION ALL
+		       SELECT 'MONTH_ACTUAL' AS COL_ID, 'Int' AS COL_TYPE, '실적' 	AS COL_DESC, '' AS COL_HRNK_DESC	  , 1 AS HEADER_COL_SPAN, 3 AS SORT_SEQ FROM DUAL UNION ALL
+		       SELECT 'MONTH_DIFF' 	 AS COL_ID, 'Int' AS COL_TYPE, '차이' 	AS COL_DESC, '' AS COL_HRNK_DESC	  , 1 AS HEADER_COL_SPAN, 4 AS SORT_SEQ FROM DUAL UNION ALL    
+		       SELECT 'MONTH_RATE' 	 AS COL_ID, 'Float'   AS COL_TYPE, '진척률' 	AS COL_DESC, '' AS COL_HRNK_DESC	  , 1 AS HEADER_COL_SPAN, 5 AS SORT_SEQ FROM DUAL 
+		     ) B
+		     
+		 UNION ALL 
+		 
+		SELECT A.COL_ID || B.LVL 															AS COL_ID
+	     	 , #{toYYYYMM, jdbcType=VARCHAR} 												AS YEAR_MONTH
+		     , SUBSTR(#{toYYYYMM, jdbcType=VARCHAR}, 0, 4) 									AS YEAR_ID
+		     , SUBSTR(#{toYYYYMM, jdbcType=VARCHAR}, 5, 2) 									AS MONTH_ID
+		     , TO_CHAR(B.LVL)																AS WEEK_ID
+		     , DECODE(#{toYYYYMM, jdbcType=VARCHAR}, TO_CHAR(SYSDATE, 'YYYYMM'), 1, 0) 	AS CURRENT_YN
+		     , 1 																			AS PARAM_YN
+		     , '' 																			AS DATA_TYPE
+		     , 'Int'																		AS COL_TYPE
+		     , A.COL_DESC																	AS COL_DESC
+		     , DECODE(A.COL_HRNK_DESC, '', '', A.COL_HRNK_DESC||'월 ' || B.LVL || '주')		AS COL_HRNK_DESC
+		     , A.HEADER_COL_SPAN 															AS HEADER_COL_SPAN
+		     , TO_NUMBER(B.LVL || A.SORT_SEQ) 												AS SORT_SEQ
+		     , A.VISIBLE																	AS VISIBLE
+		     
+		  FROM (SELECT 'M' || #{toYYYYMM, jdbcType=VARCHAR} || '_' || 'PLAN_W' 				AS COL_ID
+		  			 , '계획' 																AS COL_DESC
+		  			 , TO_CHAR(TO_NUMBER(#{month, jdbcType=VARCHAR}))						AS COL_HRNK_DESC
+		  			 , '6' 																	AS SORT_SEQ
+		  			 , 2																	AS HEADER_COL_SPAN 
+		  			 , 1																	AS VISIBLE
+		  		  FROM DUAL UNION ALL
+		        SELECT 'M' || #{toYYYYMM, jdbcType=VARCHAR} || '_' || 'ACTUAL_W' 			AS COL_ID
+		        	 , '실적' 																AS COL_DESC
+		        	 , '' 																	AS COL_HRNK_DESC
+		        	 , '7' 																	AS SORT_SEQ
+		        	 , 1																	AS HEADER_COL_SPAN
+		        	 , 0																	AS VISIBLE 
+		       	  FROM DUAL
+		       ) A
+		 CROSS JOIN 
+		     ( SELECT LEVEL AS LVL FROM DUAL CONNECT BY LEVEL <![CDATA[ <= ]]> 5) B
+		     
+		 UNION ALL
+		  
+		SELECT A.COL_ID || B.LVL 															AS COL_ID
+	     	 , #{toYYYYMM, jdbcType=VARCHAR} 												AS YEAR_MONTH
+		     , SUBSTR(#{toYYYYMM, jdbcType=VARCHAR}, 0, 4) 									AS YEAR_ID
+		     , SUBSTR(#{toYYYYMM, jdbcType=VARCHAR}, 5, 2) 									AS MONTH_ID
+		     , TO_CHAR(B.LVL)																AS WEEK_ID
+		     , DECODE(#{toYYYYMM, jdbcType=VARCHAR}, TO_CHAR(SYSDATE, 'YYYYMM'), 1, 0) 		AS CURRENT_YN
+		     , 1 																			AS PARAM_YN
+		     , A.DATA_TYPE 																	AS DATA_TYPE
+		     , A.COL_TYPE																	AS COL_TYPE
+		     , A.COL_DESC																	AS COL_DESC
+		     , DECODE(A.COL_HRNK_DESC, '', '', A.COL_HRNK_DESC||'월 ' || B.LVL || '주')		AS COL_HRNK_DESC
+		     , A.HEADER_COL_SPAN															AS HEADER_COL_SPAN
+		     , TO_NUMBER(B.LVL || A.SORT_SEQ) 												AS SORT_SEQ
+		     , 1																			AS VISIBLE
+		     
+		  FROM (SELECT 'M' || #{toYYYYMM, jdbcType=VARCHAR} || '_' || 'PLAN_W' 				AS COL_ID
+		  			 , '' 																	AS DATA_TYPE
+		  			 , 'Int'     															AS COL_TYPE
+		  			 , '계획' 																AS COL_DESC
+		  			 , TO_CHAR(TO_NUMBER(#{month, jdbcType=VARCHAR}))						AS COL_HRNK_DESC
+		  			 , 4																	AS HEADER_COL_SPAN
+		  			 , '6' 																	AS SORT_SEQ 
+		  		  FROM DUAL 
+		  		 UNION ALL
+		        SELECT 'M' || #{toYYYYMM, jdbcType=VARCHAR} || '_' || 'ACTUAL_W' 			AS COL_ID
+		        	 , '' 																	AS DATA_TYPE
+		        	 , 'Int'     															AS COL_TYPE
+		        	 , '실적' 																AS COL_DESC
+		        	 , '' 																	AS COL_HRNK_DESC
+		        	 , 1																	AS HEADER_COL_SPAN
+		        	 , '7' 																	AS SORT_SEQ 
+		       	  FROM DUAL
+		  		 UNION ALL
+		  		SELECT 'M' || #{toYYYYMM, jdbcType=VARCHAR} || '_' || 'DIFF_W' 				AS COL_ID
+		  			 , 'WEEK_DIFF' 															AS DATA_TYPE
+		  			 , 'Int'     															AS COL_TYPE
+		  			 , '차이' 																AS COL_DESC
+		        	 , '' 																	AS COL_HRNK_DESC
+		        	 , 1																	AS HEADER_COL_SPAN
+		  			 , '8' 																	AS SORT_SEQ 
+		  		  FROM DUAL 
+		  		 UNION ALL
+		        SELECT 'M' || #{toYYYYMM, jdbcType=VARCHAR} || '_' || 'RATE_W' 				AS COL_ID
+		        	 , 'WEEK_RATE' 															AS DATA_TYPE
+		        	 , 'Float' 																	AS COL_TYPE
+					 , '진척률' 																AS COL_DESC
+		        	 , '' 																	AS COL_HRNK_DESC		        	 
+		        	 , 1																	AS HEADER_COL_SPAN
+		        	 , '9' 																	AS SORT_SEQ 
+		          FROM DUAL
+		       ) A
+		 CROSS JOIN 
+		     ( SELECT SUBSTR(SCM_YYYYMMWW, -1) AS LVL FROM W_SOP_VW_CALENDAR_M WHERE YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD') AND YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}) B
+	 )
+		SELECT COL_ID
+     	  	 , YEAR_MONTH
+		     , YEAR_ID
+		     , MONTH_ID
+		     , WEEK_ID
+		     , CURRENT_YN
+		     , PARAM_YN
+		     , DATA_TYPE
+		     , COL_TYPE
+		     , COL_DESC
+		     , COL_HRNK_DESC
+		     , MAX(HEADER_COL_SPAN) AS HEADER_COL_SPAN
+		     , SORT_SEQ
+		     , MAX(VISIBLE) AS VISIBLE
+		   FROM RES_TBL
+		  GROUP BY 	COL_ID
+     	  	 , YEAR_MONTH
+		     , YEAR_ID
+		     , MONTH_ID
+		     , WEEK_ID
+		     , CURRENT_YN
+		     , PARAM_YN
+		     , DATA_TYPE
+		     , COL_TYPE
+		     , COL_DESC
+		     , COL_HRNK_DESC
+		     , SORT_SEQ	     
+		 ORDER BY YEAR_MONTH, SORT_SEQ, COL_ID		     
+	</select>
+	
+	<select id="searchBody" parameterType="map" resultType="map">
+	WITH SITE_TBL AS (/* com.hitejinro.snop.work.dao.M01040DaoMapper.searchBody */      -- 조회조건 중 조직콤보로 필터링 된 사업부
+            SELECT SITE_CODE
+                 , LIQUOR_CODE 
+                 , BUSINESS_CODE
+              FROM EDW.W_CM_TB_OM_DEPT_M 
+             WHERE LIQUOR_CODE IN ('10', '20') 
+               AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O') 
+               AND TERRITORY_CODE NOT IN ('1006475','2079209') 
+               AND TERRITORY_CODE IS NOT NULL 
+               AND DEPARTMENT_CODE IS NOT NULL 
+               AND PART_CODE IS NOT NULL 
+               AND SALESREP_NUMBER IS NOT NULL
+               AND OU_CODE = 'HJ0'
+			   <if test='liquorCode != null and !liquorCode.equals("!ALL")'>
+	           AND LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+	           </if>
+	           <if test='accountNumber != null and !accountNumber.equals("!ALL")'>
+	           AND ACCOUNT_NUMBER = #{accountNumber, jdbcType=VARCHAR}
+	           </if>
+	           <if test='territoryCode != null and !territoryCode.equals("!ALL")'>
+	           AND TERRITORY_CODE = #{territoryCode, jdbcType=VARCHAR}
+	           </if>
+	           <if test='departmentCode != null and !departmentCode.equals("!ALL")'>
+	           AND DEPARTMENT_CODE = #{departmentCode, jdbcType=VARCHAR}
+	           </if>
+	           <if test='partCode != null and !partCode.equals("!ALL")'>
+	           AND PART_CODE = #{partCode, jdbcType=VARCHAR}
+	           </if>
+	           <if test='salesrepNumber != null and !salesrepNumber.equals("!ALL")'>
+	           AND SALESREP_NUMBER = #{salesrepNumber, jdbcType=VARCHAR}
+	           </if>
+    )
+    , ITEM_TBL AS (
+            SELECT ITEM_CODE
+                 , LIQUOR_CODE
+                 , BUSINESS_CODE
+                 , UOM_CONVERSION_VALUE 
+              FROM EDW.W_CM_TB_FG_ITEM_M 
+             WHERE LIQUOR_CODE IN ('10', '20')
+               AND BUSINESS_CODE IN ('1', '2')
+               AND ITEM_TYPE = 'FG'
+               AND BRAND_CODE != '27'
+	       	   <if test='liquorCode != null and !liquorCode.equals("!ALL")'>
+	           AND B.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+	           </if>  
+	       	   <if test='segment2 != null and !segment2.equals("!ALL")'>
+	           AND B.SEGMENT2 = #{segment2, jdbcType=VARCHAR}
+	           </if>
+	           <if test='segment3 != null and !segment3.equals("!ALL")'>
+	           AND B.SEGMENT3 = #{segment3, jdbcType=VARCHAR}
+	           </if>
+	           <if test='mainFlag != null and !mainFlag.equals("!ALL")'>
+	           AND B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+	           </if>
+    ) 	
+    , PLAN_TBL AS (  
+        SELECT /*+ INDEX (A PK_W_OM_TB_YFCST_MNG_F) */
+               A.PLAN_YYYYMM
+             , A.ITEM_CODE
+			 <if test='uomYn != null and uomYn.equals("N")'>
+             , SUM(A.PLAN_QTY) AS PLAN_QTY
+             </if>
+             <if test='uomYn != null and uomYn.equals("Y")'>
+             , SUM(A.CONV_PLAN_QTY) AS PLAN_QTY
+             </if>
+          FROM EDW.W_OM_TB_YFCST_MNG_F A
+             , SITE_TBL B
+             , ITEM_TBL C
+         WHERE 1 = 1
+           AND A.OU_CODE = 'HJ0' 
+           AND A.PLAN_TYPE = 'M'    -- 'M' : 영업관리 , 'K' : KPI
+           AND A.BUSINESS_CODE IN ('1', '2')
+           AND A.LIQUOR_CODE IN ('10', '20')
+           <if test='uomYn != null and uomYn.equals("N")'>
+           AND NVL(A.PLAN_QTY, 0) != 0
+           </if>
+           <if test='uomYn != null and uomYn.equals("Y")'>
+           AND NVL(A.CONV_PLAN_QTY, 0) != 0
+           </if>
+           AND A.PLAN_YYYYMM BETWEEN  #{fromYYYYMM, jdbcType=VARCHAR} AND  #{toYYYYMM, jdbcType=VARCHAR}
+           AND A.SITE_CODE = B.SITE_CODE
+           AND A.LIQUOR_CODE = B.LIQUOR_CODE
+           AND A.BUSINESS_CODE = B.BUSINESS_CODE
+           AND A.ITEM_CODE = C.ITEM_CODE
+           AND A.LIQUOR_CODE = C.LIQUOR_CODE
+           AND A.BUSINESS_CODE = C.BUSINESS_CODE
+         GROUP BY A.PLAN_YYYYMM, A.ITEM_CODE
+         
+         UNION ALL
+         
+        SELECT /*+ INDEX (A PK_W_OM_TB_YFCST_EXP_F) */
+               A.PLAN_YYYYMM
+             , A.ITEM_CODE
+			 <if test='uomYn != null and uomYn.equals("N")'>
+             , SUM(A.PLAN_QTY) AS PLAN_QTY
+             </if>
+             <if test='uomYn != null and uomYn.equals("Y")'>
+             , SUM(A.CONV_PLAN_QTY) AS PLAN_QTY
+             </if>
+          FROM EDW.W_OM_TB_YFCST_EXP_F A
+               , SITE_TBL B
+               , ITEM_TBL C
+         WHERE 1 = 1
+           AND A.OU_CODE = 'HJ0' 
+           AND A.BUSINESS_CODE IN ('1', '2')
+           AND A.LIQUOR_CODE IN ('10', '20')
+           <if test='uomYn != null and uomYn.equals("N")'>
+           AND NVL(A.PLAN_QTY, 0) != 0
+           </if>
+           <if test='uomYn != null and uomYn.equals("Y")'>
+           AND NVL(A.CONV_PLAN_QTY, 0) != 0
+           </if>
+           AND A.PLAN_YYYYMM BETWEEN  #{fromYYYYMM, jdbcType=VARCHAR} AND  #{toYYYYMM, jdbcType=VARCHAR}
+           AND A.SITE_CODE = B.SITE_CODE
+           AND A.LIQUOR_CODE = B.LIQUOR_CODE
+           AND A.BUSINESS_CODE = B.BUSINESS_CODE
+           AND A.ITEM_CODE = C.ITEM_CODE
+           AND A.LIQUOR_CODE = C.LIQUOR_CODE
+           AND A.BUSINESS_CODE = C.BUSINESS_CODE
+         GROUP BY A.PLAN_YYYYMM, A.ITEM_CODE
+    ) 
+    , DATA_TBL AS (
+	    SELECT ITEM_CODE
+	         , PERIOD_YYYYMM
+	         , MAX(PLAN_W0) AS PLAN_W0
+	         , MAX(PLAN_W1) AS PLAN_W1
+	         , MAX(PLAN_W2) AS PLAN_W2
+	         , MAX(PLAN_W3) AS PLAN_W3
+	         , MAX(PLAN_W4) AS PLAN_W4
+	         , MAX(PLAN_W5) AS PLAN_W5
+	         
+	         , MAX(ACTUAL_W0) AS ACTUAL_W0
+	         , MAX(ACTUAL_W1) AS ACTUAL_W1
+	         , MAX(ACTUAL_W2) AS ACTUAL_W2
+	         , MAX(ACTUAL_W3) AS ACTUAL_W3
+	         , MAX(ACTUAL_W4) AS ACTUAL_W4
+	         , MAX(ACTUAL_W5) AS ACTUAL_W5
+	         
+	     FROM (
+	            -- 월 판매계획
+	            SELECT A.ITEM_CODE
+	                 , A.PERIOD_YYYYMM_CODE AS PERIOD_YYYYMM
+	                 <if test='uomYn != null and uomYn.equals("N")'>
+	                 , SUM(A.SALES_PLAN_QTY) AS PLAN_W0
+	                 </if>
+	                 <if test='uomYn != null and uomYn.equals("Y")'>
+	                 , SUM(A.SALES_PLAN_QTY * C.UOM_CONVERSION_VALUE) AS PLAN_W0
+	                 </if>
+	                 , NULL AS PLAN_W1
+	                 , NULL AS PLAN_W2
+	                 , NULL AS PLAN_W3
+	                 , NULL AS PLAN_W4
+	                 , NULL AS PLAN_W5
+	                 , NULL AS ACTUAL_W0
+	                 , NULL AS ACTUAL_W1
+	                 , NULL AS ACTUAL_W2
+	                 , NULL AS ACTUAL_W3
+	                 , NULL AS ACTUAL_W4
+	                 , NULL AS ACTUAL_W5
+	              FROM (SELECT * FROM W_OM_TB_SALE_RESULT_MM_F WHERE PERIOD_YYYYMM_CODE BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND  #{toYYYYMM, jdbcType=VARCHAR} AND LIQUOR_CODE IN ('10', '20')) A
+	                 , ITEM_TBL C
+	                 , SITE_TBL D
+	             WHERE 1 = 1 
+	               AND A.ITEM_CODE      = C.ITEM_CODE
+	               AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+	               AND A.SITE_CODE      = D.SITE_CODE
+	               AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+	             GROUP BY A.ITEM_CODE, A.PERIOD_YYYYMM_CODE
+	            
+	            UNION ALL
+	            
+	            -- 월 판매실적
+	            SELECT A.ITEM_CODE
+	                 , A.SALES_YYYYMM AS PERIOD_YYYYMM
+	                 , NULL AS PLAN_W0
+	                 , NULL AS PLAN_W1
+	                 , NULL AS PLAN_W2
+	                 , NULL AS PLAN_W3
+	                 , NULL AS PLAN_W4
+	                 , NULL AS PLAN_W5
+	                 <if test='uomYn != null and uomYn.equals("N")'>
+	                 , SUM(SALES_QTY_CD) AS ACTUAL_W0
+	                 </if>
+	                 <if test='uomYn != null and uomYn.equals("Y")'>
+	                 , SUM(CONV_SALES_QTY_CD) AS ACTUAL_W0
+	                 </if>
+	                 , NULL AS ACTUAL_W1
+	                 , NULL AS ACTUAL_W2
+	                 , NULL AS ACTUAL_W3
+	                 , NULL AS ACTUAL_W4
+	                 , NULL AS ACTUAL_W5
+	              FROM (SELECT * FROM EDW.M_OM_TB_SALE_ITEM_MONTH_F WHERE SALES_YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND  #{toYYYYMM, jdbcType=VARCHAR} AND OU_CODE = 'HJ0' AND BUSINESS_CODE IN ('1', '2') AND LIQUOR_CODE IN ('10', '20') AND NVL(SALES_QTY_CD, 0) != 0) A
+	                 , ITEM_TBL C
+	                 , SITE_TBL D
+	             WHERE 1 = 1 
+	               AND A.ITEM_CODE      = C.ITEM_CODE
+	               AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+	               AND A.SITE_CODE      = D.SITE_CODE
+	               AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+	             GROUP BY A.ITEM_CODE, A.SALES_YYYYMM
+	            
+				 UNION ALL
+				 
+				-- 주 판매계획
+				
+	            SELECT A.ITEM_CODE
+	                 , A.YYYYMM AS PERIOD_YYYYMM
+	                 , NULL AS PLAN_W0
+	                 , SUM(DECODE(A.SCM_WEEK, '1', A.SALES_PLAN_QTY, 0))     AS PLAN_W1
+	                 , SUM(DECODE(A.SCM_WEEK, '2', A.SALES_PLAN_QTY, 0))     AS PLAN_W2
+	                 , SUM(DECODE(A.SCM_WEEK, '3', A.SALES_PLAN_QTY, 0))     AS PLAN_W3
+	                 , SUM(DECODE(A.SCM_WEEK, '4', A.SALES_PLAN_QTY, 0))     AS PLAN_W4
+	                 , SUM(DECODE(A.SCM_WEEK, '5', A.SALES_PLAN_QTY, 0))     AS PLAN_W5
+	                 , NULL AS ACTUAL_W0
+	                 , NULL AS ACTUAL_W1
+	                 , NULL AS ACTUAL_W2
+	                 , NULL AS ACTUAL_W3
+	                 , NULL AS ACTUAL_W4
+	                 , NULL AS ACTUAL_W5
+	                 
+	              FROM (
+	                    SELECT A.PERIOD_YYYYMMDD
+	                         , A.SITE_CODE
+	                         , A.ITEM_CODE
+	                         , B.YYYYMM
+	                         , B.SCM_WEEK
+			                 <if test='uomYn != null and uomYn.equals("N")'>
+	                         , A.SALES_PLAN_QTY  
+			                 </if>
+			                 <if test='uomYn != null and uomYn.equals("Y")'>
+			                 , A.SALES_PLAN_QTY * A.UOM_CONVERSION_VALUE AS SALES_PLAN_QTY
+			                 </if>
+	                      FROM (SELECT * FROM SCMU.W_OM_TB_SALES_PLAN_DD_F WHERE PERIOD_YYYYMMDD LIKE #{toYYYYMM, jdbcType=VARCHAR} || '%' AND LIQUOR_CODE IN ('10', '20')) A
+	                         , (SELECT YYYYMM, YYYYWW, YYYYMMDD, SCM_YYYYMMWW, SUBSTR(SCM_YYYYMMWW, -1) AS SCM_WEEK FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMMDD LIKE #{toYYYYMM, jdbcType=VARCHAR} || '%') B
+	                         , ITEM_TBL C
+	                         , SITE_TBL D
+	                     WHERE 1 = 1
+	                       AND A.ITEM_CODE      = C.ITEM_CODE
+	                       AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+	                       AND A.SITE_CODE      = D.SITE_CODE
+	                       AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+	                       AND A.PERIOD_YYYYMMDD = B.YYYYMMDD
+	                       AND A.PLAN_VER_ID = B.YYYYWW
+	                 ) A
+	             WHERE 1 = 1
+	             GROUP BY A.ITEM_CODE, A.YYYYMM
+	
+	             UNION ALL
+	
+	            -- 주 판매실적
+	            SELECT A.ITEM_CODE
+	                 , A.PERIOD_YYYYMM
+	                 , NULL AS PLAN_W0
+	                 , NULL AS PLAN_W1
+	                 , NULL AS PLAN_W2
+	                 , NULL AS PLAN_W3
+	                 , NULL AS PLAN_W4
+	                 , NULL AS PLAN_W5
+	                 , NULL AS ACTUAL_W0
+	                 , SUM(DECODE(A.SCM_WEEK, '1', A.SALES_QTY, 0))     AS ACTUAL_W1
+	                 , SUM(DECODE(A.SCM_WEEK, '2', A.SALES_QTY, 0))     AS ACTUAL_W2
+	                 , SUM(DECODE(A.SCM_WEEK, '3', A.SALES_QTY, 0))     AS ACTUAL_W3
+	                 , SUM(DECODE(A.SCM_WEEK, '4', A.SALES_QTY, 0))     AS ACTUAL_W4
+	                 , SUM(DECODE(A.SCM_WEEK, '5', A.SALES_QTY, 0))     AS ACTUAL_W5
+	                 
+	              FROM (
+	                    SELECT A.ITEM_CODE
+	                         , B.YYYYMM AS PERIOD_YYYYMM
+	                         , SUBSTR(B.SCM_YYYYMMWW, -1) AS SCM_WEEK
+							 <if test='uomYn != null and uomYn.equals("N")'>
+	                         , A.SALES_QTY                              -- 당일 판매량 (실적 : SUM)
+	                         , A.SALES_QTY_CD                           -- 당월 판매량 (실적 : MAX)
+			                 </if>
+			                 <if test='uomYn != null and uomYn.equals("Y")'>
+	                         , A.SALES_QTY      * UOM_CONVERSION_VALUE AS SALES_QTY		-- 환산 당일 판매량 (실적 : SUM)
+	                         , A.SALES_QTY_CD   * UOM_CONVERSION_VALUE AS SALES_QTY_CD	-- 환산 당월 판매량 (실적 : MAX)
+			                 </if>
+	                      FROM (SELECT * FROM EDW.M_OM_TB_SALE_ITEM_F WHERE OU_CODE = 'HJ0' AND SALES_DATE LIKE #{toYYYYMM, jdbcType=VARCHAR} || '%' AND BUSINESS_CODE IN ('1', '2') AND LIQUOR_CODE IN ('10', '20') AND NVL(SALES_QTY, 0) != 0) A
+	                         , (SELECT YYYYMM, YYYYMMDD, SCM_YYYYMMWW, SUBSTR(SCM_YYYYMMWW, -1) AS SCM_WEEK FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMMDD LIKE #{toYYYYMM, jdbcType=VARCHAR} || '%') B
+	                         , ITEM_TBL C
+	                         , SITE_TBL D
+	                     WHERE 1 = 1
+	                       AND A.SALES_DATE     = B.YYYYMMDD
+	                       AND A.ITEM_CODE      = C.ITEM_CODE
+	                       AND A.BUSINESS_CODE  = C.BUSINESS_CODE
+	                       AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+	                       AND A.SITE_CODE      = D.SITE_CODE
+	                       AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+	                 ) A
+	             WHERE 1 = 1
+	             GROUP BY A.ITEM_CODE, A.PERIOD_YYYYMM
+	         )
+	     GROUP BY ITEM_CODE, PERIOD_YYYYMM 
+    )
+    , UNION_TBL AS (
+        SELECT PERIOD_YYYYMM
+             , ITEM_CODE
+             , MAX(PLAN_QTY) AS PLAN_QTY
+             , SUM(NVL(PLAN_W0, 0)) AS PLAN_W0
+             , SUM(NVL(ACTUAL_W0, 0)) AS ACTUAL_W0
+             , SUM(NVL(PLAN_W1, 0)) AS PLAN_W1
+             , SUM(NVL(ACTUAL_W1, 0)) AS ACTUAL_W1
+             , SUM(NVL(PLAN_W2, 0)) AS PLAN_W2
+             , SUM(NVL(ACTUAL_W2, 0)) AS ACTUAL_W2
+             , SUM(NVL(PLAN_W3, 0)) AS PLAN_W3
+             , SUM(NVL(ACTUAL_W3, 0)) AS ACTUAL_W3
+             , SUM(NVL(PLAN_W4, 0)) AS PLAN_W4
+             , SUM(NVL(ACTUAL_W4, 0)) AS ACTUAL_W4
+             , SUM(NVL(PLAN_W5, 0)) AS PLAN_W5
+             , SUM(NVL(ACTUAL_W5, 0)) AS ACTUAL_W5
+          FROM (
+                SELECT PLAN_YYYYMM AS PERIOD_YYYYMM
+                     , ITEM_CODE
+                     , PLAN_QTY                     -- 경영계획
+                     , NULL AS PLAN_W0              -- 월간 계획
+                     , NULL AS ACTUAL_W0            -- 월간 실적
+                     , NULL AS PLAN_W1              -- 1 주차 계획
+                     , NULL AS ACTUAL_W1            -- 1 주차 실적
+                     , NULL AS PLAN_W2              -- 2 주차 계획
+                     , NULL AS ACTUAL_W2            -- 2 주차 실적
+                     , NULL AS PLAN_W3              -- 3 주차 계획
+                     , NULL AS ACTUAL_W3            -- 3 주차 실적
+                     , NULL AS PLAN_W4              -- 4 주차 계획
+                     , NULL AS ACTUAL_W4            -- 4 주차 실적
+                     , NULL AS PLAN_W5              -- 5 주차 계획
+                     , NULL AS ACTUAL_W5            -- 5 주차 실적
+                  FROM PLAN_TBL
+                 UNION ALL
+                SELECT PERIOD_YYYYMM
+                     , ITEM_CODE
+                     , NULL AS PLAN_QTY             -- 경영계획
+                     , PLAN_W0              -- 월간 계획
+                     , ACTUAL_W0            -- 월간 실적
+                     , PLAN_W1              -- 1 주차 계획
+                     , ACTUAL_W1            -- 1 주차 실적
+                     , PLAN_W2              -- 2 주차 계획
+                     , ACTUAL_W2            -- 2 주차 실적
+                     , PLAN_W3              -- 3 주차 계획
+                     , ACTUAL_W3            -- 3 주차 실적
+                     , PLAN_W4              -- 4 주차 계획
+                     , ACTUAL_W4            -- 4 주차 실적
+                     , PLAN_W5              -- 5 주차 계획
+                     , ACTUAL_W5            -- 5 주차 실적
+                  FROM DATA_TBL
+             )
+         GROUP BY PERIOD_YYYYMM, ITEM_CODE
+    )
+    , PIVOT_TBL AS (
+        SELECT *
+          FROM UNION_TBL
+         PIVOT (  SUM(PLAN_QTY)                AS PLAN_QTY
+                , SUM(PLAN_W0)                 AS MONTH_PLAN
+                , SUM(ACTUAL_W0)             AS MONTH_ACTUAL
+                , SUM(PLAN_W1)                 AS PLAN_W1
+                , SUM(ACTUAL_W1)             AS ACTUAL_W1
+                , SUM(PLAN_W2)                 AS PLAN_W2
+                , SUM(ACTUAL_W2)             AS ACTUAL_W2
+                , SUM(PLAN_W3)                 AS PLAN_W3
+                , SUM(ACTUAL_W3)             AS ACTUAL_W3
+                , SUM(PLAN_W4)                 AS PLAN_W4
+                , SUM(ACTUAL_W4)             AS ACTUAL_W4
+                , SUM(PLAN_W5)                 AS PLAN_W5
+                , SUM(ACTUAL_W5)             AS ACTUAL_W5
+           FOR PERIOD_YYYYMM IN (         -- ex) '202101' AS M202101
+	            <foreach open="" collection="PIVOT_PARAM" index="index" item="item" separator="," close="">
+				       			'${item.YEAR_MONTH}' AS ${item.COL_ID}			
+		       	</foreach>
+                        )
+            )
+    )
+	, TBL AS (
+		SELECT CASE WHEN C.LVL = 1 THEN 'LI' || A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE || '|' || A.ITEM_CODE
+               END              AS PK_PATH
+             , CASE WHEN C.LVL = 1 THEN 'NULL'
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE 
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE 
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE 
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE 
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE 
+               END              AS HRNK_PK_PATH 
+             , CASE WHEN C.LVL = 1 THEN A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN A.BRAND_SORT_ORDER
+                    WHEN C.LVL = 3 THEN A.USAGE_SORT_ORDER
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT_ORDER
+                    WHEN C.LVL = 5 THEN A.VOLUME_SORT_ORDER || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.ITEM_CODE
+               END              AS SORT_ORDER
+             , CASE WHEN C.LVL = 1 THEN DECODE(A.LIQUOR_CODE, '10', '맥주', '20', '소주')
+                    WHEN C.LVL = 2 THEN A.BRAND_NAME
+                    WHEN C.LVL = 3 THEN A.USAGE_NAME
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT
+                    WHEN C.LVL = 5 THEN A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.DESCRIPTION
+               END              AS DESCRIPTION
+			<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+				<choose>
+		       	<when test='item.DATA_TYPE != null and item.DATA_TYPE == "MONTH_DIFF"'>
+		       	, NVL(SUM(M${item.YEAR_MONTH}_MONTH_PLAN) - SUM(M${item.YEAR_MONTH}_MONTH_ACTUAL), 0) AS ${item.COL_ID}
+		       	</when>
+		       	<when test='item.DATA_TYPE != null and item.DATA_TYPE == "MONTH_RATE"'>
+		       	, NVL(SUM(M${item.YEAR_MONTH}_MONTH_ACTUAL) / DECODE(SUM(M${item.YEAR_MONTH}_MONTH_PLAN), 0, NULL, SUM(M${item.YEAR_MONTH}_MONTH_PLAN)), 0) AS ${item.COL_ID}
+		       	</when>
+		       	<when test='item.DATA_TYPE != null and item.DATA_TYPE == "WEEK_DIFF"'>
+		       	, NVL(SUM(M${item.YEAR_MONTH}_PLAN_W${item.WEEK_ID}) - SUM(M${item.YEAR_MONTH}_ACTUAL_W${item.WEEK_ID}), 0) AS ${item.COL_ID}
+		       	</when>
+		       	<when test='item.DATA_TYPE != null and item.DATA_TYPE == "WEEK_RATE"'>
+		       	, NVL(SUM(M${item.YEAR_MONTH}_ACTUAL_W${item.WEEK_ID}) / DECODE(SUM(M${item.YEAR_MONTH}_PLAN_W${item.WEEK_ID}), 0, NULL, SUM(M${item.YEAR_MONTH}_PLAN_W${item.WEEK_ID})), 0) AS ${item.COL_ID}
+		       	</when>
+		       	<otherwise>
+		       	, NVL(SUM(${item.COL_ID}), 0) AS ${item.COL_ID}
+		       	</otherwise>
+		       	</choose>
+            </foreach> 
+          FROM PIVOT_TBL B
+          LEFT JOIN EDW.W_CM_TB_FG_ITEM_M     A
+            ON B.ITEM_CODE = A.ITEM_CODE
+         CROSS JOIN (
+                        SELECT 1 AS LVL FROM DUAL UNION ALL
+                        SELECT 2 AS LVL FROM DUAL UNION ALL
+                        SELECT 3 AS LVL FROM DUAL UNION ALL
+                        SELECT 4 AS LVL FROM DUAL UNION ALL
+                        SELECT 5 AS LVL FROM DUAL UNION ALL
+                        SELECT 6 AS LVL FROM DUAL
+                   )                         C
+         WHERE 1 = 1
+           AND A.ITEM_TYPE   = 'FG'
+           AND A.LIQUOR_CODE IN ('10', '20')
+           AND A.BRAND_CODE != '27'
+       	   <if test='liquorCode != null and !liquorCode.equals("!ALL")'>
+           AND A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+           </if>  
+       	   <if test='segment2 != null and !segment2.equals("!ALL")'>
+           AND A.SEGMENT2 = #{segment2, jdbcType=VARCHAR}
+           </if>
+           <if test='segment3 != null and !segment3.equals("!ALL")'>
+           AND A.SEGMENT3 = #{segment3, jdbcType=VARCHAR}
+           </if>
+           <if test='mainFlag != null and !mainFlag.equals("!ALL")'>
+           AND A.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+           </if> 
+         GROUP BY 
+               CASE WHEN C.LVL = 1 THEN 'LI' || A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE || '|' || A.ITEM_CODE
+               END              
+             , CASE WHEN C.LVL = 1 THEN 'NULL'
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE 
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE 
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE 
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE 
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE 
+               END              
+             , CASE WHEN C.LVL = 1 THEN A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN A.BRAND_SORT_ORDER
+                    WHEN C.LVL = 3 THEN A.USAGE_SORT_ORDER
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT_ORDER
+                    WHEN C.LVL = 5 THEN A.VOLUME_SORT_ORDER || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.ITEM_CODE
+               END              
+             , CASE WHEN C.LVL = 1 THEN DECODE(A.LIQUOR_CODE, '10', '맥주', '20', '소주')
+                    WHEN C.LVL = 2 THEN A.BRAND_NAME
+                    WHEN C.LVL = 3 THEN A.USAGE_NAME
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT
+                    WHEN C.LVL = 5 THEN A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.DESCRIPTION
+               END
+)
+        SELECT LEVEL AS DEPTH
+             , CONNECT_BY_ISLEAF IS_LEAF
+             , A.*
+          FROM TBL A
+         START WITH HRNK_PK_PATH = 'NULL'
+       CONNECT BY NOCYCLE PRIOR PK_PATH = HRNK_PK_PATH
+         ORDER SIBLINGS BY SORT_ORDER
+	</select> 
+
+	<select id="getTerritoryCombo" parameterType="map" resultType="map">
+		SELECT DISTINCT TERRITORY_CODE AS CODE
+		     , TERRITORY_NAME AS NAME
+		     , TERRITORY_SORT_NUMBER
+		  FROM EDW.W_CM_TB_OM_DEPT_M
+		 WHERE TERRITORY_CODE IS NOT NULL
+		   AND DEPARTMENT_CODE IS NOT NULL
+		   AND PART_CODE IS NOT NULL
+		   AND SALESREP_NUMBER IS NOT NULL
+		   AND LIQUOR_CODE IN ('10', '20')
+		   AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		   AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		 ORDER BY TERRITORY_SORT_NUMBER, TERRITORY_CODE
+	</select>
+	
+	<select id="getDepartmentCombo" parameterType="map" resultType="map">
+		SELECT DISTINCT DEPARTMENT_CODE AS CODE
+		     , DEPT_NAME AS NAME
+		     , DEPT_SORT_NUMBER
+		  FROM EDW.W_CM_TB_OM_DEPT_M
+		 WHERE 1 = 1
+		   AND TERRITORY_CODE IS NOT NULL
+		   AND DEPARTMENT_CODE IS NOT NULL
+		   AND PART_CODE IS NOT NULL
+		   AND SALESREP_NUMBER IS NOT NULL
+		   AND LIQUOR_CODE IN ('10', '20')
+		   AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		   AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		<if test="territoryCode != null and territoryCode != '!ALL'">
+	       AND TERRITORY_CODE = #{territoryCode, jdbcType=VARCHAR}
+		</if>
+		 ORDER BY DEPT_SORT_NUMBER, DEPARTMENT_CODE
+	</select>
+	
+	<select id="getPartCombo" parameterType="map" resultType="map">
+		SELECT *
+		  FROM ( 
+			SELECT DISTINCT NVL(PART_CODE, '----') AS CODE
+			     , NVL(PART_NAME, '----') AS NAME
+			     , DECODE(PART_CODE, NULL, '000000', PART_SORT_NUMBER) AS PART_SORT_NUMBER
+			  FROM EDW.W_CM_TB_OM_DEPT_M
+			 WHERE 1 = 1
+			   AND TERRITORY_CODE IS NOT NULL
+			   AND DEPARTMENT_CODE IS NOT NULL
+			   AND PART_CODE IS NOT NULL
+			   AND SALESREP_NUMBER IS NOT NULL
+			   AND LIQUOR_CODE IN ('10', '20')
+			   AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+			   AND TERRITORY_CODE NOT IN ('1006475','2079209')
+			<if test="departmentCode != null and departmentCode != '!ALL'">
+		       AND DEPARTMENT_CODE = #{departmentCode, jdbcType=VARCHAR}
+			</if>
+			 )
+		 ORDER BY PART_SORT_NUMBER, NVL(CODE, '----')
+	</select>
+	
+	<select id="getSalesrepCombo" parameterType="map" resultType="map">
+		SELECT DISTINCT SALESREP_NUMBER AS CODE
+		     , SALESREP_NAME AS NAME
+		     , SALESREP_SORT_NUMBER
+		  FROM EDW.W_CM_TB_OM_DEPT_M
+		 WHERE 1 = 1
+		   AND TERRITORY_CODE IS NOT NULL
+		   AND DEPARTMENT_CODE IS NOT NULL
+		   AND PART_CODE IS NOT NULL
+		   AND SALESREP_NUMBER IS NOT NULL
+		   AND LIQUOR_CODE IN ('10', '20')
+		   AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		   AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		<if test="departmentCode != null and departmentCode != '!ALL'">
+	       AND DEPARTMENT_CODE = #{departmentCode, jdbcType=VARCHAR}
+		</if>
+		<if test="partCode != null and partCode != '!ALL' and partCode != '----'">
+	       AND PART_CODE = #{partCode, jdbcType=VARCHAR}
+		</if>
+		<if test="partCode != null and partCode != '!ALL' and partCode == '----'">
+		   AND PART_CODE IS NULL
+		</if>
+		 ORDER BY SALESREP_SORT_NUMBER, SALESREP_NUMBER
+	</select>
+		
+	<select id="getAccountCombo" parameterType="map" resultType="map">
+		SELECT DISTINCT ACCOUNT_NUMBER AS CODE
+		     , CUSTOMER_SHORT_NAME AS NAME
+		     , CUSTOMER_SORT_NUMBER
+		  FROM EDW.W_CM_TB_OM_DEPT_M
+		 WHERE 1 = 1
+		   AND TERRITORY_CODE IS NOT NULL
+		   AND DEPARTMENT_CODE IS NOT NULL
+		   AND PART_CODE IS NOT NULL
+		   AND SALESREP_NUMBER IS NOT NULL
+		   AND LIQUOR_CODE IN ('10', '20')
+		   AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O')
+		   AND TERRITORY_CODE NOT IN ('1006475','2079209')
+		<if test="departmentCode != null and departmentCode != '!ALL'">
+	       AND DEPARTMENT_CODE = #{departmentCode, jdbcType=VARCHAR}
+		</if>
+		<if test="partCode != null and partCode != '!ALL' and partCode != '----'">
+	       AND PART_CODE = #{partCode, jdbcType=VARCHAR}
+		</if>
+		<if test="partCode != null and partCode != '!ALL' and partCode == '----'">
+		   AND PART_CODE IS NULL
+		</if>
+		<if test="salesrepNumber != null and salesrepNumber != '!ALL'">
+	       AND SALESREP_NUMBER = #{salesrepNumber, jdbcType=VARCHAR}
+		</if>
+		 ORDER BY CUSTOMER_SORT_NUMBER, ACCOUNT_NUMBER
+	</select>
+	
+	<select id="getSegment2Combo" parameterType="map" resultType="map">
+        SELECT DISTINCT SEGMENT2 AS CODE
+             , SEGMENT2 AS NAME 
+          FROM EDW.W_CM_TB_FG_ITEM_M
+         WHERE 1 = 1
+           AND LIQUOR_CODE IN ('10', '20') 
+           AND ITEM_TYPE = 'FG'
+           AND BRAND_CODE != '27'
+           AND ITEM_STATUS = 'Active'
+           AND BUSINESS_CODE IN ('1', '2')
+         ORDER BY (DECODE(SEGMENT2, '맥주류', 0, '소주류', 1, '기타주류', 2, '기재주', 3, 4))
+	</select>
+	
+	<select id="getSegment3Combo" parameterType="map" resultType="map">
+        SELECT DISTINCT SEGMENT3 AS CODE
+        	 , SEGMENT3 AS NAME 
+          FROM EDW.W_CM_TB_FG_ITEM_M
+         WHERE 1 = 1
+		   AND LIQUOR_CODE IN ('10', '20') 
+		   AND ITEM_TYPE = 'FG'
+		   AND BRAND_CODE != '27'
+		   AND ITEM_STATUS = 'Active'
+		   AND BUSINESS_CODE IN ('1', '2') 
+        <if test="segment2 != null and segment2 != '!ALL'">
+	       AND SEGMENT2 = #{segment2, jdbcType=VARCHAR}
+		</if>
+	</select>
+
+	
+    <select id="getMagamYmd" resultType="String">
+		SELECT MAGAM_YMD
+		  FROM EDW.GEIS_MAGAM
+		 WHERE SCRN_ID = 'GEISM0500R'
+		   AND CO_CODE = 'HJ0'
+    </select>
+	
+	<select id="unionQuery">
+WITH SITE_TBL AS ( /* com.hitejinro.snop.work.dao.M01040DaoMapper.searchBody */       -- 조회조건 중 조직콤보로 필터링 된 사업부
+            SELECT SITE_CODE
+                 , LIQUOR_CODE 
+                 , BUSINESS_CODE
+              FROM EDW.W_CM_TB_OM_DEPT_M 
+             WHERE LIQUOR_CODE IN ('10', '20') 
+               AND CUSTOMER_CATEGORY IN ('E', 'W', 'S', 'N', 'M', 'P', 'H', 'O') 
+               AND TERRITORY_CODE NOT IN ('1006475','2079209') 
+               AND TERRITORY_CODE IS NOT NULL 
+               AND DEPARTMENT_CODE IS NOT NULL 
+               AND PART_CODE IS NOT NULL 
+               AND SALESREP_NUMBER IS NOT NULL
+               AND OU_CODE = 'HJ0'
+    )
+    , ITEM_TBL AS (
+            SELECT ITEM_CODE
+                 , LIQUOR_CODE
+                 , BUSINESS_CODE
+                 , UOM_CONVERSION_VALUE 
+              FROM EDW.W_CM_TB_FG_ITEM_M 
+             WHERE LIQUOR_CODE IN ('10', '20')
+               AND BUSINESS_CODE IN ('1', '2')
+               AND ITEM_TYPE = 'FG'
+               AND BRAND_CODE != '27'
+    ) 
+
+    , PLAN_TBL AS (  
+        SELECT /*+ INDEX (A PK_W_OM_TB_YFCST_MNG_F) */
+               A.PLAN_YYYYMM
+             , A.ITEM_CODE
+             , SUM(A.PLAN_QTY) AS PLAN_QTY
+          FROM EDW.W_OM_TB_YFCST_MNG_F A
+             , SITE_TBL B
+             , ITEM_TBL C
+         WHERE 1 = 1
+           AND A.OU_CODE = 'HJ0' 
+           AND A.PLAN_TYPE = 'M'    -- 'M' : 영업관리 , 'K' : KPI
+           AND A.BUSINESS_CODE IN ('1', '2')
+           AND A.LIQUOR_CODE IN ('10', '20')
+           AND NVL(A.PLAN_QTY, 0) != 0
+           AND A.PLAN_YYYYMM BETWEEN  '202006' AND  '202106'
+           AND A.SITE_CODE = B.SITE_CODE
+           AND A.LIQUOR_CODE = B.LIQUOR_CODE
+           AND A.BUSINESS_CODE = B.BUSINESS_CODE
+           AND A.ITEM_CODE = C.ITEM_CODE
+           AND A.LIQUOR_CODE = C.LIQUOR_CODE
+           AND A.BUSINESS_CODE = C.BUSINESS_CODE
+         GROUP BY A.PLAN_YYYYMM, A.ITEM_CODE
+         UNION ALL
+        SELECT /*+ INDEX (A PK_W_OM_TB_YFCST_EXP_F) */
+               A.PLAN_YYYYMM
+             , A.ITEM_CODE
+             , SUM(A.PLAN_QTY) AS PLAN_QTY
+          FROM EDW.W_OM_TB_YFCST_EXP_F A
+               , SITE_TBL B
+               , ITEM_TBL C
+         WHERE 1 = 1
+           AND A.OU_CODE = 'HJ0' 
+           AND A.BUSINESS_CODE IN ('1', '2')
+           AND A.LIQUOR_CODE IN ('10', '20')
+           AND NVL(A.PLAN_QTY, 0) != 0
+           AND A.PLAN_YYYYMM BETWEEN  '202006' AND  '202106'
+           AND A.SITE_CODE = B.SITE_CODE
+           AND A.LIQUOR_CODE = B.LIQUOR_CODE
+           AND A.BUSINESS_CODE = B.BUSINESS_CODE
+           AND A.ITEM_CODE = C.ITEM_CODE
+           AND A.LIQUOR_CODE = C.LIQUOR_CODE
+           AND A.BUSINESS_CODE = C.BUSINESS_CODE
+         GROUP BY A.PLAN_YYYYMM, A.ITEM_CODE
+    ) 
+    , DATA_TBL AS (
+--- make query
+
+    SELECT ITEM_CODE
+         , PERIOD_YYYYMM
+         , MAX(PLAN_W0) AS PLAN_W0
+         , MAX(PLAN_W1) AS PLAN_W1
+         , MAX(PLAN_W2) AS PLAN_W2
+         , MAX(PLAN_W3) AS PLAN_W3
+         , MAX(PLAN_W4) AS PLAN_W4
+         , MAX(PLAN_W5) AS PLAN_W5
+         
+         , MAX(ACTUAL_W0) AS ACTUAL_W0
+         , MAX(ACTUAL_W1) AS ACTUAL_W1
+         , MAX(ACTUAL_W2) AS ACTUAL_W2
+         , MAX(ACTUAL_W3) AS ACTUAL_W3
+         , MAX(ACTUAL_W4) AS ACTUAL_W4
+         , MAX(ACTUAL_W5) AS ACTUAL_W5
+         
+     FROM (
+            -- 월 판매계획
+            SELECT A.ITEM_CODE
+                 , A.PERIOD_YYYYMM_CODE AS PERIOD_YYYYMM
+                 , SUM(SALES_PLAN_QTY) AS PLAN_W0
+                 , NULL AS PLAN_W1
+                 , NULL AS PLAN_W2
+                 , NULL AS PLAN_W3
+                 , NULL AS PLAN_W4
+                 , NULL AS PLAN_W5
+--                 , SUM(RESULT_QTY) AS ACTUAL_W0
+                 , NULL AS ACTUAL_W0
+                 , NULL AS ACTUAL_W1
+                 , NULL AS ACTUAL_W2
+                 , NULL AS ACTUAL_W3
+                 , NULL AS ACTUAL_W4
+                 , NULL AS ACTUAL_W5
+              FROM (SELECT * FROM W_OM_TB_SALE_RESULT_MM_F WHERE PERIOD_YYYYMM_CODE = '202106' AND LIQUOR_CODE IN ('10', '20')) A
+                 , ITEM_TBL C
+                 , SITE_TBL D
+             WHERE 1 = 1 
+               AND A.ITEM_CODE      = C.ITEM_CODE
+               AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+               AND A.SITE_CODE      = D.SITE_CODE
+               AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+             GROUP BY A.ITEM_CODE, A.PERIOD_YYYYMM_CODE
+            
+            UNION ALL
+
+            SELECT A.ITEM_CODE
+                 , A.YYYYMM AS PERIOD_YYYYMM
+                 , NULL AS PLAN_W0
+                 , SUM(DECODE(A.SCM_WEEK, '1', A.SALES_PLAN_QTY, 0))     AS PLAN_W1
+                 , SUM(DECODE(A.SCM_WEEK, '2', A.SALES_PLAN_QTY, 0))     AS PLAN_W2
+                 , SUM(DECODE(A.SCM_WEEK, '3', A.SALES_PLAN_QTY, 0))     AS PLAN_W3
+                 , SUM(DECODE(A.SCM_WEEK, '4', A.SALES_PLAN_QTY, 0))     AS PLAN_W4
+                 , SUM(DECODE(A.SCM_WEEK, '5', A.SALES_PLAN_QTY, 0))     AS PLAN_W5
+                 
+                 , NULL AS ACTUAL_W0
+                 , NULL AS ACTUAL_W1
+                 , NULL AS ACTUAL_W2
+                 , NULL AS ACTUAL_W3
+                 , NULL AS ACTUAL_W4
+                 , NULL AS ACTUAL_W5
+                 
+              FROM (
+                    SELECT A.PERIOD_YYYYMMDD
+                         , A.SITE_CODE
+                         , A.ITEM_CODE
+                         , B.YYYYMM
+                         , B.SCM_WEEK
+                         , SALES_PLAN_QTY  AS SALES_PLAN_QTY
+                      FROM (SELECT * FROM SCMU.W_OM_TB_SALES_PLAN_DD_F WHERE PERIOD_YYYYMMDD LIKE '202106%' AND LIQUOR_CODE IN ('10', '20')) A
+                         , (SELECT YYYYMM, YYYYWW, YYYYMMDD, SCM_YYYYMMWW, SUBSTR(SCM_YYYYMMWW, -1) AS SCM_WEEK FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMMDD LIKE '202106%') B
+                         , ITEM_TBL C
+                         , SITE_TBL D
+                     WHERE 1 = 1
+                       AND A.ITEM_CODE      = C.ITEM_CODE
+                       AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+                       AND A.SITE_CODE      = D.SITE_CODE
+                       AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+                       AND A.PERIOD_YYYYMMDD = B.YYYYMMDD
+                       AND A.PLAN_VER_ID = B.YYYYWW
+                 ) A
+             WHERE 1 = 1
+             GROUP BY A.ITEM_CODE, A.YYYYMM
+
+             UNION ALL
+
+            -- 주 판매실적
+            SELECT A.ITEM_CODE
+                 , A.PERIOD_YYYYMM
+                 , NULL AS PLAN_W0
+                 , NULL AS PLAN_W1
+                 , NULL AS PLAN_W2
+                 , NULL AS PLAN_W3
+                 , NULL AS PLAN_W4
+                 , NULL AS PLAN_W5
+--                 , NULL  AS ACTUAL_W0
+                 , SUM(A.SALES_QTY) as ACTUAL_W0
+                 , SUM(DECODE(A.SCM_WEEK, '1', A.SALES_QTY, 0))     AS ACTUAL_W1
+                 , SUM(DECODE(A.SCM_WEEK, '2', A.SALES_QTY, 0))     AS ACTUAL_W2
+                 , SUM(DECODE(A.SCM_WEEK, '3', A.SALES_QTY, 0))     AS ACTUAL_W3
+                 , SUM(DECODE(A.SCM_WEEK, '4', A.SALES_QTY, 0))     AS ACTUAL_W4
+                 , SUM(DECODE(A.SCM_WEEK, '5', A.SALES_QTY, 0))     AS ACTUAL_W5
+                 
+              FROM (
+                    SELECT A.ITEM_CODE
+                         , B.YYYYMM AS PERIOD_YYYYMM
+                         , SUBSTR(B.SCM_YYYYMMWW, -1) AS SCM_WEEK
+                         , A.SALES_QTY                              -- 당일 판매량 (실적 : SUM)
+                         , A.SALES_QTY_CD                           -- 당월 판매량 (실적 : MAX)
+                         , A.SALES_QTY      * UOM_CONVERSION_VALUE  -- 환산 당일 판매량 (실적 : SUM)
+                         , A.SALES_QTY_CD   * UOM_CONVERSION_VALUE  -- 환산 당월 판매량 (실적 : MAX)
+                      FROM (SELECT * FROM EDW.M_OM_TB_SALE_ITEM_F WHERE OU_CODE = 'HJ0' AND BUSINESS_CODE IN ('1', '2') AND LIQUOR_CODE IN ('10', '20') AND NVL(SALES_QTY, 0) != 0) A
+                         , (SELECT YYYYMM, YYYYMMDD, SCM_YYYYMMWW, SUBSTR(SCM_YYYYMMWW, -1) AS SCM_WEEK FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMMDD LIKE '202106%') B
+                         , ITEM_TBL C
+                         , SITE_TBL D
+                     WHERE 1 = 1
+                       AND A.SALES_DATE     = B.YYYYMMDD
+                       AND A.ITEM_CODE      = C.ITEM_CODE
+                       AND A.BUSINESS_CODE  = C.BUSINESS_CODE
+                       AND A.LIQUOR_CODE    = C.LIQUOR_CODE
+                       AND A.SITE_CODE      = D.SITE_CODE
+                       AND A.LIQUOR_CODE    = D.LIQUOR_CODE
+                 ) A
+             WHERE 1 = 1
+             GROUP BY A.ITEM_CODE, A.PERIOD_YYYYMM
+     
+         )
+     GROUP BY ITEM_CODE, PERIOD_YYYYMM 
+    )
+    , UNION_TBL AS (
+        SELECT PERIOD_YYYYMM
+             , ITEM_CODE
+             , MAX(PLAN_QTY) AS PLAN_QTY
+             , SUM(NVL(PLAN_W0, 0)) AS PLAN_W0
+             , SUM(NVL(ACTUAL_W0, 0)) AS ACTUAL_W0
+             , SUM(NVL(PLAN_W1, 0)) AS PLAN_W1
+             , SUM(NVL(ACTUAL_W1, 0)) AS ACTUAL_W1
+             , SUM(NVL(PLAN_W2, 0)) AS PLAN_W2
+             , SUM(NVL(ACTUAL_W2, 0)) AS ACTUAL_W2
+             , SUM(NVL(PLAN_W3, 0)) AS PLAN_W3
+             , SUM(NVL(ACTUAL_W3, 0)) AS ACTUAL_W3
+             , SUM(NVL(PLAN_W4, 0)) AS PLAN_W4
+             , SUM(NVL(ACTUAL_W4, 0)) AS ACTUAL_W4
+             , SUM(NVL(PLAN_W5, 0)) AS PLAN_W5
+             , SUM(NVL(ACTUAL_W5, 0)) AS ACTUAL_W5
+          FROM (
+                SELECT PLAN_YYYYMM AS PERIOD_YYYYMM
+                     , ITEM_CODE
+                     , PLAN_QTY                     -- 경영계획
+                     , NULL AS PLAN_W0              -- 월간 계획
+                     , NULL AS ACTUAL_W0            -- 월간 실적
+                     , NULL AS PLAN_W1              -- 1 주차 계획
+                     , NULL AS ACTUAL_W1            -- 1 주차 실적
+                     , NULL AS PLAN_W2              -- 2 주차 계획
+                     , NULL AS ACTUAL_W2            -- 2 주차 실적
+                     , NULL AS PLAN_W3              -- 3 주차 계획
+                     , NULL AS ACTUAL_W3            -- 3 주차 실적
+                     , NULL AS PLAN_W4              -- 4 주차 계획
+                     , NULL AS ACTUAL_W4            -- 4 주차 실적
+                     , NULL AS PLAN_W5              -- 5 주차 계획
+                     , NULL AS ACTUAL_W5            -- 5 주차 실적
+                  FROM PLAN_TBL
+                 UNION ALL
+                SELECT PERIOD_YYYYMM
+                     , ITEM_CODE
+                     , NULL AS PLAN_QTY             -- 경영계획
+                     , PLAN_W0              -- 월간 계획
+                     , ACTUAL_W0            -- 월간 실적
+                     , PLAN_W1              -- 1 주차 계획
+                     , ACTUAL_W1            -- 1 주차 실적
+                     , PLAN_W2              -- 2 주차 계획
+                     , ACTUAL_W2            -- 2 주차 실적
+                     , PLAN_W3              -- 3 주차 계획
+                     , ACTUAL_W3            -- 3 주차 실적
+                     , PLAN_W4              -- 4 주차 계획
+                     , ACTUAL_W4            -- 4 주차 실적
+                     , PLAN_W5              -- 5 주차 계획
+                     , ACTUAL_W5            -- 5 주차 실적
+                  FROM DATA_TBL
+             )
+         GROUP BY PERIOD_YYYYMM, ITEM_CODE
+    )
+    , PIVOT_TBL AS (
+        SELECT *
+          FROM UNION_TBL
+         PIVOT (  SUM(PLAN_QTY)                AS PLAN_QTY
+                , SUM(PLAN_W0)                 AS MONTH_PLAN
+                , SUM(ACTUAL_W0)             AS MONTH_ACTUAL
+                , SUM(PLAN_W1)                 AS PLAN_W1
+                , SUM(ACTUAL_W1)             AS ACTUAL_W1
+                , SUM(PLAN_W2)                 AS PLAN_W2
+                , SUM(ACTUAL_W2)             AS ACTUAL_W2
+                , SUM(PLAN_W3)                 AS PLAN_W3
+                , SUM(ACTUAL_W3)             AS ACTUAL_W3
+                , SUM(PLAN_W4)                 AS PLAN_W4
+                , SUM(ACTUAL_W4)             AS ACTUAL_W4
+                , SUM(PLAN_W5)                 AS PLAN_W5
+                , SUM(ACTUAL_W5)             AS ACTUAL_W5
+           FOR PERIOD_YYYYMM IN (         -- ex) '202101' AS M202101
+
+                                   '202006' AS M202006            
+                    , 
+                                   '202007' AS M202007            
+                    , 
+                                   '202008' AS M202008            
+                    , 
+                                   '202009' AS M202009            
+                    , 
+                                   '202010' AS M202010            
+                    , 
+                                   '202011' AS M202011            
+                    , 
+                                   '202012' AS M202012            
+                    , 
+                                   '202101' AS M202101            
+                    , 
+                                   '202102' AS M202102            
+                    , 
+                                   '202103' AS M202103            
+                    , 
+                                   '202104' AS M202104            
+                    , 
+                                   '202105' AS M202105            
+                    , 
+                                   '202106' AS M202106            
+
+                        )
+            )
+    )
+--    , PLAN_PIVOT_TBL AS (
+--        SELECT *
+--          FROM PLAN_TBL
+--         PIVOT (  SUM(PLAN_QTY)             AS PLAN_QTY
+--           FOR PLAN_YYYYMM IN (         -- ex) '202101' AS M202101
+--
+--                                   '202006' AS M202006            
+--                    , 
+--                                   '202007' AS M202007            
+--                    , 
+--                                   '202008' AS M202008            
+--                    , 
+--                                   '202009' AS M202009            
+--                    , 
+--                                   '202010' AS M202010            
+--                    , 
+--                                   '202011' AS M202011            
+--                    , 
+--                                   '202012' AS M202012            
+--                    , 
+--                                   '202101' AS M202101            
+--                    , 
+--                                   '202102' AS M202102            
+--                    , 
+--                                   '202103' AS M202103            
+--                    , 
+--                                   '202104' AS M202104            
+--                    , 
+--                                   '202105' AS M202105            
+--                    , 
+--                                   '202106' AS M202106            
+--
+--                        )
+--            )
+--    )
+--    , DATA_PIVOT_TBL AS (
+--        SELECT *
+--          FROM DATA_TBL
+--         PIVOT (  SUM(PLAN_W0)                 AS MONTH_PLAN
+--                , SUM(ACTUAL_W0)             AS MONTH_ACTUAL
+--                , SUM(PLAN_W1)                 AS PLAN_W1
+--                , SUM(ACTUAL_W1)             AS ACTUAL_W1
+--                , SUM(PLAN_W2)                 AS PLAN_W2
+--                , SUM(ACTUAL_W2)             AS ACTUAL_W2
+--                , SUM(PLAN_W3)                 AS PLAN_W3
+--                , SUM(ACTUAL_W3)             AS ACTUAL_W3
+--                , SUM(PLAN_W4)                 AS PLAN_W4
+--                , SUM(ACTUAL_W4)             AS ACTUAL_W4
+--                , SUM(PLAN_W5)                 AS PLAN_W5
+--                , SUM(ACTUAL_W5)             AS ACTUAL_W5
+--           FOR PERIOD_YYYYMM IN (         -- ex) '202101' AS M202101
+--
+--                                   '202006' AS M202006            
+--                    , 
+--                                   '202007' AS M202007            
+--                    , 
+--                                   '202008' AS M202008            
+--                    , 
+--                                   '202009' AS M202009            
+--                    , 
+--                                   '202010' AS M202010            
+--                    , 
+--                                   '202011' AS M202011            
+--                    , 
+--                                   '202012' AS M202012            
+--                    , 
+--                                   '202101' AS M202101            
+--                    , 
+--                                   '202102' AS M202102            
+--                    , 
+--                                   '202103' AS M202103            
+--                    , 
+--                                   '202104' AS M202104            
+--                    , 
+--                                   '202105' AS M202105            
+--                    , 
+--                                   '202106' AS M202106            
+--
+--                        )
+--            )
+--    )
+--    , PIVOT_TBL AS (
+--        SELECT *
+--          FROM PLAN_PIVOT_TBL A
+--     FULL OUTER JOIN DATA_PIVOT_TBL B
+--                  ON A.ITEM_CODE_PLAN = B.ITEM_CODE
+--    )
+    , TBL AS (
+        SELECT CASE WHEN C.LVL = 1 THEN 'LI' || A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE || '|' || A.ITEM_CODE
+               END              AS PK_PATH
+             , CASE WHEN C.LVL = 1 THEN 'NULL'
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE 
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE 
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE 
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE 
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE 
+               END              AS HRNK_PK_PATH 
+             , CASE WHEN C.LVL = 1 THEN A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN A.BRAND_SORT_ORDER
+                    WHEN C.LVL = 3 THEN A.USAGE_SORT_ORDER
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT_ORDER
+                    WHEN C.LVL = 5 THEN A.VOLUME_SORT_ORDER || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.ITEM_CODE
+               END              AS SORT_ORDER
+             , CASE WHEN C.LVL = 1 THEN DECODE(A.LIQUOR_CODE, '10', '맥주', '20', '소주')
+                    WHEN C.LVL = 2 THEN A.BRAND_NAME
+                    WHEN C.LVL = 3 THEN A.USAGE_NAME
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT
+                    WHEN C.LVL = 5 THEN A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.DESCRIPTION
+               END              AS DESCRIPTION
+
+                   , NVL(SUM(M202006_PLAN_QTY), 0) AS M202006_PLAN_QTY
+
+                   , NVL(SUM(M202006_MONTH_PLAN), 0) AS M202006_MONTH_PLAN
+
+                   , NVL(SUM(M202006_MONTH_ACTUAL), 0) AS M202006_MONTH_ACTUAL
+
+                   , NVL(SUM(M202006_MONTH_PLAN) - SUM(M202006_MONTH_ACTUAL), 0) AS M202006_MONTH_DIFF
+
+                   , NVL(SUM(M202006_MONTH_ACTUAL) / DECODE(SUM(M202006_MONTH_PLAN), 0, NULL, SUM(M202006_MONTH_PLAN)), 0) AS M202006_MONTH_RATE
+
+                   , NVL(SUM(M202007_PLAN_QTY), 0) AS M202007_PLAN_QTY
+
+                   , NVL(SUM(M202007_MONTH_PLAN), 0) AS M202007_MONTH_PLAN
+
+                   , NVL(SUM(M202007_MONTH_ACTUAL), 0) AS M202007_MONTH_ACTUAL
+
+                   , NVL(SUM(M202007_MONTH_PLAN) - SUM(M202007_MONTH_ACTUAL), 0) AS M202007_MONTH_DIFF
+
+                   , NVL(SUM(M202007_MONTH_ACTUAL) / DECODE(SUM(M202007_MONTH_PLAN), 0, NULL, SUM(M202007_MONTH_PLAN)), 0) AS M202007_MONTH_RATE
+
+                   , NVL(SUM(M202008_PLAN_QTY), 0) AS M202008_PLAN_QTY
+
+                   , NVL(SUM(M202008_MONTH_PLAN), 0) AS M202008_MONTH_PLAN
+
+                   , NVL(SUM(M202008_MONTH_ACTUAL), 0) AS M202008_MONTH_ACTUAL
+
+                   , NVL(SUM(M202008_MONTH_PLAN) - SUM(M202008_MONTH_ACTUAL), 0) AS M202008_MONTH_DIFF
+
+                   , NVL(SUM(M202008_MONTH_ACTUAL) / DECODE(SUM(M202008_MONTH_PLAN), 0, NULL, SUM(M202008_MONTH_PLAN)), 0) AS M202008_MONTH_RATE
+
+                   , NVL(SUM(M202009_PLAN_QTY), 0) AS M202009_PLAN_QTY
+
+                   , NVL(SUM(M202009_MONTH_PLAN), 0) AS M202009_MONTH_PLAN
+
+                   , NVL(SUM(M202009_MONTH_ACTUAL), 0) AS M202009_MONTH_ACTUAL
+
+                   , NVL(SUM(M202009_MONTH_PLAN) - SUM(M202009_MONTH_ACTUAL), 0) AS M202009_MONTH_DIFF
+
+                   , NVL(SUM(M202009_MONTH_ACTUAL) / DECODE(SUM(M202009_MONTH_PLAN), 0, NULL, SUM(M202009_MONTH_PLAN)), 0) AS M202009_MONTH_RATE
+
+                   , NVL(SUM(M202010_PLAN_QTY), 0) AS M202010_PLAN_QTY
+
+                   , NVL(SUM(M202010_MONTH_PLAN), 0) AS M202010_MONTH_PLAN
+
+                   , NVL(SUM(M202010_MONTH_ACTUAL), 0) AS M202010_MONTH_ACTUAL
+
+                   , NVL(SUM(M202010_MONTH_PLAN) - SUM(M202010_MONTH_ACTUAL), 0) AS M202010_MONTH_DIFF
+
+                   , NVL(SUM(M202010_MONTH_ACTUAL) / DECODE(SUM(M202010_MONTH_PLAN), 0, NULL, SUM(M202010_MONTH_PLAN)), 0) AS M202010_MONTH_RATE
+
+                   , NVL(SUM(M202011_PLAN_QTY), 0) AS M202011_PLAN_QTY
+
+                   , NVL(SUM(M202011_MONTH_PLAN), 0) AS M202011_MONTH_PLAN
+
+                   , NVL(SUM(M202011_MONTH_ACTUAL), 0) AS M202011_MONTH_ACTUAL
+
+                   , NVL(SUM(M202011_MONTH_PLAN) - SUM(M202011_MONTH_ACTUAL), 0) AS M202011_MONTH_DIFF
+
+                   , NVL(SUM(M202011_MONTH_ACTUAL) / DECODE(SUM(M202011_MONTH_PLAN), 0, NULL, SUM(M202011_MONTH_PLAN)), 0) AS M202011_MONTH_RATE
+
+                   , NVL(SUM(M202012_PLAN_QTY), 0) AS M202012_PLAN_QTY
+
+                   , NVL(SUM(M202012_MONTH_PLAN), 0) AS M202012_MONTH_PLAN
+
+                   , NVL(SUM(M202012_MONTH_ACTUAL), 0) AS M202012_MONTH_ACTUAL
+
+                   , NVL(SUM(M202012_MONTH_PLAN) - SUM(M202012_MONTH_ACTUAL), 0) AS M202012_MONTH_DIFF
+
+                   , NVL(SUM(M202012_MONTH_ACTUAL) / DECODE(SUM(M202012_MONTH_PLAN), 0, NULL, SUM(M202012_MONTH_PLAN)), 0) AS M202012_MONTH_RATE
+
+                   , NVL(SUM(M202101_PLAN_QTY), 0) AS M202101_PLAN_QTY
+
+                   , NVL(SUM(M202101_MONTH_PLAN), 0) AS M202101_MONTH_PLAN
+
+                   , NVL(SUM(M202101_MONTH_ACTUAL), 0) AS M202101_MONTH_ACTUAL
+
+                   , NVL(SUM(M202101_MONTH_PLAN) - SUM(M202101_MONTH_ACTUAL), 0) AS M202101_MONTH_DIFF
+
+                   , NVL(SUM(M202101_MONTH_ACTUAL) / DECODE(SUM(M202101_MONTH_PLAN), 0, NULL, SUM(M202101_MONTH_PLAN)), 0) AS M202101_MONTH_RATE
+
+                   , NVL(SUM(M202102_PLAN_QTY), 0) AS M202102_PLAN_QTY
+
+                   , NVL(SUM(M202102_MONTH_PLAN), 0) AS M202102_MONTH_PLAN
+
+                   , NVL(SUM(M202102_MONTH_ACTUAL), 0) AS M202102_MONTH_ACTUAL
+
+                   , NVL(SUM(M202102_MONTH_PLAN) - SUM(M202102_MONTH_ACTUAL), 0) AS M202102_MONTH_DIFF
+
+                   , NVL(SUM(M202102_MONTH_ACTUAL) / DECODE(SUM(M202102_MONTH_PLAN), 0, NULL, SUM(M202102_MONTH_PLAN)), 0) AS M202102_MONTH_RATE
+
+                   , NVL(SUM(M202103_PLAN_QTY), 0) AS M202103_PLAN_QTY
+
+                   , NVL(SUM(M202103_MONTH_PLAN), 0) AS M202103_MONTH_PLAN
+
+                   , NVL(SUM(M202103_MONTH_ACTUAL), 0) AS M202103_MONTH_ACTUAL
+
+                   , NVL(SUM(M202103_MONTH_PLAN) - SUM(M202103_MONTH_ACTUAL), 0) AS M202103_MONTH_DIFF
+
+                   , NVL(SUM(M202103_MONTH_ACTUAL) / DECODE(SUM(M202103_MONTH_PLAN), 0, NULL, SUM(M202103_MONTH_PLAN)), 0) AS M202103_MONTH_RATE
+
+                   , NVL(SUM(M202104_PLAN_QTY), 0) AS M202104_PLAN_QTY
+
+                   , NVL(SUM(M202104_MONTH_PLAN), 0) AS M202104_MONTH_PLAN
+
+                   , NVL(SUM(M202104_MONTH_ACTUAL), 0) AS M202104_MONTH_ACTUAL
+
+                   , NVL(SUM(M202104_MONTH_PLAN) - SUM(M202104_MONTH_ACTUAL), 0) AS M202104_MONTH_DIFF
+
+                   , NVL(SUM(M202104_MONTH_ACTUAL) / DECODE(SUM(M202104_MONTH_PLAN), 0, NULL, SUM(M202104_MONTH_PLAN)), 0) AS M202104_MONTH_RATE
+
+                   , NVL(SUM(M202105_PLAN_QTY), 0) AS M202105_PLAN_QTY
+
+                   , NVL(SUM(M202105_MONTH_PLAN), 0) AS M202105_MONTH_PLAN
+
+                   , NVL(SUM(M202105_MONTH_ACTUAL), 0) AS M202105_MONTH_ACTUAL
+
+                   , NVL(SUM(M202105_MONTH_PLAN) - SUM(M202105_MONTH_ACTUAL), 0) AS M202105_MONTH_DIFF
+
+                   , NVL(SUM(M202105_MONTH_ACTUAL) / DECODE(SUM(M202105_MONTH_PLAN), 0, NULL, SUM(M202105_MONTH_PLAN)), 0) AS M202105_MONTH_RATE
+
+                   , NVL(SUM(M202106_PLAN_QTY), 0) AS M202106_PLAN_QTY
+
+                   , NVL(SUM(M202106_MONTH_PLAN), 0) AS M202106_MONTH_PLAN
+
+                   , NVL(SUM(M202106_MONTH_ACTUAL), 0) AS M202106_MONTH_ACTUAL
+
+                   , NVL(SUM(M202106_MONTH_PLAN) - SUM(M202106_MONTH_ACTUAL), 0) AS M202106_MONTH_DIFF
+
+                   , NVL(SUM(M202106_MONTH_ACTUAL) / DECODE(SUM(M202106_MONTH_PLAN), 0, NULL, SUM(M202106_MONTH_PLAN)), 0) AS M202106_MONTH_RATE
+
+                   , NVL(SUM(M202106_PLAN_W1), 0) AS M202106_PLAN_W1
+
+                   , NVL(SUM(M202106_ACTUAL_W1), 0) AS M202106_ACTUAL_W1
+
+                   , NVL(SUM(M202106_PLAN_W2), 0) AS M202106_PLAN_W2
+
+                   , NVL(SUM(M202106_ACTUAL_W2), 0) AS M202106_ACTUAL_W2
+
+                   , NVL(SUM(M202106_PLAN_W3), 0) AS M202106_PLAN_W3
+
+                   , NVL(SUM(M202106_ACTUAL_W3), 0) AS M202106_ACTUAL_W3
+
+                   , NVL(SUM(M202106_PLAN_W4), 0) AS M202106_PLAN_W4
+
+                   , NVL(SUM(M202106_ACTUAL_W4), 0) AS M202106_ACTUAL_W4
+
+                   , NVL(SUM(M202106_PLAN_W5), 0) AS M202106_PLAN_W5
+
+                   , NVL(SUM(M202106_ACTUAL_W5), 0) AS M202106_ACTUAL_W5
+
+          FROM PIVOT_TBL B
+          LEFT JOIN EDW.W_CM_TB_FG_ITEM_M     A
+            ON B.ITEM_CODE = A.ITEM_CODE
+         CROSS JOIN (
+                        SELECT 1 AS LVL FROM DUAL UNION ALL
+                        SELECT 2 AS LVL FROM DUAL UNION ALL
+                        SELECT 3 AS LVL FROM DUAL UNION ALL
+                        SELECT 4 AS LVL FROM DUAL UNION ALL
+                        SELECT 5 AS LVL FROM DUAL UNION ALL
+                        SELECT 6 AS LVL FROM DUAL
+                   )                         C
+         WHERE 1 = 1
+           AND A.ITEM_TYPE   = 'FG'
+           AND A.LIQUOR_CODE IN ('10', '20')
+
+         GROUP BY 
+               CASE WHEN C.LVL = 1 THEN 'LI' || A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE || '|' || A.ITEM_CODE
+               END              
+             , CASE WHEN C.LVL = 1 THEN 'NULL'
+                    WHEN C.LVL = 2 THEN 'LI' || A.LIQUOR_CODE 
+                    WHEN C.LVL = 3 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE 
+                    WHEN C.LVL = 4 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE 
+                    WHEN C.LVL = 5 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE 
+                    WHEN C.LVL = 6 THEN 'LI' || A.LIQUOR_CODE || '|' || 'BR' || A.BRAND_CODE || '|' || 'US' || A.USAGE_CODE || '|' || 'VE' || A.VESSEL_CODE || '|' || 'VO' || A.VOLUME_VALUE 
+               END              
+             , CASE WHEN C.LVL = 1 THEN A.LIQUOR_CODE
+                    WHEN C.LVL = 2 THEN A.BRAND_SORT_ORDER
+                    WHEN C.LVL = 3 THEN A.USAGE_SORT_ORDER
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT_ORDER
+                    WHEN C.LVL = 5 THEN A.VOLUME_SORT_ORDER || A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.ITEM_CODE
+               END              
+             , CASE WHEN C.LVL = 1 THEN DECODE(A.LIQUOR_CODE, '10', '맥주', '20', '소주')
+                    WHEN C.LVL = 2 THEN A.BRAND_NAME
+                    WHEN C.LVL = 3 THEN A.USAGE_NAME
+                    WHEN C.LVL = 4 THEN A.VESSEL_SORT
+                    WHEN C.LVL = 5 THEN A.VOLUME_VALUE
+                    WHEN C.LVL = 6 THEN A.DESCRIPTION
+               END
+)
+        SELECT LEVEL AS DEPTH
+             , CONNECT_BY_ISLEAF IS_LEAF
+             , A.*
+          FROM TBL A
+         START WITH HRNK_PK_PATH = 'NULL'
+       CONNECT BY NOCYCLE PRIOR PK_PATH = HRNK_PK_PATH
+         ORDER SIBLINGS BY SORT_ORDER
+	</select>
+	
+	
+	
+	
+	
+	
+	
+
+</mapper>

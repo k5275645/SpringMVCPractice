@@ -1,0 +1,682 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 재고 조회 > 전사 제품 적재 현황 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M04020DaoMapper">
+
+	<!-- 전사 제품 적재 현황 > QC, 수출주 조회 -->
+	<select id="searchExpQcStock" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M04020DaoMapper.searchExpQcStock */
+		<if test='unitVal=="CONV"' >
+			  SUM( CASE WHEN T2.DOM_EXP_CODE = '1' THEN T1.STOCK_QC_QTY * T1.UOM_CONVERSION_VALUE 
+			  			ELSE 0 
+			  			END ) AS QC_STOCK -- QC 재고량(환산c/s)
+			  
+		    , SUM( CASE WHEN T2.DOM_EXP_CODE = '2' THEN (T1.STOCK_QTY - T1.STOCK_STAGE_QTY) * T1.UOM_CONVERSION_VALUE 
+		    			ELSE 0
+		    			END ) AS EXP_STOCK -- 수출주 재고량(환산c/s)
+		    			
+		    , SUM( CASE WHEN T2.LIQUOR_CODE = '10' AND T2.DOM_EXP_CODE = '2' THEN (T1.STOCK_QTY - T1.STOCK_STAGE_QTY) * T1.UOM_CONVERSION_VALUE
+		                ELSE 0
+		                END) AS L10_EXP_STOCK -- 수출주 재고량(환산c/s)(맥주)
+		                
+		    , SUM( CASE WHEN T2.LIQUOR_CODE = '20' AND T2.DOM_EXP_CODE = '2' THEN (T1.STOCK_QTY - T1.STOCK_STAGE_QTY) * T1.UOM_CONVERSION_VALUE
+		                ELSE 0
+		                END) AS L20_EXP_STOCK -- 수출주 재고량(환산c/s)(소주)
+		</if>
+		<if test='unitVal=="PT"' >
+			  SUM( CASE WHEN NVL(T2.QTY_PER_PALLET, 0) = 0 THEN 0
+			  			WHEN T2.DOM_EXP_CODE = '1' THEN T1.STOCK_QC_QTY / T2.QTY_PER_PALLET
+                    	ELSE 0
+                		END ) AS QC_STOCK -- QC 재고량(P/T)
+                		
+		    , SUM( CASE WHEN NVL(T2.QTY_PER_PALLET, 0) = 0 THEN 0
+		                WHEN T2.DOM_EXP_CODE = '2' THEN (T1.STOCK_QTY - T1.STOCK_STAGE_QTY) / T2.QTY_PER_PALLET  
+		                ELSE 0
+		                END ) AS EXP_STOCK -- QC 재고량(P/T)
+		                
+		    , SUM( CASE WHEN NVL(T2.QTY_PER_PALLET, 0) = 0 THEN 0
+		                WHEN T2.LIQUOR_CODE = '10' AND T2.DOM_EXP_CODE = '2' THEN (T1.STOCK_QTY - T1.STOCK_STAGE_QTY) / T2.QTY_PER_PALLET  
+		                ELSE 0
+		                END ) AS L10_EXP_STOCK -- QC 재고량(P/T)(맥주)
+		                
+		    , SUM( CASE WHEN NVL(T2.QTY_PER_PALLET, 0) = 0 THEN 0
+		                WHEN T2.LIQUOR_CODE = '20' AND T2.DOM_EXP_CODE = '2' THEN (T1.STOCK_QTY - T1.STOCK_STAGE_QTY) / T2.QTY_PER_PALLET  
+		                ELSE 0
+		                END ) AS L20_EXP_STOCK -- QC 재고량(P/T)(소주)
+		</if>
+		FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F T1
+		LEFT JOIN EDW.W_CM_TB_FG_ITEM_M T2 ON T2.ITEM_CODE = T1.ITEM_CODE
+		WHERE 1 = 1
+		    AND T1.PERIOD_YYYYMMDD = REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-')
+		    AND T1.ITEM_TYPE       = 'FG'
+		    AND T1.LIQUOR_CODE IN ('10', '20')
+		    AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+		    AND T1.ORG_CODE NOT IN ('S01', 'MH2')
+		GROUP BY T1.PERIOD_YYYYMMDD
+	</select>
+
+	<!-- 전사 제품 적재 현황 > 기간 조회 -->
+	<select id ="searchPeriod" parameterType="map" resultType="map">
+		WITH DATE_TBL AS /* com.hitejinro.snop.work.dao.M04020DaoMapper.searchPeriod */
+		(
+		    SELECT 
+		        CASE WHEN #{periodStockVal, jdbcType=VARCHAR} = 'day'   THEN YYYYMMDD
+		             WHEN #{periodStockVal, jdbcType=VARCHAR} = 'week'  THEN SCM_YYYYWW
+		             WHEN #{periodStockVal, jdbcType=VARCHAR} = 'month' THEN YYYYMM
+		             END AS STD_PERIOD
+		    FROM SCMU.W_SOP_VW_CALENDAR_M
+		    WHERE 1 = 1
+		        AND
+		        (
+		            YYYYMMDD = REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-')
+		            OR
+		            YYYYMMDD = CASE WHEN #{periodStockVal, jdbcType=VARCHAR} = 'day'   THEN TO_CHAR((TO_DATE(REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-'), 'YYYYMMDD') - 29), 'YYYYMMDD')
+		                            WHEN #{periodStockVal, jdbcType=VARCHAR} = 'week'  THEN TO_CHAR((TO_DATE(REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-'), 'YYYYMMDD') - 357), 'YYYYMMDD')
+		                            WHEN #{periodStockVal, jdbcType=VARCHAR} = 'month' THEN TO_CHAR(ADD_MONTHS(TO_DATE(REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-'), 'YYYYMMDD'), -11), 'YYYYMMDD') 
+		                            END
+		        )
+		)
+		SELECT
+			  MAX(T1.YYYYMMDD) AS MAX_YYYYMMDD
+			, MIN(T1.YYYYMMDD) AS MIN_YYYYMMDD
+		FROM SCMU.W_SOP_VW_CALENDAR_M T1
+		LEFT JOIN DATE_TBL            T2 ON T2.STD_PERIOD = CASE WHEN #{periodStockVal, jdbcType=VARCHAR} = 'day'   THEN T1.YYYYMMDD
+		                                                         WHEN #{periodStockVal, jdbcType=VARCHAR} = 'week'  THEN T1.SCM_YYYYWW
+		                                                         WHEN #{periodStockVal, jdbcType=VARCHAR} = 'month' THEN T1.YYYYMM
+		                                                         END
+		WHERE 1 = 1
+		    AND T2.STD_PERIOD = CASE WHEN #{periodStockVal, jdbcType=VARCHAR} = 'day'   THEN T1.YYYYMMDD
+		                             WHEN #{periodStockVal, jdbcType=VARCHAR} = 'week'  THEN T1.SCM_YYYYWW
+		                             WHEN #{periodStockVal, jdbcType=VARCHAR} = 'month' THEN T1.YYYYMM
+		                             END
+	</select>
+	
+	<!-- 전사 제품 적재 현황 > 차트 조회 -->
+	<select id="searchChart" parameterType="map" resultType="map" fetchSize="1000">
+		WITH OPNSTOR_TBL AS /* com.hitejinro.snop.work.dao.M04020DaoMapper.searchChart */
+		(
+		    SELECT YMD                  AS PERIOD_YYYYMMDD      -- 기준일자
+		         , ORGANIZATION_CODE    AS ORG_CODE             -- 조직코드 : 물류센터코드
+		         , ITEM_CODE            AS ITEM_CODE			-- 제품 코드
+		         , NVL(QTY, 0)          AS OPNSTOR_STOCK_QTY    -- 야적 재고수량(단순c/s)
+		      FROM XXWSH.XXWSH_CAPA_ITEM_RATE@DL_VIEWER_TO_PROD
+		     WHERE 1 = 1
+		       AND YMD BETWEEN #{MIN_YYYYMMDD, jdbcType=VARCHAR} AND #{MAX_YYYYMMDD, jdbcType=VARCHAR} 
+		       AND QTY != 0
+		), CAPA_TBL AS 
+		(
+		    SELECT 
+		          T.ORG_CAPA_VER_CD 	 	  	 AS ORG_CAPA_VER_CD
+		          
+		        , CASE WHEN #{unitVal, jdbcType=VARCHAR} = 'CONV' THEN CASE WHEN #{capaVal, jdbcType=VARCHAR} = 'OPT' THEN SUM(T.ORG_WH_OPT_CAPA)
+		        															WHEN #{capaVal, jdbcType=VARCHAR} = 'MAX' THEN SUM(T.ORG_WH_MAX_CAPA)
+		        															END
+		          	   WHEN #{unitVal, jdbcType=VARCHAR} = 'PT'   THEN CASE WHEN #{capaVal, jdbcType=VARCHAR} = 'OPT' THEN SUM(T.ORG_WH_OPT_PT_CAPA)
+		        														    WHEN #{capaVal, jdbcType=VARCHAR} = 'MAX' THEN SUM(T.ORG_WH_MAX_PT_CAPA)
+		        														    END
+		          	   END AS WH_CAPA
+		          	   
+		        , CASE WHEN #{unitVal, jdbcType=VARCHAR} = 'CONV' THEN CASE WHEN #{capaVal, jdbcType=VARCHAR} = 'OPT' THEN SUM(T.ORG_OPNSTOR_OPT_CAPA)
+		        													 		WHEN #{capaVal, jdbcType=VARCHAR} = 'MAX' THEN SUM(T.ORG_OPNSTOR_MAX_CAPA)
+		        													 		END
+		          	   WHEN #{unitVal, jdbcType=VARCHAR} = 'PT'   THEN CASE WHEN #{capaVal, jdbcType=VARCHAR} = 'OPT' THEN SUM(T.ORG_OPNSTOR_OPT_PT_CAPA)
+		        													 		WHEN #{capaVal, jdbcType=VARCHAR} = 'MAX' THEN SUM(T.ORG_OPNSTOR_MAX_PT_CAPA)
+		        													 		END
+		          	   END AS OPNSTOR_CAPA
+				
+		    FROM SCMU.W_SOP_TB_ORG_CAPA_DTL_F T
+		    WHERE 1 = 1
+		        AND T.ORG_CAPA_VER_CD = (SELECT MAX(ORG_CAPA_VER_CD) FROM SCMU.W_SOP_TB_ORG_CAPA_DTL_F) 
+		    GROUP BY T.ORG_CAPA_VER_CD
+		)
+		<![CDATA[
+		SELECT
+			  SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 3, 2) || '년 ' || CASE WHEN TO_NUMBER(SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 5, 2))  < 10 THEN SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 6, 1) 
+			  																   ELSE SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 5, 2) 
+															  				   END || '월 ' 
+															  		   || CASE WHEN TO_NUMBER(SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 7, 2))  <  10 THEN SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 8, 1) 
+															  				   ELSE SUBSTR(#{MIN_YYYYMMDD, jdbcType=VARCHAR}, 7, 2) 
+															  				   END || '일' AS MIN_YYYYMMDD
+			, SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 3, 2) || '년 ' || CASE WHEN TO_NUMBER(SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 5, 2))  <  10 THEN SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 6, 1) 
+																			   ELSE SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 5, 2) 
+																			   END || '월 ' 
+																	   || CASE WHEN TO_NUMBER(SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 7, 2))  <  10 THEN SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 8, 1) 
+																	   		   ELSE SUBSTR(#{MAX_YYYYMMDD, jdbcType=VARCHAR}, 7, 2) 
+																	   		   END || '일' AS MAX_YYYYMMDD
+		]]>
+	        , CASE WHEN T4.PERIOD_TYPE = 'day'   THEN T2.YYYYMMDD
+				   WHEN T4.PERIOD_TYPE = 'week'  THEN T2.SCM_YYYYWW
+				   WHEN T4.PERIOD_TYPE = 'month' THEN T2.YYYYMM
+				   END AS STD_PERIOD
+				   
+			, MIN(CASE WHEN T4.PERIOD_TYPE = 'week' THEN T2.YYYYMMDD ELSE '' END) AS WEEK_MIN_YYYYMMDD
+			, MAX(CASE WHEN T4.PERIOD_TYPE = 'week' THEN T2.YYYYMMDD ELSE '' END) AS WEEK_MAX_YYYYMMDD
+	        
+	        , CASE WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'highestStock' THEN MAX(T1.TOTAL_QTY)
+	        	   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'avgStock' 	 THEN SUM(T1.TOTAL_QTY) / COUNT(1)
+	        	   END AS TOTAL_QTY
+	        
+	        , CASE WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'highestStock' THEN MAX(T1.QC_QTY)
+	      		   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'avgStock' 	 THEN SUM(T1.QC_QTY) / COUNT(1)
+	      		   END AS QC_QTY
+	      		   
+	      	, CASE WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'highestStock' THEN MAX(T1.EXP_QTY)
+	      		   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'avgStock' 	 THEN SUM(T1.EXP_QTY) / COUNT(1)
+	      		   END AS EXP_QTY
+	        
+	        , CASE WHEN NVL(MAX(T3.WH_CAPA), 0) = 0 THEN 0
+	        	   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'highestStock' THEN MAX(T1.WH_QTY) / MAX(T3.WH_CAPA)
+	        	   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'avgStock' 	 THEN ( SUM(T1.WH_QTY) / COUNT(1) ) / MAX(T3.WH_CAPA)
+	        	   END AS WH_LOAD_RATE
+	        	   
+	       	, CASE WHEN NVL(MAX(T3.OPNSTOR_CAPA), 0) = 0 THEN 0
+	        	   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'highestStock' THEN MAX(T1.OPNSTOR_QTY) / MAX(T3.OPNSTOR_CAPA)
+	        	   WHEN #{highestAvgStockVal, jdbcType=VARCHAR} = 'avgStock' 	 THEN ( SUM(T1.OPNSTOR_QTY) / COUNT(1) ) / MAX(T3.OPNSTOR_CAPA)
+	        	   END AS OPNSTOR_LOAD_RATE
+		FROM 
+		(
+		    SELECT
+		    	  A.YYYYMMDD AS YYYYMMDD
+			    , SUM( CASE WHEN B.ORG_TYPE = 'LOGISTICS' THEN NVL(B.STOCK_QTY, 0) ELSE ( NVL(B.STOCK_QTY, 0) - NVL(B.STOCK_STAGE_QTY, 0) ) END ) AS TOTAL_QTY
+			    , SUM( CASE WHEN B.ORG_TYPE = 'LOGISTICS' THEN NVL(B.WH_QTY, 0) ELSE NVL(B.WH_QTY, 0) - NVL(B.STOCK_STAGE_QTY, 0) END ) AS WH_QTY
+			    , SUM( NVL(B.OPNSTOR_QTY, 0) ) AS OPNSTOR_QTY
+			    , SUM( CASE WHEN B.DOM_EXP_CODE = '1' THEN B.STOCK_QC_QTY ELSE 0 END ) AS QC_QTY
+			   	, SUM( CASE WHEN B.DOM_EXP_CODE = '2' THEN (B.STOCK_QTY - B.STOCK_STAGE_QTY) ELSE 0 END ) AS EXP_QTY
+		    FROM SCMU.W_SOP_VW_CALENDAR_M             A
+		    LEFT JOIN
+		    (
+		    	SELECT 
+		    		  BA.PERIOD_YYYYMMDD
+		    		, BA.ORG_TYPE
+		    		, BC.DOM_EXP_CODE
+		    		<if test='unitVal=="CONV"' >
+		    		, SUM( BA.STOCK_QTY * BA.UOM_CONVERSION_VALUE ) 								  AS STOCK_QTY
+		    		, SUM( BA.STOCK_QC_QTY * BA.UOM_CONVERSION_VALUE ) 								  AS STOCK_QC_QTY
+		    		, SUM( BA.STOCK_STAGE_QTY * BA.UOM_CONVERSION_VALUE ) 							  AS STOCK_STAGE_QTY
+		    		, SUM( (BA.STOCK_QTY - NVL(BB.OPNSTOR_STOCK_QTY, 0) ) * BA.UOM_CONVERSION_VALUE ) AS WH_QTY
+		    		, SUM( NVL(BB.OPNSTOR_STOCK_QTY, 0) * BA.UOM_CONVERSION_VALUE ) 				  AS OPNSTOR_QTY
+		    		</if>
+		    		<if test='unitVal=="PT"' >
+		    		, SUM( CASE WHEN NVL(TO_NUMBER(BC.QTY_PER_PALLET), 0) = 0 THEN 0 ELSE BA.STOCK_QTY / TO_NUMBER(BC.QTY_PER_PALLET) END ) 								   AS STOCK_QTY
+		    		, SUM( CASE WHEN NVL(TO_NUMBER(BC.QTY_PER_PALLET), 0) = 0 THEN 0 ELSE BA.STOCK_QC_QTY / TO_NUMBER(BC.QTY_PER_PALLET) END ) 								   AS STOCK_QC_QTY
+					, SUM( CASE WHEN NVL(TO_NUMBER(BC.QTY_PER_PALLET), 0) = 0 THEN 0 ELSE BA.STOCK_STAGE_QTY / TO_NUMBER(BC.QTY_PER_PALLET) END ) 							   AS STOCK_STAGE_QTY
+					, SUM( CASE WHEN NVL(TO_NUMBER(BC.QTY_PER_PALLET), 0) = 0 THEN 0 ELSE ( BA.STOCK_QTY - NVL(BB.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(BC.QTY_PER_PALLET) END ) AS WH_QTY
+					, SUM( CASE WHEN NVL(TO_NUMBER(BC.QTY_PER_PALLET), 0) = 0 THEN 0 ELSE NVL(BB.OPNSTOR_STOCK_QTY, 0) / TO_NUMBER(BC.QTY_PER_PALLET) END ) 				   AS OPNSTOR_QTY
+		    		</if>
+		    	FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F BA
+		    	LEFT JOIN OPNSTOR_TBL BB ON BB.PERIOD_YYYYMMDD = BA.PERIOD_YYYYMMDD
+		    							AND BB.ORG_CODE		   = BA.ORG_CODE
+		    							AND BB.ITEM_CODE	   = BA.ITEM_CODE
+		    	LEFT JOIN EDW.W_CM_TB_FG_ITEM_M BC ON BC.ITEM_CODE = BA.ITEM_CODE
+		    	WHERE 1 = 1
+		    		AND BA.PERIOD_YYYYMMDD BETWEEN #{MIN_YYYYMMDD, jdbcType=VARCHAR} AND #{MAX_YYYYMMDD, jdbcType=VARCHAR}
+		    		AND BA.ITEM_TYPE = 'FG'
+		    		AND BA.LIQUOR_CODE IN ('10', '20')
+		    		AND BA.ORG_CODE NOT IN ('S01', 'MH2')
+		    		AND ( BA.STOCK_QTY != 0 OR BA.STOCK_QC_QTY != 0 OR BA.STOCK_STAGE_QTY != 0 )
+		    	GROUP BY BA.PERIOD_YYYYMMDD, BA.ORG_TYPE, BC.DOM_EXP_CODE
+		    ) 										  B ON B.PERIOD_YYYYMMDD = A.YYYYMMDD
+		    WHERE 1 = 1
+		        AND A.YYYYMMDD BETWEEN #{MIN_YYYYMMDD, jdbcType=VARCHAR} AND #{MAX_YYYYMMDD, jdbcType=VARCHAR}
+		        AND A.BUSINESS_DAY_FLAG = 'Y'
+		    GROUP BY A.YYYYMMDD
+		) 									T1
+		INNER JOIN SCMU.W_SOP_VW_CALENDAR_M T2 ON T2.YYYYMMDD = T1.YYYYMMDD
+		INNER JOIN CAPA_TBL 				T3 ON 1 = 1
+		INNER JOIN
+		(
+			SELECT 'day'   AS PERIOD_TYPE FROM DUAL UNION ALL
+			SELECT 'week'  AS PERIOD_TYPE FROM DUAL UNION ALL
+			SELECT 'month' AS PERIOD_TYPE FROM DUAL
+		) 									T4 ON 1 = 1 AND T4.PERIOD_TYPE = #{periodStockVal, jdbcType=VARCHAR}
+											  
+		GROUP BY CASE WHEN T4.PERIOD_TYPE = 'day'   THEN T2.YYYYMMDD
+				 	  WHEN T4.PERIOD_TYPE = 'week'  THEN T2.SCM_YYYYWW
+				 	  WHEN T4.PERIOD_TYPE = 'month' THEN T2.YYYYMM
+				 	  END
+		ORDER BY STD_PERIOD
+	</select>
+	
+	<!-- 전사 제품 적재 현황 > 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH OPNSTOR_TBL AS /* com.hitejinro.snop.work.dao.M04020DaoMapper.search */
+		(
+		    SELECT YMD                  AS PERIOD_YYYYMMDD      -- 기준일자
+		         , ORGANIZATION_CODE    AS ORG_CODE             -- 조직코드 : 물류센터코드
+		         , ITEM_CODE            AS ITEM_CODE			-- 제품코드
+		         , NVL(QTY, 0)          AS OPNSTOR_STOCK_QTY    -- 야적 재고수량(단순c/s)
+		      FROM XXWSH.XXWSH_CAPA_ITEM_RATE@DL_VIEWER_TO_PROD
+		     WHERE 1 = 1
+		       AND YMD = REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-')
+		       AND ORGANIZATION_CODE NOT IN ('S01', 'MH2')
+		       AND QTY != 0
+		), GUBUN_TBL AS
+		(
+			SELECT '!ALL'      AS ORG_TYPE, 'Y' AS HAS_EXP_QC FROM DUAL UNION ALL   -- 전사 계(수출, QC 포함)
+		    SELECT '!ALL'      AS ORG_TYPE, 'N' AS HAS_EXP_QC FROM DUAL UNION ALL   -- 전사 계(수출, QC 제외)
+		    SELECT 'MFG'       AS ORG_TYPE, 'Y' AS HAS_EXP_QC FROM DUAL UNION ALL   -- 공장 계(수출, QC 포함)  
+		    SELECT 'LOGISTICS' AS ORG_TYPE, 'Y' AS HAS_EXP_QC FROM DUAL UNION ALL   -- 센터 계(수출, QC 포함)
+		    SELECT 'EACH'      AS ORG_TYPE, 'Y' AS HAS_EXP_QC FROM DUAL             -- 공장/센터별(수출, QC 포함)
+		)
+		SELECT
+		   	  CASE WHEN S1.ORG_CODE = 'ALL_HAS_EXP_QC' 	  	 THEN '전사 계(수출, QC포함)'
+                   WHEN S1.ORG_CODE = 'ALL_EXCEPT_EXP_QC' 	 THEN '전사 계(수출, QC제외)'
+                   WHEN S1.ORG_CODE = 'MFG_HAS_EXP_QC' 	  	 THEN '공장 계(수출, QC포함)'
+                   WHEN S1.ORG_CODE = 'LOGISTICS_HAS_EXP_QC' THEN '센터 계(수출, QC포함)'
+                   ELSE S1.ORG_CODE
+                   END																  	 AS ORG_CODE
+                   
+            , CASE WHEN S1.ORG_CODE = 'ALL_HAS_EXP_QC' 	  	 THEN ''
+                   WHEN S1.ORG_CODE = 'ALL_EXCEPT_EXP_QC' 	 THEN ''
+                   WHEN S1.ORG_CODE = 'MFG_HAS_EXP_QC' 	  	 THEN ''
+                   WHEN S1.ORG_CODE = 'LOGISTICS_HAS_EXP_QC' THEN ''
+                   ELSE S1.ORG_NAME
+                   END																	 AS ORG_NAME
+            
+            , CASE WHEN S1.ORG_CODE = 'ALL_HAS_EXP_QC' 	  	 THEN 'ALL_HAS_EXP_QC'
+                   WHEN S1.ORG_CODE = 'ALL_EXCEPT_EXP_QC' 	 THEN 'ALL_EXCEPT_EXP_QC'
+                   WHEN S1.ORG_CODE = 'MFG_HAS_EXP_QC' 	  	 THEN 'MFG_HAS_EXP_QC'
+                   WHEN S1.ORG_CODE = 'LOGISTICS_HAS_EXP_QC' THEN 'LOGISTICS_HAS_EXP_QC'
+                   END 																	 AS "Def"							                   
+		   	  
+	    	, S1.WH_CAPA 															  	 AS ORG_WH_CAPA	  				    -- CAPA 창고
+	    	, S1.OPNSTOR_CAPA 														  	 AS ORG_OPNSTOR_CAPA 				-- CAPA 야적
+	    	, S1.TOTAL_CAPA 															 AS ORG_CAPA	 	  				-- CAPA 계
+	    	
+	    	, S2.L10_WH_QTY 															 AS STOCK_QTY_WH_L10 				-- 재고량 창고 맥주
+			, S2.L20_WH_QTY 															 AS STOCK_QTY_WH_L20 				-- 재고량 창고 소주
+			, S2.WH_QTY																  	 AS STOCK_QTY_WH					-- 재고량 창고 계
+			, S2.L20_OPNSTOR_QTY 													  	 AS STOCK_QTY_OPNSTOR_L20 			-- 재고량 야적 소주
+			, S2.TOTAL_QTY 															  	 AS STOCK_QTY 						-- 재고량 계
+			
+			, TO_CHAR(TO_DATE(S3.PERIOD_YYYYMMDD, 'YYYY.MM.DD'), 'YYYY.MM.DD')			 AS HIGHEST_YYYYMMDD				-- 최대적재량(일시)
+			, S3.HIGHEST_QTY															 AS HIGHEST_STOCK					-- 최대적재량 
+			
+			, CASE WHEN NVL(S1.WH_CAPA, 0) = 0      THEN 0 ELSE S2.WH_QTY / S1.WH_CAPA END    		 AS LOAD_RATE_WH        -- 적재율 창고
+			, CASE WHEN NVL(S1.OPNSTOR_CAPA, 0) = 0 THEN 0 ELSE S2.OPNSTOR_QTY / S1.OPNSTOR_CAPA END AS LOAD_RATE_OPNSTOR   -- 적재율 야적
+			, CASE WHEN NVL(S1.TOTAL_CAPA, 0) = 0   THEN 0 ELSE S2.TOTAL_QTY / S1.TOTAL_CAPA END 	 AS LOAD_RATE 		    -- 적재율   계
+			, CASE WHEN NVL(S3.HIGHEST_QTY, 0) = 0  THEN 0 ELSE S2.TOTAL_QTY / S3.HIGHEST_QTY END	 AS HIGHEST_LOAD_RATE   -- 적재율(최대적재대비)
+	    	
+	    	, (S2.WH_QTY - S1.WH_CAPA) 												  	 AS ORG_WH_CAPA_MINUS_STOCK_QTY 	 -- (적정Capa - 재고)창고
+	    	, (S2.OPNSTOR_QTY - S1.OPNSTOR_CAPA) 									  	 AS ORG_OPNSTOR_CAPA_MINUS_STOCK_QTY -- (적정Capa - 재고)야적
+	    	, (S2.TOTAL_QTY - S1.TOTAL_CAPA) 										  	 AS ORG_CAPA_MINUS_STOCK_QTY 		 -- (적정Capa - 재고)  계
+	    	
+	    	, (CASE WHEN S1.ORG_CODE = 'ALL_HAS_EXP_QC' THEN ''
+	    			WHEN S1.ORG_CODE = 'ALL_EXCEPT_EXP_QC' THEN ''
+	    			WHEN S1.ORG_CODE = 'MFG_HAS_EXP_QC' THEN ''
+	    			WHEN S1.ORG_CODE = 'LOGISTICS_HAS_EXP_QC' THEN ''
+	    			WHEN NVL(S2.TOTAL_QTY / DECODE(S1.TOTAL_CAPA, 0, NULL, S1.TOTAL_CAPA), 0) <![CDATA[ > ]]> 1 	  THEN 'Capa 초과' 
+	    	  	    WHEN NVL(S2.WH_QTY / DECODE(S1.WH_CAPA, 0, NULL, S1.WH_CAPA), 0) <![CDATA[ > ]]> 1 				  THEN '창고 초과'
+	    	  	    WHEN NVL(S2.OPNSTOR_QTY / DECODE(S1.OPNSTOR_CAPA, 0, NULL, S1.OPNSTOR_CAPA), 0) <![CDATA[ > ]]> 1 THEN '야적 초과'
+	    	  	    END)															  	 AS ORG_CAPA_MINUS_STOCK_QTY_DESC    -- Capa 초과내역
+	    	  	    
+	    	, S4.RMKS
+	    	 
+		FROM
+		(
+			SELECT
+			    CASE WHEN D.ORG_TYPE = '!ALL'      AND D.HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+				     WHEN D.ORG_TYPE = '!ALL'      AND D.HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+				     WHEN D.ORG_TYPE = 'MFG'                              THEN 'MFG_HAS_EXP_QC'
+				     WHEN D.ORG_TYPE = 'LOGISTICS'                        THEN 'LOGISTICS_HAS_EXP_QC'
+				     ELSE A.ORG_CODE 
+				     END 		   						   AS ORG_CODE
+				     
+				, MAX(A.ORG_TYPE) 						   AS ORG_TYPE
+	            , MAX(A.ORG_NAME) 						   AS ORG_NAME
+	            
+	            <if test='unitVal=="CONV"' >
+	            	<if test='capaVal=="OPT"'>
+			    , SUM(C.ORG_WH_OPT_CAPA)                  AS WH_CAPA		-- 적정Capa 창고(환산c/s)
+			    , SUM(C.ORG_OPNSTOR_OPT_CAPA)             AS OPNSTOR_CAPA	-- 적정Capa 야적(환산c/s)
+				, SUM(C.ORG_OPT_CAPA)                     AS TOTAL_CAPA		-- 적정Capa   총(환산c/s)
+					</if>
+					<if test='capaVal=="MAX"'>
+				, SUM(C.ORG_WH_MAX_CAPA)                  AS WH_CAPA		-- 최대Capa 창고(환산c/s)   
+			    , SUM(C.ORG_OPNSTOR_MAX_CAPA)             AS OPNSTOR_CAPA	-- 최대Capa 야적(환산c/s)   
+			    , SUM(C.ORG_MAX_CAPA)                     AS TOTAL_CAPA		-- 최대Capa   총(환산c/s)
+			    	</if>
+			    </if>
+				
+				<if test='unitVal=="PT"' >
+					<if test='capaVal=="OPT"'>
+			    , SUM(C.ORG_WH_OPT_PT_CAPA)               AS WH_CAPA		-- 적정Capa 창고(P/T)
+			    , SUM(C.ORG_OPNSTOR_OPT_PT_CAPA)          AS OPNSTOR_CAPA	-- 적정Capa 야적(P/T)
+			    , SUM(C.ORG_OPT_PT_CAPA)                  AS TOTAL_CAPA		-- 적정Capa   총(P/T)
+			    	</if>			    	
+			    	<if test='capaVal=="MAX"'>	
+			    , SUM(C.ORG_WH_MAX_PT_CAPA)               AS WH_CAPA		-- 최대Capa 창고(P/T) 
+			    , SUM(C.ORG_OPNSTOR_MAX_PT_CAPA)          AS OPNSTOR_CAPA	-- 최대Capa 야적(P/T)   
+			    , SUM(C.ORG_MAX_PT_CAPA)                  AS TOTAL_CAPA		-- 최대Capa   총(P/T)
+			    	</if>
+			    </if>
+			    
+	   		FROM EDW.W_CM_TB_ORGANIZATION_M A
+	   		
+	       	LEFT JOIN 
+			(
+				SELECT MAX(ORG_CAPA_VER_CD) AS ORG_CAPA_VER_CD
+				  FROM SCMU.W_SOP_TB_ORG_CAPA_DTL_F
+				 WHERE 1 = 1
+			)   				                   B ON 1 = 1
+			          
+			LEFT JOIN SCMU.W_SOP_TB_ORG_CAPA_DTL_F C ON C.ORG_CAPA_VER_CD = B.ORG_CAPA_VER_CD
+			                                        AND C.ORG_CODE 		  = A.ORG_CODE
+			                                         
+		    JOIN GUBUN_TBL 						   D ON 1 = 1 AND (
+													                    (D.ORG_TYPE = '!ALL' AND 1 = 1)
+													                    OR
+													                    (D.ORG_TYPE = 'MFG' AND D.ORG_TYPE = A.ORG_TYPE)
+													                    OR
+													                    (D.ORG_TYPE = 'LOGISTICS' AND D.ORG_TYPE = A.ORG_TYPE)
+													                    OR
+													                    (D.ORG_TYPE = 'EACH' AND 1 = 1)
+													              )
+			WHERE 1 = 1
+			    AND A.ORG_CODE NOT IN ('S01', 'MH2')   -- 진로소주공장, 마산공장(구) 제외
+			    AND A.ORG_TYPE IN ('MFG', 'LOGISTICS') -- 공장, 물류센터
+			GROUP BY CASE WHEN D.ORG_TYPE = '!ALL'      AND D.HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+	                      WHEN D.ORG_TYPE = '!ALL'      AND D.HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+	                      WHEN D.ORG_TYPE = 'MFG'       		               THEN 'MFG_HAS_EXP_QC'
+	                      WHEN D.ORG_TYPE = 'LOGISTICS'        		           THEN 'LOGISTICS_HAS_EXP_QC'
+	                      ELSE A.ORG_CODE 
+	                      END
+		) S1
+		
+		LEFT JOIN 
+		(
+	       	SELECT 
+	       		  A.PERIOD_YYYYMMDD AS PERIOD_YYYYMMDD
+	       		  
+			    , CASE WHEN D.ORG_TYPE = '!ALL'  AND D.HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+				       WHEN D.ORG_TYPE = '!ALL'  AND D.HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+				       WHEN D.ORG_TYPE = 'MFG'                          THEN 'MFG_HAS_EXP_QC'
+				       WHEN D.ORG_TYPE = 'LOGISTICS'                    THEN 'LOGISTICS_HAS_EXP_QC'
+				       ELSE A.ORG_CODE
+			       	   END AS ORG_CODE
+			       
+			    <!-- 환산 C/S -->
+			    <if test='unitVal=="CONV"' >
+			    , SUM( CASE WHEN A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY * A.UOM_CONVERSION_VALUE
+			    			WHEN D.HAS_EXP_QC = 'N' 	  THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) * A.UOM_CONVERSION_VALUE
+			    			ELSE ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) * A.UOM_CONVERSION_VALUE
+			    			END ) AS TOTAL_QTY -- 총 재고량 (환산c/s)
+			    
+			    , SUM( NVL(B.OPNSTOR_STOCK_QTY, 0) * A.UOM_CONVERSION_VALUE ) AS OPNSTOR_QTY -- 야적 재고량(환산c/s)
+			    
+			    , SUM( CASE WHEN A.ORG_TYPE = 'LOGISTICS' THEN ( A.STOCK_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			WHEN D.HAS_EXP_QC = 'N'		  THEN ( A.STOCK_QTY - A.STOCK_QC_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			ELSE ( A.STOCK_QTY - A.STOCK_STAGE_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			END ) AS WH_QTY -- 창고 재고량(환산c/s)
+			    
+			    , SUM( CASE WHEN C.LIQUOR_CODE = '10' AND A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '10' AND D.HAS_EXP_QC = 'N' 	   THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '10' 							   THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) * A.UOM_CONVERSION_VALUE
+			    			ELSE 0
+			    			END ) AS L10_TOTAL_QTY --총 재고량 맥주(환산 c/s)
+			    			
+			    , SUM( CASE WHEN C.LIQUOR_CODE = '10' AND A.ORG_TYPE = 'LOGISTICS' THEN ( A.STOCK_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '10' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '10' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			ELSE 0
+			    			END ) AS L10_WH_QTY -- 창고 재고량 맥주(환산 c/s)
+			                
+			    , SUM( CASE WHEN C.LIQUOR_CODE = '10' THEN NVL(B.OPNSTOR_STOCK_QTY, 0) * A.UOM_CONVERSION_VALUE
+			    			ELSE 0
+			    			END ) AS L10_OPNSTOR_QTY -- 야적 재고량 맥주(환산 c/s)
+			    
+			    , SUM( CASE WHEN C.LIQUOR_CODE = '20' AND A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '20' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '20' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) * A.UOM_CONVERSION_VALUE
+			    			ELSE 0
+			    			END ) AS L20_TOTAL_QTY --총 재고량 소주(환산 c/s)
+			    			
+			    , SUM( CASE WHEN C.LIQUOR_CODE = '20' AND A.ORG_TYPE = 'LOGISTICS' THEN ( A.STOCK_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '20' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			WHEN C.LIQUOR_CODE = '20' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) * A.UOM_CONVERSION_VALUE
+			    			ELSE 0
+			    			END ) AS L20_WH_QTY -- 창고 재고량 소주(환산 c/s)
+			                
+			    , SUM( CASE WHEN C.LIQUOR_CODE = '20' THEN NVL(B.OPNSTOR_STOCK_QTY, 0) * A.UOM_CONVERSION_VALUE
+			    			ELSE 0
+			    			END ) AS L20_OPNSTOR_QTY -- 야적 재고량 소주(환산 c/s)
+			    </if>
+			    
+			    <!-- P/T -->
+			    <if test='unitVal=="PT"' >
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			END ) AS TOTAL_QTY -- 총 재고량(P/T)
+			    			
+				, SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+							WHEN A.ORG_TYPE = 'LOGISTICS' THEN ( A.STOCK_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+							WHEN D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+							ELSE ( A.STOCK_QTY - A.STOCK_STAGE_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+							END ) AS WH_QTY -- 창고 재고량(P/T)
+			    			 
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			ELSE NVL(B.OPNSTOR_STOCK_QTY, 0) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			END ) AS OPNSTOR_QTY -- 야적 재고량(P/T)
+			    			 
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN C.LIQUOR_CODE = '10' AND A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '10' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '10' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE 0
+			    			END ) AS L10_TOTAL_QTY --총 재고량 맥주(P/T)
+			    			
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN C.LIQUOR_CODE = '10' AND A.ORG_TYPE = 'LOGISTICS' THEN ( A.STOCK_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '10' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '10' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE 0
+			    			END ) L10_WH_QTY -- 창고 재고량 맥주(P/T)
+			    			 
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN C.LIQUOR_CODE = '10' THEN NVL(B.OPNSTOR_STOCK_QTY, 0) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE 0
+			    			END ) AS L10_OPNSTOR_QTY -- 야적 재고량 맥주(P/T)
+			    			 
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN C.LIQUOR_CODE = '20' AND A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '20' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '20' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE 0
+			    			END ) AS L20_TOTAL_QTY --총 재고량 소주(P/T)
+			    			 
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN C.LIQUOR_CODE = '20' AND A.ORG_TYPE = 'LOGISTICS' THEN ( A.STOCK_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '20' AND D.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			WHEN C.LIQUOR_CODE = '20' THEN ( A.STOCK_QTY - A.STOCK_STAGE_QTY - NVL(B.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE 0
+			    			END ) L20_WH_QTY -- 창고 재고량 소주(P/T)
+			    
+			    , SUM( CASE WHEN NVL(TO_NUMBER(C.QTY_PER_PALLET), 0) = 0 THEN 0
+			    			WHEN C.LIQUOR_CODE = '20' THEN NVL(B.OPNSTOR_STOCK_QTY, 0) / TO_NUMBER(C.QTY_PER_PALLET)
+			    			ELSE 0
+			    			END ) AS L20_OPNSTOR_QTY -- 야적 재고량 소주(P/T)
+			    </if>
+	            
+	        FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F A
+	       
+	  	    LEFT JOIN OPNSTOR_TBL                B ON B.PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+	        									  AND B.ORG_CODE        = A.ORG_CODE
+	        									  AND B.ITEM_CODE       = A.ITEM_CODE
+	        										
+	  	    LEFT JOIN EDW.W_CM_TB_FG_ITEM_M      C ON C.ITEM_CODE 	    = A.ITEM_CODE
+	  	    
+	  	    JOIN GUBUN_TBL 						 D ON 1 = 1 AND (
+												                    (D.ORG_TYPE = '!ALL' AND 1 = 1)
+												                    OR
+												                    (D.ORG_TYPE = 'MFG' AND D.ORG_TYPE = A.ORG_TYPE)
+												                    OR
+												                    (D.ORG_TYPE = 'LOGISTICS' AND D.ORG_TYPE = A.ORG_TYPE)
+												                    OR
+												                    (D.ORG_TYPE = 'EACH' AND 1 = 1)
+												              	)
+												          	AND (
+												                    (D.HAS_EXP_QC = 'Y' AND 1 = 1)
+												                    OR
+												                    (D.HAS_EXP_QC = 'N' AND C.DOM_EXP_CODE = '1')
+												                )
+	        WHERE 1 = 1
+	            AND A.ITEM_TYPE 	  = 'FG'
+	       		AND A.LIQUOR_CODE IN ('10', '20')
+	       		AND A.ORG_CODE NOT IN ('S01', 'MH2')
+	       		AND A.PERIOD_YYYYMMDD = REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-')
+	       		
+	       	GROUP BY A.PERIOD_YYYYMMDD, CASE WHEN D.ORG_TYPE = '!ALL'      AND D.HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+			                                 WHEN D.ORG_TYPE = '!ALL'      AND D.HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+	                                 		 WHEN D.ORG_TYPE = 'MFG'                              THEN 'MFG_HAS_EXP_QC'
+			                                 WHEN D.ORG_TYPE = 'LOGISTICS'                        THEN 'LOGISTICS_HAS_EXP_QC'
+			                                 ELSE A.ORG_CODE
+			                                 END
+	    ) S2 ON S2.ORG_CODE = S1.ORG_CODE
+	    
+	    LEFT JOIN 
+        (
+            SELECT 
+                  S.PERIOD_YYYYMMDD AS PERIOD_YYYYMMDD
+                , S.ORG_CODE		AS ORG_CODE
+                , S.HIGHEST_QTY		AS HIGHEST_QTY
+                , S.RNK				AS RNK
+              FROM 
+              (
+                SELECT 
+                	  A.PERIOD_YYYYMMDD
+                    , CASE WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+                           WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+                           WHEN C.ORG_TYPE = 'MFG'                            THEN 'MFG_HAS_EXP_QC'
+                           WHEN C.ORG_TYPE = 'LOGISTICS'                      THEN 'LOGISTICS_HAS_EXP_QC'
+                           ELSE A.ORG_CODE
+                    	   END AS ORG_CODE
+                   	<!-- 환산 C/S -->
+                  	<if test='unitVal=="CONV"' >
+                  	, SUM( (CASE WHEN A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY
+                  				 WHEN C.HAS_EXP_QC = 'N' 	   THEN A.STOCK_QTY - A.STOCK_QC_QTY
+                  				 ELSE A.STOCK_QTY - A.STOCK_STAGE_QTY
+                  				 END ) * A.UOM_CONVERSION_VALUE ) AS HIGHEST_QTY
+                  				
+                    , ROW_NUMBER() OVER (PARTITION BY CASE WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+                                                           WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+                                                           WHEN C.ORG_TYPE = 'MFG'                            THEN 'MFG_HAS_EXP_QC'
+                                                           WHEN C.ORG_TYPE = 'LOGISTICS'                      THEN 'LOGISTICS_HAS_EXP_QC'
+                                                           ELSE A.ORG_CODE
+                    	                                   END
+                                          ORDER BY SUM( (CASE WHEN A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY
+                                          					  WHEN C.HAS_EXP_QC = 'N' THEN A.STOCK_QTY - A.STOCK_QC_QTY
+                                          					  ELSE A.STOCK_QTY - A.STOCK_STAGE_QTY
+                                          					  END) * A.UOM_CONVERSION_VALUE ) DESC, A.PERIOD_YYYYMMDD) AS RNK
+                  	</if>
+                    
+                    <!-- P/T -->
+                    <if test='unitVal=="PT"' >
+					, SUM( CASE WHEN NVL(TO_NUMBER(B.QTY_PER_PALLET), 0) = 0 THEN 0
+								WHEN A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY / TO_NUMBER(B.QTY_PER_PALLET)
+								WHEN C.HAS_EXP_QC = 'N' THEN (A.STOCK_QTY - A.STOCK_QC_QTY) / TO_NUMBER(B.QTY_PER_PALLET)
+								ELSE (A.STOCK_QTY - A.STOCK_STAGE_QTY) / TO_NUMBER(B.QTY_PER_PALLET)
+								END ) AS HIGHEST_QTY
+                    , ROW_NUMBER() OVER (PARTITION BY CASE WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+                                                           WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+                                                           WHEN C.ORG_TYPE = 'MFG'                            THEN 'MFG_HAS_EXP_QC'
+                                                           WHEN C.ORG_TYPE = 'LOGISTICS'                      THEN 'LOGISTICS_HAS_EXP_QC'
+                                                           ELSE A.ORG_CODE 
+                    	                                   END
+                                        ORDER BY SUM( CASE WHEN NVL(TO_NUMBER(B.QTY_PER_PALLET), 0) = 0 THEN 0
+                                        				   WHEN A.ORG_TYPE = 'LOGISTICS' THEN A.STOCK_QTY / TO_NUMBER(B.QTY_PER_PALLET)
+                                        				   WHEN C.HAS_EXP_QC = 'N' THEN ( A.STOCK_QTY - A.STOCK_QC_QTY ) / TO_NUMBER(B.QTY_PER_PALLET)
+                                        				   ELSE ( A.STOCK_QTY - A.STOCK_STAGE_QTY ) / TO_NUMBER(B.QTY_PER_PALLET)
+                                          				   END ) DESC, A.PERIOD_YYYYMMDD) AS RNK
+                  	</if>
+                                          
+                FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F A
+                LEFT JOIN EDW.W_CM_TB_FG_ITEM_M      B ON B.ITEM_CODE = A.ITEM_CODE
+                JOIN GUBUN_TBL                       C ON 1 = 1 AND (
+												                            (C.ORG_TYPE = '!ALL' AND 1 = 1)
+												                            OR
+												                            (C.ORG_TYPE = 'MFG' AND C.ORG_TYPE = A.ORG_TYPE)
+												                            OR
+												                            (C.ORG_TYPE = 'LOGISTICS' AND C.ORG_TYPE = A.ORG_TYPE)
+												                            OR
+												                            (C.ORG_TYPE = 'EACH' AND 1 = 1)
+												                      )
+												                  AND (
+												                            (C.HAS_EXP_QC = 'Y' AND 1 = 1)
+												                            OR
+												                            (C.HAS_EXP_QC = 'N' AND B.DOM_EXP_CODE = '1')
+												                      )
+                 WHERE 1 = 1
+                 	AND A.ITEM_TYPE = 'FG'
+                    AND A.LIQUOR_CODE IN ('10', '20')
+                    AND A.ORG_CODE NOT IN ('S01', 'MH2')
+                 GROUP BY A.PERIOD_YYYYMMDD, CASE WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'Y' THEN 'ALL_HAS_EXP_QC'
+                                                  WHEN C.ORG_TYPE = '!ALL'      AND HAS_EXP_QC = 'N' THEN 'ALL_EXCEPT_EXP_QC'
+                                                  WHEN C.ORG_TYPE = 'MFG'                            THEN 'MFG_HAS_EXP_QC'
+                                                  WHEN C.ORG_TYPE = 'LOGISTICS'                      THEN 'LOGISTICS_HAS_EXP_QC'
+                                                  ELSE A.ORG_CODE 
+                                            	  END
+             ) S
+             WHERE 1 = 1
+             	AND RNK = 1
+
+        ) S3 ON S3.ORG_CODE = S1.ORG_CODE AND ( #{highestStockVal, jdbcType=VARCHAR} = 'Y' AND 1 = 1 )
+        
+        LEFT JOIN SCMU.W_SOP_TB_ITEM_STOCK_STATS_F S4 ON S4.ORG_CODE 		= S1.ORG_CODE
+                                             		 AND S4.PERIOD_YYYYMMDD = REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-')
+                                             		 AND S4.QTY_TYPE 		= #{unitVal, jdbcType=VARCHAR}
+                                             		 AND S4.CAPA_TYPE 		= #{capaVal, jdbcType=VARCHAR}
+		WHERE 1 = 1
+			AND (
+    				( #{capaExceptVal, jdbcType=VARCHAR} = '!ALL' AND 1 = 1 )
+    				OR
+    				( #{capaExceptVal, jdbcType=VARCHAR} = 'Y' AND ( NVL(S1.TOTAL_CAPA, 0) != 0 OR NVL(S2.TOTAL_QTY, 0) != 0) )
+    		    )
+    	ORDER BY (CASE WHEN S1.ORG_CODE = 'ALL_HAS_EXP_QC' 		 THEN 1
+    				   WHEN S1.ORG_CODE = 'ALL_EXCEPT_EXP_QC' 	 THEN 2
+    				   WHEN S1.ORG_CODE = 'LOGISTICS_HAS_EXP_QC' THEN 3
+                       WHEN S1.ORG_CODE = 'MFG_HAS_EXP_QC' 		 THEN 4 
+                       ELSE 5
+                       END), S1.ORG_TYPE, S1.ORG_CODE
+	</select>
+	
+	<!-- 전사 제품 적재 현황 > 저장 -->
+	<update id="update" parameterType="map">
+		MERGE INTO SCMU.W_SOP_TB_ITEM_STOCK_STATS_F T /* com.hitejinro.snop.work.dao.M04020DaoMapper.update */
+		USING
+		(
+			SELECT
+				  REPLACE(#{yyyymmdd, jdbcType=VARCHAR}, '-') AS PERIOD_YYYYMMDD
+				, #{ORG_CODE, jdbcType=VARCHAR}				  AS ORG_CODE
+				, #{capaVal, jdbcType=VARCHAR}				  AS CAPA_TYPE
+				, #{unitVal, jdbcType=VARCHAR}				  AS QTY_TYPE
+				, #{RMKS, jdbcType=VARCHAR}					  AS RMKS
+			FROM DUAL
+		) S ON (
+					  T.PERIOD_YYYYMMDD = S.PERIOD_YYYYMMDD
+				  AND T.ORG_CODE		= S.ORG_CODE
+				  AND T.CAPA_TYPE       = S.CAPA_TYPE
+				  AND T.QTY_TYPE		= S.QTY_TYPE
+			  )
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.RMKS 			 = S.RMKS
+				, T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE = SYSDATE
+			DELETE WHERE 1 = 1 AND (S.RMKS IS NULL OR S.RMKS = '')
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.PERIOD_YYYYMMDD, T.ORG_CODE, T.CAPA_TYPE, T.QTY_TYPE, T.RMKS
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(	
+			  S.PERIOD_YYYYMMDD, S.ORG_CODE, S.CAPA_TYPE, S.QTY_TYPE, S.RMKS
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+	</update>
+
+</mapper>

@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 안전재고 일수 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08090DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M08090DaoMapper.search */
+           A.YYYYMM
+         , A.LIQUOR_CODE, A.ITEM_CODE, A.ITEM_NAME
+         
+         , CASE WHEN NVL(A.ACTUAL_1M_SALE_AVG_CONV_QTY / DECODE(A.TOTAL_ACTUAL_1M_SALE_AVG_CONV_QTY, 0, NULL, A.TOTAL_ACTUAL_1M_SALE_AVG_CONV_QTY), 0) > 0.01 THEN 'HIGH_IGRD'
+                ELSE 'LOW_IGRD'
+           END                      AS CALC_ITEM_IGRD_TYPE_CODE -- 산출 제품 비중 유형 코드 : 1개월 평균판매비중이 1% 이하이면 저비중(LOW_IGRD), 1% 초과이면 고비중(HIGH_IGRD)
+         , A.ITEM_IGRD_TYPE_CODE    AS ITEM_IGRD_TYPE_CODE      -- 제품 비중 유형 코드 : 공통그룹코드=ITEM_IGRD_TYPE_LIST
+         
+         , A.BRAND_CODE, A.BRAND_NAME, A.BRAND_SORT_ORDER, A.VESSEL_CODE, A.VESSEL_SORT, A.VESSEL_SORT_ORDER, A.VOLUME_VALUE, A.USAGE_CODE, A.USAGE_NAME, A.USAGE_SORT_ORDER, A.DOM_EXP_CODE, A.DOM_EXP_FLAG
+         
+         , A.ACTUAL_1M_SALE_AVG_CONV_QTY, A.ACTUAL_3M_SALE_AVG_CONV_QTY, A.ACTUAL_6M_SALE_AVG_CONV_QTY
+         , A.ACTUAL_1M_SALE_AVG_QTY, A.ACTUAL_3M_SALE_AVG_QTY, A.ACTUAL_6M_SALE_AVG_QTY
+         --, A.TOTAL_ACTUAL_1M_SALE_AVG_CONV_QTY, A.TOTAL_ACTUAL_3M_SALE_AVG_CONV_QTY, A.TOTAL_ACTUAL_6M_SALE_AVG_CONV_QTY
+         , NVL(A.ACTUAL_1M_SALE_AVG_CONV_QTY / DECODE(A.TOTAL_ACTUAL_1M_SALE_AVG_CONV_QTY, 0, NULL, A.TOTAL_ACTUAL_1M_SALE_AVG_CONV_QTY), 0) AS ACTUAL_1M_SALE_RATE -- 1개월 기준 일평균판매량의 사업부문별 비중
+         , NVL(A.ACTUAL_3M_SALE_AVG_CONV_QTY / DECODE(A.TOTAL_ACTUAL_3M_SALE_AVG_CONV_QTY, 0, NULL, A.TOTAL_ACTUAL_3M_SALE_AVG_CONV_QTY), 0) AS ACTUAL_3M_SALE_RATE -- 3개월 기준 일평균판매량의 사업부문별 비중
+         , NVL(A.ACTUAL_6M_SALE_AVG_CONV_QTY / DECODE(A.TOTAL_ACTUAL_6M_SALE_AVG_CONV_QTY, 0, NULL, A.TOTAL_ACTUAL_6M_SALE_AVG_CONV_QTY), 0) AS ACTUAL_6M_SALE_RATE -- 6개월 기준 일평균판매량의 사업부문별 비중
+         
+         , A.MIN_STOCK_DCNT, A.DLV_LEAD_DCNT, A.PRDT_LEAD_DCNT, A.SAFT_STOCK_DCNT, A.STRG_STOCK_DCNT, A.STRG_STOCK_CONV_QTY, A.STRG_SAFT_STOCK_DCNT, A.STRG_SAFT_MAX_STOCK_DCNT
+         
+         , B.AVG_STOCK_WW_AVG_CONV_QTY / DECODE(CA.SALE_CONV_QTY, 0, NULL, CA.SALE_CONV_QTY / CB.WORK_CNT) AS AVG_STOCK_DAY -- "재고일수 산출기준" 기간의 주단위 평균 재고일수 중 평균
+         , B.MIN_STOCK_WW_AVG_CONV_QTY / DECODE(CA.SALE_CONV_QTY, 0, NULL, CA.SALE_CONV_QTY / CB.WORK_CNT) AS MIN_STOCK_DAY -- "재고일수 산출기준" 기간의 주단위 평균 재고일수 중 최소
+         , B.MAX_STOCK_WW_AVG_CONV_QTY / DECODE(CA.SALE_CONV_QTY, 0, NULL, CA.SALE_CONV_QTY / CB.WORK_CNT) AS MAX_STOCK_DAY -- "재고일수 산출기준" 기간의 주단위 평균 재고일수 중 최대
+         --, B.AVG_STOCK_WW_AVG_CONV_QTY, B.MIN_STOCK_WW_AVG_CONV_QTY, B.MAX_STOCK_WW_AVG_CONV_QTY, CA.SALE_CONV_QTY, CB.WORK_CNT
+         
+         , A.MIN_PRDT_QTY
+         
+      FROM (
+                SELECT A.YYYYMM, A.LIQUOR_CODE, A.ITEM_CODE, A.ITEM_NAME, A.ITEM_IGRD_TYPE_CODE
+                     , A.BRAND_CODE, A.BRAND_NAME, A.BRAND_SORT_ORDER, A.VESSEL_CODE, A.VESSEL_SORT, A.VESSEL_SORT_ORDER, A.VOLUME_VALUE, A.USAGE_CODE, A.USAGE_NAME, A.USAGE_SORT_ORDER, A.DOM_EXP_CODE, A.DOM_EXP_FLAG
+                     , A.ACTUAL_1M_SALE_AVG_CONV_QTY, A.ACTUAL_3M_SALE_AVG_CONV_QTY, A.ACTUAL_6M_SALE_AVG_CONV_QTY
+                     , A.ACTUAL_1M_SALE_AVG_QTY, A.ACTUAL_3M_SALE_AVG_QTY, A.ACTUAL_6M_SALE_AVG_QTY
+                     , SUM(NVL(A.ACTUAL_1M_SALE_AVG_CONV_QTY, 0)) OVER (PARTITION BY A.LIQUOR_CODE) AS TOTAL_ACTUAL_1M_SALE_AVG_CONV_QTY -- 1개월 기준 일평균판매량의 사업부문별 합산(환산c/s)
+                     , SUM(NVL(A.ACTUAL_3M_SALE_AVG_CONV_QTY, 0)) OVER (PARTITION BY A.LIQUOR_CODE) AS TOTAL_ACTUAL_3M_SALE_AVG_CONV_QTY -- 3개월 기준 일평균판매량의 사업부문별 합산(환산c/s)
+                     , SUM(NVL(A.ACTUAL_6M_SALE_AVG_CONV_QTY, 0)) OVER (PARTITION BY A.LIQUOR_CODE) AS TOTAL_ACTUAL_6M_SALE_AVG_CONV_QTY -- 6개월 기준 일평균판매량의 사업부문별 합산(환산c/s)
+                     
+                     , A.MIN_STOCK_DCNT, A.DLV_LEAD_DCNT, A.PRDT_LEAD_DCNT, A.SAFT_STOCK_DCNT, A.STRG_STOCK_DCNT, A.STRG_STOCK_CONV_QTY, A.STRG_SAFT_STOCK_DCNT, A.STRG_SAFT_MAX_STOCK_DCNT, A.MIN_PRDT_QTY
+                     
+                  FROM (
+                            -- A.1. 판매량이 존재하는 제품 리스트 : 안전재고 일수에 등록되어있지 않을 수 있음
+                            SELECT #{bssYYYYMM, jdbcType=VARCHAR}   AS YYYYMM
+                                 , AC.LIQUOR_CODE
+                                 , AC.ITEM_CODE, MAX(AC.DESCRIPTION) AS ITEM_NAME
+                                 , MAX(AB.ITEM_IGRD_TYPE_CODE)      AS ITEM_IGRD_TYPE_CODE      -- 제품 비중 유형 코드 : 공통그룹코드=ITEM_IGRD_TYPE_LIST
+                                 
+                                 , MAX(AC.BRAND_CODE) AS BRAND_CODE, MAX(AC.BRAND_NAME) AS BRAND_NAME, MAX(AC.BRAND_SORT_ORDER) AS BRAND_SORT_ORDER
+                                 , MAX(AC.VESSEL_CODE) AS VESSEL_CODE, MAX(AC.VESSEL_SORT) AS VESSEL_SORT, MAX(AC.VESSEL_SORT_ORDER) AS VESSEL_SORT_ORDER
+                                 , MAX(AC.VOLUME_VALUE) AS VOLUME_VALUE
+                                 , MAX(AC.USAGE_CODE) AS USAGE_CODE, MAX(AC.USAGE_NAME) AS USAGE_NAME, MAX(AC.USAGE_SORT_ORDER) AS USAGE_SORT_ORDER
+                                 , MAX(AC.DOM_EXP_CODE) AS DOM_EXP_CODE, MAX(AC.DOM_EXP_FLAG) AS DOM_EXP_FLAG
+                                 -- 일평균판매량(환산c/s) : 1M, 3M, 6M
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_CONV_QTY, 0) ELSE 0 END) / MAX(AD.WORK_1M_DAY)
+                                                                    AS ACTUAL_1M_SALE_AVG_CONV_QTY
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -3), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_CONV_QTY, 0) ELSE 0 END) / MAX(AD.WORK_3M_DAY)
+                                                                    AS ACTUAL_3M_SALE_AVG_CONV_QTY
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_CONV_QTY, 0) ELSE 0 END) / MAX(AD.WORK_6M_DAY)
+                                                                    AS ACTUAL_6M_SALE_AVG_CONV_QTY
+                                 -- 일평균판매량(단순c/s) : 1M, 3M, 6M
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_QTY, 0) ELSE 0 END) / MAX(AD.WORK_1M_DAY)
+                                                                    AS ACTUAL_1M_SALE_AVG_QTY
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -3), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_QTY, 0) ELSE 0 END) / MAX(AD.WORK_3M_DAY)
+                                                                    AS ACTUAL_3M_SALE_AVG_QTY
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_QTY, 0) ELSE 0 END) / MAX(AD.WORK_6M_DAY)
+                                                                    AS ACTUAL_6M_SALE_AVG_QTY
+
+                                 , MAX(AB.MIN_STOCK_DCNT)           AS MIN_STOCK_DCNT           -- 최소 재고 일수
+                                 , MAX(AB.DLV_LEAD_DCNT)            AS DLV_LEAD_DCNT            -- 이송 리드 일수
+                                 , MAX(AB.PRDT_LEAD_DCNT)           AS PRDT_LEAD_DCNT           -- 생산 리드 일수
+                                 , MAX(AB.SAFT_STOCK_DCNT)          AS SAFT_STOCK_DCNT          -- 안전 재고 일수 = 최소 재고 일수 + (이송 리드 일수 + 생산 리드 일수) / 2
+                                 , MAX(AB.STRG_STOCK_DCNT)          AS STRG_STOCK_DCNT          -- 전략 재고 일수
+                                 , MAX(AB.STRG_STOCK_CONV_QTY)      AS STRG_STOCK_CONV_QTY      -- 전략 재고 수량(환산c/s단위)
+                                 , MAX(AB.STRG_SAFT_STOCK_DCNT)     AS STRG_SAFT_STOCK_DCNT     -- 전략 안전 재고 일수 = 안전 재고 일수 + 전략 재고 일수
+                                 , MAX(AB.STRG_SAFT_MAX_STOCK_DCNT) AS STRG_SAFT_MAX_STOCK_DCNT -- 전략 안전 최대 재고 일수 = 최소 재고 일수 + 이송 리드 일수 + 생산 리드 일수 + 전략 재고 일수
+                                 
+                                 , MAX(AB.MIN_PRDT_QTY)             AS MIN_PRDT_QTY             -- 최소 생산수량(단순c/s단위)
+
+                              FROM (
+                                        SELECT AAA.PERIOD_YYYYMMDD
+                                             , CASE WHEN AAB.TO_ITEM_CODE IS NULL THEN AAA.ITEM_CODE
+                                                    ELSE                               AAB.TO_ITEM_CODE
+                                               END              AS ITEM_CODE
+                                             , SUM(NVL(AAA.ACTUAL_SALE_QTY * AAA.UOM_CONVERSION_VALUE
+                                                       , 0))    AS ACTUAL_SALE_CONV_QTY -- 환산c/s단위는 모제품매핑의 환산지수를 곱할 필요없음
+                                             , SUM(NVL(CASE WHEN AAB.TO_ITEM_CODE IS NULL THEN AAA.ACTUAL_SALE_QTY
+                                                            ELSE                               AAA.ACTUAL_SALE_QTY * AAB.CONVERSION_VALUE
+                                                       END, 0)) AS ACTUAL_SALE_QTY
+                                          FROM SCMU.M_SOP_TB_ITEM_SALE_F AAA
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  AAB
+                                            ON AAB.FR_ITEM_CODE = AAA.ITEM_CODE
+                                           AND 'Y'              = NVL(#{itemMapYn, jdbcType=VARCHAR}, 'N') -- 모제품매핑 적용 여부
+                                         WHERE 1 = 1
+                                           AND AAA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99'
+                                           AND AAA.ACTUAL_SALE_QTY > 0
+                                         GROUP BY AAA.PERIOD_YYYYMMDD, CASE WHEN AAB.TO_ITEM_CODE IS NULL THEN AAA.ITEM_CODE ELSE AAB.TO_ITEM_CODE END
+                                   )                               AA
+                         LEFT JOIN SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F AB
+                                ON AB.PERIOD_YYYYMM = #{bssYYYYMM, jdbcType=VARCHAR}
+                               AND AB.ITEM_CODE     = AA.ITEM_CODE
+                              JOIN EDW.W_CM_TB_FG_ITEM_M           AC
+                                ON AC.ITEM_CODE     = AA.ITEM_CODE
+                              JOIN (    -- AD. 1M, 3M, 6M의 영업일수 계산 : 0이 되는 경우는 존재하지 않음
+                                        SELECT SUM(CASE WHEN YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN 1 ELSE 0 END) AS WORK_1M_DAY
+                                             , SUM(CASE WHEN YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -3), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN 1 ELSE 0 END) AS WORK_3M_DAY
+                                             , SUM(CASE WHEN YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN 1 ELSE 0 END) AS WORK_6M_DAY
+                                          FROM SCMU.W_SOP_VW_CALENDAR_M
+                                         WHERE 1 = 1
+                                           AND YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99'
+                                           AND BUSINESS_DAY_FLAG = 'Y'
+                                   )                               AD
+                                ON 1 = 1
+                             WHERE 1 = 1
+                               AND AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99'
+                               AND AC.ITEM_TYPE       = 'FG'
+                               AND AC.LIQUOR_CODE     IN ('10', '20') 
+                               AND (
+                                        (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                                        OR
+                                        (#{liquorCode, jdbcType=VARCHAR} = AC.LIQUOR_CODE)
+                                   )
+                             GROUP BY AC.ITEM_CODE, AC.LIQUOR_CODE
+
+                             UNION ALL
+                            -- A.2. 판매량이 존재하지 않는데, 안전재고 일수에 등록한 제품 리스트
+                            SELECT #{bssYYYYMM, jdbcType=VARCHAR}   AS YYYYMM
+                                 , AC.LIQUOR_CODE
+                                 , AC.ITEM_CODE, MAX(AC.DESCRIPTION) AS ITEM_NAME
+                                 , MAX(AB.ITEM_IGRD_TYPE_CODE)      AS ITEM_IGRD_TYPE_CODE      -- 제품 비중 유형 코드 : 공통그룹코드=ITEM_IGRD_TYPE_LIST
+                                 
+                                 , MAX(AC.BRAND_CODE) AS BRAND_CODE, MAX(AC.BRAND_NAME) AS BRAND_NAME, MAX(AC.BRAND_SORT_ORDER) AS BRAND_SORT_ORDER
+                                 , MAX(AC.VESSEL_CODE) AS VESSEL_CODE, MAX(AC.VESSEL_SORT) AS VESSEL_SORT, MAX(AC.VESSEL_SORT_ORDER) AS VESSEL_SORT_ORDER
+                                 , MAX(AC.VOLUME_VALUE) AS VOLUME_VALUE
+                                 , MAX(AC.USAGE_CODE) AS USAGE_CODE, MAX(AC.USAGE_NAME) AS USAGE_NAME, MAX(AC.USAGE_SORT_ORDER) AS USAGE_SORT_ORDER
+                                 , MAX(AC.DOM_EXP_CODE) AS DOM_EXP_CODE, MAX(AC.DOM_EXP_FLAG) AS DOM_EXP_FLAG
+                                 -- 평균 판매량 : 1M, 3M, 6M
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_QTY * AA.UOM_CONVERSION_VALUE, 0) ELSE 0 END) / MAX(AD.WORK_1M_DAY)
+                                                                    AS ACTUAL_1M_SALE_AVG_CONV_QTY
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -3), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_QTY * AA.UOM_CONVERSION_VALUE, 0) ELSE 0 END) / MAX(AD.WORK_3M_DAY)
+                                                                    AS ACTUAL_3M_SALE_AVG_CONV_QTY
+                                 , SUM(CASE WHEN AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN NVL(AA.ACTUAL_SALE_QTY * AA.UOM_CONVERSION_VALUE, 0) ELSE 0 END) / MAX(AD.WORK_6M_DAY)
+                                                                    AS ACTUAL_6M_SALE_AVG_CONV_QTY
+                                 , NULL AS ACTUAL_1M_SALE_AVG_QTY, NULL AS ACTUAL_3M_SALE_AVG_QTY, NULL AS ACTUAL_6M_SALE_AVG_QTY
+
+                                 , MAX(AB.MIN_STOCK_DCNT)           AS MIN_STOCK_DCNT           -- 최소 재고 일수
+                                 , MAX(AB.DLV_LEAD_DCNT)            AS DLV_LEAD_DCNT            -- 이송 리드 일수
+                                 , MAX(AB.PRDT_LEAD_DCNT)           AS PRDT_LEAD_DCNT           -- 생산 리드 일수
+                                 , MAX(AB.SAFT_STOCK_DCNT)          AS SAFT_STOCK_DCNT          -- 안전 재고 일수 = 최소 재고 일수 + (이송 리드 일수 + 생산 리드 일수) / 2
+                                 , MAX(AB.STRG_STOCK_DCNT)          AS STRG_STOCK_DCNT          -- 전략 재고 일수
+                                 , MAX(AB.STRG_STOCK_CONV_QTY)      AS STRG_STOCK_CONV_QTY      -- 전략 재고 수량(환산c/s단위)
+                                 , MAX(AB.STRG_SAFT_STOCK_DCNT)     AS STRG_SAFT_STOCK_DCNT     -- 전략 안전 재고 일수 = 안전 재고 일수 + 전략 재고 일수
+                                 , MAX(AB.STRG_SAFT_MAX_STOCK_DCNT) AS STRG_SAFT_MAX_STOCK_DCNT -- 전략 안전 최대 재고 일수 = 최소 재고 일수 + 이송 리드 일수 + 생산 리드 일수 + 전략 재고 일수
+                                 
+                                 , MAX(AB.MIN_PRDT_QTY)             AS MIN_PRDT_QTY             -- 최소 생산수량(단순c/s단위)
+
+                              FROM SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F AB
+                         LEFT JOIN SCMU.M_SOP_TB_ITEM_SALE_F       AA -- 실제로는 조인하지 않으므로, 판매마트와는 모제품매핑과 연결하지 않음
+                                ON AA.ITEM_CODE       = AB.ITEM_CODE
+                               AND AA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99'
+                              JOIN EDW.W_CM_TB_FG_ITEM_M           AC
+                                ON AC.ITEM_CODE     = AB.ITEM_CODE
+                              JOIN (    -- AD. 1M, 3M, 6M의 영업일수 계산 : 0이 되는 경우는 존재하지 않음
+                                        SELECT SUM(CASE WHEN YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN 1 ELSE 0 END) AS WORK_1M_DAY
+                                             , SUM(CASE WHEN YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -3), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN 1 ELSE 0 END) AS WORK_3M_DAY
+                                             , SUM(CASE WHEN YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99' THEN 1 ELSE 0 END) AS WORK_6M_DAY
+                                          FROM SCMU.W_SOP_VW_CALENDAR_M
+                                         WHERE 1 = 1
+                                           AND YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -6), 'YYYYMM') || '00' AND TO_CHAR(ADD_MONTHS(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -1), 'YYYYMM') || '99'
+                                           AND BUSINESS_DAY_FLAG = 'Y'
+                                   )                               AD
+                                ON 1 = 1
+                             WHERE 1 = 1
+                               AND AB.PERIOD_YYYYMM = #{bssYYYYMM, jdbcType=VARCHAR}
+                               AND AA.ITEM_CODE     IS NULL -- 판매량이 존재하는 것은 앞에서 표현되었고, 여기는 판매량이 존재하지 않는 항목만 View
+                               AND AC.ITEM_TYPE     = 'FG'
+                               AND AC.LIQUOR_CODE   IN ('10', '20')
+                               AND (
+                                        (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                                        OR
+                                        (#{liquorCode, jdbcType=VARCHAR} = AC.LIQUOR_CODE)
+                                   )
+                               AND EXISTS (
+                                        -- 모제품매핑 적용 여부 : 모제품매핑여부=Y이면, 모제품매핑에 등록된 것만 나오게. 모제품매핑여부=N이면, 모두 나오게
+                                        SELECT 1
+                                          FROM (
+                                                    SELECT 1 FROM DUAL WHERE NVL(#{itemMapYn, jdbcType=VARCHAR}, 'N') = 'N' UNION ALL
+                                                    SELECT 1
+                                                      FROM SCMU.W_SOP_TB_ITEM_MAP_M AF
+                                                     WHERE 1 = 1
+                                                       AND AF.TO_ITEM_CODE = AA.ITEM_CODE
+                                               )
+                                         WHERE 1 = 1
+                                   )
+                             GROUP BY AC.ITEM_CODE, AC.LIQUOR_CODE
+
+                             UNION ALL
+                            -- A.3. 실제 제품이 아닌 용기에 대한 안전재고 일수(등록된 경우) : 용기에 대한 전략재고수량을 입력받아서, 연간제품수급시뮬레이션에서 사용할 예정
+                            SELECT #{bssYYYYMM, jdbcType=VARCHAR}   AS YYYYMM
+                                 , AB.LIQUOR_CODE, AB.ITEM_CODE, AE.ITEM_NAME
+                                 , NULL AS ITEM_IGRD_TYPE_CODE
+                                 , NULL AS BRAND_CODE, NULL AS BRAND_NAME, NULL AS BRAND_SORT_ORDER
+                                 , AE.VESSEL_CODE, AE.VESSEL_SORT, AE.VESSEL_SORT_ORDER
+                                 , NULL AS VOLUME_VALUE, NULL AS USAGE_CODE, NULL AS USAGE_NAME, NULL AS USAGE_SORT_ORDER, NULL AS DOM_EXP_CODE, NULL AS DOM_EXP_FLAG
+                                 , NULL AS ACTUAL_1M_SALE_AVG_CONV_QTY, NULL AS ACTUAL_3M_SALE_AVG_CONV_QTY, NULL AS ACTUAL_6M_SALE_AVG_CONV_QTY
+                                 , NULL AS ACTUAL_1M_SALE_AVG_QTY, NULL AS ACTUAL_3M_SALE_AVG_QTY, NULL AS ACTUAL_6M_SALE_AVG_QTY
+                                 , NULL AS MIN_STOCK_DCNT, NULL AS DLV_LEAD_DCNT, NULL AS PRDT_LEAD_DCNT, NULL AS SAFT_STOCK_DCNT, NULL AS STRG_STOCK_DCNT
+                                 , AB.STRG_STOCK_CONV_QTY                                       -- 전략 재고 수량(환산c/s단위)
+                                 , NULL AS STRG_SAFT_STOCK_DCNT, NULL AS STRG_SAFT_MAX_STOCK_DCNT, NULL AS MIN_PRDT_QTY
+
+                              FROM SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F AB
+                              JOIN (    -- AE. 사업부문별 용기 리스트
+                                        SELECT AEA.SEGMENT2 AS LIQUOR_CODE, AEA.CODE AS ITEM_CODE, AEA.NAME AS ITEM_NAME
+                                             , AEA.SEGMENT4 AS VESSEL_CODE, AEB.VESSEL_SORT, AEB.VESSEL_SORT_ORDER
+                                          FROM SCMU.W_SOP_TB_COM_CODE_M AEA
+                                     LEFT JOIN (
+                                                    SELECT VESSEL_CODE, MAX(VESSEL_SORT) AS VESSEL_SORT, MAX(VESSEL_SORT_ORDER) AS VESSEL_SORT_ORDER
+                                                      FROM EDW.W_CM_TB_FG_ITEM_M
+                                                     WHERE 1 = 1
+                                                       AND ITEM_TYPE = 'FG'
+                                                     GROUP BY VESSEL_CODE
+                                               )                        AEB
+                                            ON AEB.VESSEL_CODE = AEA.SEGMENT4
+                                         WHERE 1 = 1
+                                           AND AEA.GROUP_CODE = 'LIQUOR_VESSEL_LIST'
+                                           AND AEA.USE_YN     = 'Y'
+                                   )                               AE
+                                ON AE.LIQUOR_CODE = AB.LIQUOR_CODE
+                               AND AE.ITEM_CODE   = AB.ITEM_CODE
+                             WHERE 1 = 1
+                               AND AB.PERIOD_YYYYMM = #{bssYYYYMM, jdbcType=VARCHAR}
+                               AND (
+                                        (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                                        OR
+                                        (#{liquorCode, jdbcType=VARCHAR} = AE.LIQUOR_CODE)
+                                   )
+
+                             UNION ALL
+                            -- A.4. 실제 제품이 아닌 용기에 대한 안전재고 일수(등록 안된 경우) : 용기에 대한 전략재고수량을 입력받아서, 연간제품수급시뮬레이션에서 사용할 예정
+                            SELECT #{bssYYYYMM, jdbcType=VARCHAR}   AS YYYYMM
+                                 , AE.LIQUOR_CODE, AE.ITEM_CODE, AE.ITEM_NAME
+                                 , NULL AS ITEM_IGRD_TYPE_CODE
+                                 , NULL AS BRAND_CODE, NULL AS BRAND_NAME, NULL AS BRAND_SORT_ORDER
+                                 , AE.VESSEL_CODE, AE.VESSEL_SORT, AE.VESSEL_SORT_ORDER
+                                 , NULL AS VOLUME_VALUE, NULL AS USAGE_CODE, NULL AS USAGE_NAME, NULL AS USAGE_SORT_ORDER, NULL AS DOM_EXP_CODE, NULL AS DOM_EXP_FLAG
+                                 , NULL AS ACTUAL_1M_SALE_AVG_CONV_QTY, NULL AS ACTUAL_3M_SALE_AVG_CONV_QTY, NULL AS ACTUAL_6M_SALE_AVG_CONV_QTY
+                                 , NULL AS ACTUAL_1M_SALE_AVG_QTY, NULL AS ACTUAL_3M_SALE_AVG_QTY, NULL AS ACTUAL_6M_SALE_AVG_QTY
+                                 , NULL AS MIN_STOCK_DCNT, NULL AS DLV_LEAD_DCNT, NULL AS PRDT_LEAD_DCNT, NULL AS SAFT_STOCK_DCNT, NULL AS STRG_STOCK_DCNT
+                                 , AB.STRG_STOCK_CONV_QTY                                       -- 전략 재고 수량(환산c/s단위)
+                                 , NULL AS STRG_SAFT_STOCK_DCNT, NULL AS STRG_SAFT_MAX_STOCK_DCNT, NULL AS MIN_PRDT_QTY
+
+                              FROM (    -- AE. 사업부문별 용기 리스트
+                                        SELECT AEA.SEGMENT2 AS LIQUOR_CODE, AEA.CODE AS ITEM_CODE, AEA.NAME AS ITEM_NAME
+                                             , AEA.SEGMENT4 AS VESSEL_CODE, AEB.VESSEL_SORT, AEB.VESSEL_SORT_ORDER
+                                          FROM SCMU.W_SOP_TB_COM_CODE_M AEA
+                                     LEFT JOIN (
+                                                    SELECT VESSEL_CODE, MAX(VESSEL_SORT) AS VESSEL_SORT, MAX(VESSEL_SORT_ORDER) AS VESSEL_SORT_ORDER
+                                                      FROM EDW.W_CM_TB_FG_ITEM_M
+                                                     WHERE 1 = 1
+                                                       AND ITEM_TYPE = 'FG'
+                                                     GROUP BY VESSEL_CODE
+                                               )                        AEB
+                                            ON AEB.VESSEL_CODE = AEA.SEGMENT4
+                                         WHERE 1 = 1
+                                           AND AEA.GROUP_CODE = 'LIQUOR_VESSEL_LIST'
+                                           AND AEA.USE_YN     = 'Y'
+                                   )                               AE
+                         LEFT JOIN SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F AB
+                                ON AB.LIQUOR_CODE   = AE.LIQUOR_CODE
+                               AND AB.ITEM_CODE     = AE.ITEM_CODE
+                               AND AB.PERIOD_YYYYMM = #{bssYYYYMM, jdbcType=VARCHAR}
+                             WHERE 1 = 1
+                               AND AB.ITEM_CODE IS NULL -- 등록 안된 경우
+                               AND (
+                                        (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                                        OR
+                                        (#{liquorCode, jdbcType=VARCHAR} = AE.LIQUOR_CODE)
+                                   )
+                       ) A
+                 WHERE 1 = 1
+           ) A
+ LEFT JOIN (    -- B. "재고일수 산출기준" 기간의 주단위 평균 재고수량 중 평균, 최소, 최대(환산c/s단위)
+                SELECT ITEM_CODE
+                     , AVG(STOCK_WW_AVG_CONV_QTY) AS AVG_STOCK_WW_AVG_CONV_QTY  -- "재고일수 산출기준" 기간의 주단위 평균 재고수량 중 평균(환산c/s단위)
+                     , MIN(STOCK_WW_AVG_CONV_QTY) AS MIN_STOCK_WW_AVG_CONV_QTY  -- "재고일수 산출기준" 기간의 주단위 평균 재고수량 중 최소(환산c/s단위)
+                     , MAX(STOCK_WW_AVG_CONV_QTY) AS MAX_STOCK_WW_AVG_CONV_QTY  -- "재고일수 산출기준" 기간의 주단위 평균 재고수량 중 최대(환산c/s단위)
+                  FROM (
+                            SELECT PERIOD_SCM_YYYYWW, ITEM_CODE
+                                 , AVG(STOCK_CONV_QTY) AS STOCK_WW_AVG_CONV_QTY -- "재고일수 산출기준" 기간의 주단위 평균 재고수량(환산c/s단위)
+                              FROM (    -- 공장/물류센터가 있어서, 먼저 제거하고나서 평균산출. 안그러면 평균이 낮아지는 문제
+                                        SELECT BA.PERIOD_SCM_YYYYWW, BA.PERIOD_YYYYMMDD
+                                             , CASE WHEN BB.TO_ITEM_CODE IS NULL THEN BA.ITEM_CODE
+                                                    ELSE                              BB.TO_ITEM_CODE
+                                               END              AS ITEM_CODE
+                                             , SUM(NVL(CASE WHEN BB.TO_ITEM_CODE IS NULL THEN BA.STOCK_QTY * BA.UOM_CONVERSION_VALUE
+                                                            ELSE                              BA.STOCK_QTY * BA.UOM_CONVERSION_VALUE * BB.CONVERSION_VALUE
+                                                       END, 0)) AS STOCK_CONV_QTY -- 먼저, 공장/센터를 제거
+                                          FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F BA
+                                     LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M        BB
+                                            ON BB.FR_ITEM_CODE = BA.ITEM_CODE
+                                           AND 'Y'             = NVL(#{itemMapYn, jdbcType=VARCHAR}, 'N') -- 모제품매핑 적용 여부
+                                         WHERE 1 = 1
+                                           -- 기준년월의 1일 이전 주차부터 "재고일수 산출기준"(-4, -8, -12) 주차까지
+                                           AND BA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD') - TO_NUMBER(TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), 'D')) - 7 * NVL(#{stockCalcWw, jdbcType=VARCHAR}, 4) + 1, 'YYYYMMDD') -- 종료주차에서 -7 * 주차기간을 하면, 주차기간+1 전주의 토요일이 됨. 여기에 +1을 하여 일요일로 만듬
+                                                                      AND TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD') - TO_NUMBER(TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), 'D')), 'YYYYMMDD') -- 기준년월의 1일에서 요일을 빼면, 그 전주 토요일
+                                           AND BA.ITEM_TYPE = 'FG'
+                                           --AND STOCK_QTY != 0 -- 주단위 평균이라서, 0도 포함
+                                           AND (
+                                                    (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                                                    OR
+                                                    (#{liquorCode, jdbcType=VARCHAR} = BA.LIQUOR_CODE)
+                                               )
+                                         GROUP BY BA.PERIOD_SCM_YYYYWW, BA.PERIOD_YYYYMMDD
+                                                , CASE WHEN BB.TO_ITEM_CODE IS NULL THEN BA.ITEM_CODE ELSE BB.TO_ITEM_CODE END
+                                   )
+                             WHERE 1 = 1
+                             GROUP BY PERIOD_SCM_YYYYWW, ITEM_CODE
+                       )
+                 WHERE 1 = 1
+                 GROUP BY ITEM_CODE
+           ) B
+        ON B.ITEM_CODE = A.ITEM_CODE
+
+ LEFT JOIN (    -- CA. "재고일수 산출기준" 기간의 판매수량(환산c/s단위)
+                SELECT CASE WHEN CAB.TO_ITEM_CODE IS NULL THEN CAA.ITEM_CODE
+                            ELSE                               CAB.TO_ITEM_CODE
+                       END              AS ITEM_CODE
+                     , SUM(NVL(CASE WHEN CAB.TO_ITEM_CODE IS NULL THEN CAA.ACTUAL_SALE_QTY * CAA.UOM_CONVERSION_VALUE
+                                    ELSE                               CAA.ACTUAL_SALE_QTY * CAA.UOM_CONVERSION_VALUE * CAB.CONVERSION_VALUE
+                               END, 0)) AS SALE_CONV_QTY     -- "재고일수 산출기준" 기간의 판매수량(환산c/s단위)
+                  FROM SCMU.M_SOP_TB_ITEM_SALE_F CAA
+             LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  CAB
+                    ON CAB.FR_ITEM_CODE = CAA.ITEM_CODE
+                   AND 'Y'              = NVL(#{itemMapYn, jdbcType=VARCHAR}, 'N') -- 모제품매핑 적용 여부
+                 WHERE 1 = 1
+                   -- 기준년월의 1일 이전 주차부터 "재고일수 산출기준"(-4, -8, -12) 주차까지
+                   AND CAA.PERIOD_YYYYMMDD BETWEEN TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD') - TO_NUMBER(TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), 'D')) - 7 * NVL(#{stockCalcWw, jdbcType=VARCHAR}, 4) + 1, 'YYYYMMDD') -- 종료주차에서 -7 * 주차기간을 하면, 주차기간+1 전주의 토요일이 됨. 여기에 +1을 하여 일요일로 만듬
+                                           AND TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD') - TO_NUMBER(TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), 'D')), 'YYYYMMDD') -- 기준년월의 1일에서 요일을 빼면, 그 전주 토요일
+                   AND CAA.ITEM_TYPE       = 'FG'
+                   AND CAA.ACTUAL_SALE_QTY != 0
+                   AND CAA.LIQUOR_CODE     IN ('10', '20')
+                   AND (
+                            (#{liquorCode, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                            OR
+                            (#{liquorCode, jdbcType=VARCHAR} = CAA.LIQUOR_CODE)
+                       )
+                 GROUP BY CASE WHEN CAB.TO_ITEM_CODE IS NULL THEN CAA.ITEM_CODE ELSE CAB.TO_ITEM_CODE END
+                HAVING SUM(NVL(CAA.ACTUAL_SALE_QTY * CAA.UOM_CONVERSION_VALUE, 0)) != 0
+           ) CA
+        ON CA.ITEM_CODE = A.ITEM_CODE
+ LEFT JOIN (    -- CB. "재고일수 산출기준" 기간의 영업일수
+                SELECT SUM(CASE WHEN BUSINESS_DAY_FLAG = 'Y' THEN 1 ELSE 0 END) AS WORK_CNT
+                  FROM SCMU.W_SOP_VW_CALENDAR_M
+                 WHERE 1 = 1
+                   -- 기준년월의 1일 이전 주차부터 "재고일수 산출기준"(-4, -8, -12) 주차까지
+                   AND YYYYMMDD BETWEEN TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD') - TO_NUMBER(TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), 'D')) - 7 * NVL(#{stockCalcWw, jdbcType=VARCHAR}, 4) + 1, 'YYYYMMDD') -- 종료주차에서 -7 * 주차기간을 하면, 주차기간+1 전주의 토요일이 됨. 여기에 +1을 하여 일요일로 만듬
+                                    AND TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD') - TO_NUMBER(TO_CHAR(TO_DATE(#{bssYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), 'D')), 'YYYYMMDD') -- 기준년월의 1일에서 요일을 빼면, 그 전주 토요일
+           ) CB
+        ON 1 = 1
+        
+     WHERE 1 = 1
+        -- 품목구분 조회조건 : HIGH_IGRD(고비중), LOW_IGRD(저비중), MNG_ITEM(관리), NA(N/A)
+        <if test="itemIgrdTypeCode != null and itemIgrdTypeCode != ''">
+            <foreach open="AND NVL(A.ITEM_IGRD_TYPE_CODE, 'NA') IN (" collection="itemIgrdTypeCode" index="index" item="itemIgrdTypeCode" separator=", " close=")">
+#{itemIgrdTypeCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+     ORDER BY A.LIQUOR_CODE, (CASE WHEN A.BRAND_CODE IS NULL THEN 1 ELSE -1 END), A.BRAND_SORT_ORDER, A.BRAND_NAME, A.ITEM_NAME, A.ITEM_CODE
+    </select>
+
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+MERGE INTO /* com.hitejinro.snop.work.dao.M08090DaoMapper.update */
+           SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F T
+     USING (
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+SELECT #{list.YYYYMM, jdbcType=VARCHAR}                                                                     AS PERIOD_YYYYMM
+     , #{list.LIQUOR_CODE, jdbcType=VARCHAR}                                                                AS LIQUOR_CODE
+     , #{list.ITEM_CODE, jdbcType=VARCHAR}                                                                  AS ITEM_CODE
+     , CASE WHEN #{list.ITEM_IGRD_TYPE_CODE, jdbcType=VARCHAR} = 'NA' THEN NULL
+            ELSE                                                           #{list.ITEM_IGRD_TYPE_CODE, jdbcType=VARCHAR}
+       END                                                                                                  AS ITEM_IGRD_TYPE_CODE
+     , TO_NUMBER(#{list.MIN_STOCK_DCNT, jdbcType=VARCHAR})                                                  AS MIN_STOCK_DCNT
+     , TO_NUMBER(#{list.DLV_LEAD_DCNT, jdbcType=VARCHAR})                                                   AS DLV_LEAD_DCNT
+     , TO_NUMBER(#{list.PRDT_LEAD_DCNT, jdbcType=VARCHAR})                                                  AS PRDT_LEAD_DCNT
+     , TO_NUMBER(#{list.SAFT_STOCK_DCNT, jdbcType=VARCHAR})                                                 AS SAFT_STOCK_DCNT
+     , TO_NUMBER(#{list.STRG_STOCK_DCNT, jdbcType=VARCHAR})                                                 AS STRG_STOCK_DCNT
+     , TO_NUMBER(#{list.STRG_STOCK_CONV_QTY, jdbcType=VARCHAR})                                             AS STRG_STOCK_CONV_QTY
+     , TO_NUMBER(#{list.STRG_SAFT_STOCK_DCNT, jdbcType=VARCHAR})                                            AS STRG_SAFT_STOCK_DCNT
+     , TO_NUMBER(#{list.STRG_SAFT_MAX_STOCK_DCNT, jdbcType=VARCHAR})                                        AS STRG_SAFT_MAX_STOCK_DCNT
+     , TO_NUMBER(#{list.MIN_PRDT_QTY, jdbcType=VARCHAR})                                                    AS MIN_PRDT_QTY
+     , #{list.action, jdbcType=VARCHAR}                                                                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+  FROM DUAL
+        </foreach>
+           ) S
+        ON (T.PERIOD_YYYYMM = S.PERIOD_YYYYMM AND T.LIQUOR_CODE = S.LIQUOR_CODE AND T.ITEM_CODE = S.ITEM_CODE)
+        
+      WHEN MATCHED THEN
+        UPDATE SET T.ITEM_IGRD_TYPE_CODE        = S.ITEM_IGRD_TYPE_CODE
+                 , T.MIN_STOCK_DCNT             = S.MIN_STOCK_DCNT
+                 , T.DLV_LEAD_DCNT              = S.DLV_LEAD_DCNT
+                 , T.PRDT_LEAD_DCNT             = S.PRDT_LEAD_DCNT
+                 , T.SAFT_STOCK_DCNT            = S.SAFT_STOCK_DCNT
+                 , T.STRG_STOCK_DCNT            = S.STRG_STOCK_DCNT
+                 , T.STRG_STOCK_CONV_QTY        = S.STRG_STOCK_CONV_QTY
+                 , T.STRG_SAFT_STOCK_DCNT       = S.STRG_SAFT_STOCK_DCNT
+                 , T.STRG_SAFT_MAX_STOCK_DCNT   = S.STRG_SAFT_MAX_STOCK_DCNT
+                 , T.MIN_PRDT_QTY               = S.MIN_PRDT_QTY
+                 , T.LAST_UPDATED_BY            = #{userId, jdbcType=VARCHAR}
+                 , T.LAST_UPDATE_DATE           = SYSDATE
+
+      WHEN NOT MATCHED THEN
+        INSERT (T.PERIOD_YYYYMM, T.LIQUOR_CODE, T.ITEM_CODE, T.ITEM_IGRD_TYPE_CODE, T.MIN_STOCK_DCNT, T.DLV_LEAD_DCNT, T.PRDT_LEAD_DCNT, T.SAFT_STOCK_DCNT, T.STRG_STOCK_DCNT, T.STRG_STOCK_CONV_QTY, T.STRG_SAFT_STOCK_DCNT, T.STRG_SAFT_MAX_STOCK_DCNT, T.MIN_PRDT_QTY
+                , T.ATTRIBUTE1, T.ATTRIBUTE2, T.ATTRIBUTE3, T.ATTRIBUTE4, T.ATTRIBUTE5
+                , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+        VALUES (S.PERIOD_YYYYMM, S.LIQUOR_CODE, S.ITEM_CODE, S.ITEM_IGRD_TYPE_CODE, S.MIN_STOCK_DCNT, S.DLV_LEAD_DCNT, S.PRDT_LEAD_DCNT, S.SAFT_STOCK_DCNT, S.STRG_STOCK_DCNT, S.STRG_STOCK_CONV_QTY, S.STRG_SAFT_STOCK_DCNT, S.STRG_SAFT_MAX_STOCK_DCNT, S.MIN_PRDT_QTY
+                , '', '', '', '', ''
+                , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+    
+    <!-- 데이터 저장 : 삭제(모든 항목이 null인 경우 삭제) -->
+    <delete id="delete" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08090DaoMapper.delete */
+  FROM SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F T
+ WHERE 1 = 1
+   AND PERIOD_YYYYMM = #{bssYYYYMM, jdbcType=VARCHAR}
+   AND ITEM_IGRD_TYPE_CODE      IS NULL
+   AND MIN_STOCK_DCNT           IS NULL
+   AND DLV_LEAD_DCNT            IS NULL
+   AND PRDT_LEAD_DCNT           IS NULL
+   AND SAFT_STOCK_DCNT          IS NULL
+   AND STRG_STOCK_DCNT          IS NULL
+   AND STRG_STOCK_CONV_QTY      IS NULL
+   AND STRG_SAFT_STOCK_DCNT     IS NULL
+   AND STRG_SAFT_MAX_STOCK_DCNT IS NULL
+   AND MIN_PRDT_QTY             IS NULL
+    </delete>
+
+
+
+    <!-- 복사 전 Validation -->
+    <select id="validateByCopy" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M08090DaoMapper.validateByCopy */
+       LISTAGG(ERR_MSG, ', ') WITHIN GROUP (ORDER BY ERR_MSG)                                         AS ERR_MSG
+     , CASE WHEN LISTAGG(ERR_MSG, ', ') WITHIN GROUP (ORDER BY ERR_MSG) IS NULL THEN 'N' ELSE 'Y' END AS ERR_YN
+  FROM (    -- 1. 복사할 원천 데이터 확인
+            SELECT CASE WHEN COUNT(1) = 0 THEN '복사할 기준년월의 데이터가 존재하지 않음' END AS ERR_MSG
+              FROM W_SOP_TB_ITEM_SAFT_STOCK_F
+             WHERE 1 = 1
+               AND PERIOD_YYYYMM = #{copyFrYYYYMM, jdbcType=VARCHAR}
+       )
+ WHERE 1 = 1
+   AND ERR_MSG IS NOT NULL
+    </select>
+    
+    <!-- 복사 전 삭제 -->
+    <delete id="deleteByCopy" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08090DaoMapper.deleteByCopy */
+  FROM SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F T
+ WHERE 1 = 1
+   AND PERIOD_YYYYMM = #{copyToYYYYMM, jdbcType=VARCHAR}
+    </delete>
+
+    <!-- 복사 -->
+    <update id="updateByCopy" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08090DaoMapper.updateByCopy */
+  INTO SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F
+       (PERIOD_YYYYMM, LIQUOR_CODE, ITEM_CODE
+       , ITEM_IGRD_TYPE_CODE, MIN_STOCK_DCNT, DLV_LEAD_DCNT, PRDT_LEAD_DCNT, SAFT_STOCK_DCNT, STRG_STOCK_DCNT, STRG_STOCK_CONV_QTY, STRG_SAFT_STOCK_DCNT, STRG_SAFT_MAX_STOCK_DCNT, MIN_PRDT_QTY
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE)
+SELECT #{copyToYYYYMM, jdbcType=VARCHAR}, LIQUOR_CODE, ITEM_CODE
+       , ITEM_IGRD_TYPE_CODE, MIN_STOCK_DCNT, DLV_LEAD_DCNT, PRDT_LEAD_DCNT, SAFT_STOCK_DCNT, STRG_STOCK_DCNT, STRG_STOCK_CONV_QTY, STRG_SAFT_STOCK_DCNT, STRG_SAFT_MAX_STOCK_DCNT, MIN_PRDT_QTY
+       , ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
+       , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+  FROM SCMU.W_SOP_TB_ITEM_SAFT_STOCK_F
+ WHERE 1 = 1
+   AND PERIOD_YYYYMM = #{copyFrYYYYMM, jdbcType=VARCHAR}
+    </update>
+
+</mapper>

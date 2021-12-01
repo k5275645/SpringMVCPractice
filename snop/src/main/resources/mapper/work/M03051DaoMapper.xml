@@ -1,0 +1,711 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 공병 생산 지표 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03051DaoMapper">
+	
+	<!-- 연간 조회 -->
+	<select id="searchYearly" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03051DaoMapper.searchYearly */
+		      A.PERIOD_YYYYMMDD     AS PERIOD_YYYYMMDD
+		    , A.LIQUOR_CODE
+		    , MAX(C.LIQUOR_DESC)    AS LIQUOR_DESC
+		    , A.VOLUME_VALUE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN 'TOTAL'
+		            ELSE A.BRAND_CODE
+		            END)            AS BRAND_CODE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN '전체'
+		            ELSE MAX(D.NAME)
+		            END)            AS BRAND_NAME
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN 'TOTAL'
+		            ELSE A.ORG_CODE
+		            END)            AS MFG_CODE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN '전체'
+		            ELSE MAX(E.MFG_NAME)
+		            END)            AS MFG_NAME
+		
+		    -- 신병사용율(과일소주제외)
+		    -- (신병사용량 - 과일소주 생산량) / (생산량 - 과일소주 생산량)
+		    , (CASE WHEN A.LIQUOR_CODE = '20' AND SUM(A.PRDT_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0)) > 0
+		    		THEN SUM(A.NEW_BOTL_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0)) / SUM(A.PRDT_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0))
+		            ELSE 0
+		            END) AS ADJ_NEW_BOTL_RATE
+		    
+		    -- 신병사용율
+		    -- 신병사용량 / 생산량
+		    , (CASE WHEN SUM(A.PRDT_QTY) > 0 THEN SUM(A.NEW_BOTL_QTY) / SUM(A.PRDT_QTY)
+		            ELSE 0
+		            END) AS NEW_BOTL_RATE
+		    
+		    -- 혼입불파병율
+		    -- 혼입량이 음수 -> (불병량 + 결감량 + ABS(혼입량)) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 혼입량이 양수 -> (불병량 + 결감량) / (생산량 - 신병사용량 + 불병량 + 파병량)
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]> 0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0 
+		            THEN (SUM(A.FAULTY_QTY + A.LOSS_QTY) + ABS(SUM(A.MIXED_QTY))) / SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            
+		            WHEN SUM(A.MIXED_QTY) >= 0 
+		             AND SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY) > 0
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) / SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS MIXED_FAULTY_RATE
+		    
+		    -- 혼입율
+		    -- 혼입량이 음수 -> ABS(혼입량) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 그 외 0
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]> 0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0
+		            THEN ABS(SUM(A.MIXED_QTY)) / SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS MIXED_RATE
+		    
+		    -- 불파병율
+		    -- 혼입량이 음수 -> (불병량 + 파병량) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 그 외 (불병량 + 파병량) / (생산량 - 신병사용량 + 불병량 + 파병량)
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]>  0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0 
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) /SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            
+		            WHEN SUM(A.MIXED_QTY) >= 0 
+		             AND SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY) > 0
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) / SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS FAULTY_RATE
+		    
+		    , SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.PRDT_QTY, A.PRDT_CS_QTY))							AS PRDT_QTY -- 생산량
+		    , SUM(NVL(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', B.LIQUEUR_PRDT_QTY, B.LIQUEUR_PRDT_CS_QTY), 0))	AS LIQUEUR_PRDT_QTY -- 과일소주 생산량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.NEW_BOTL_QTY, A.NEW_BOTL_CS_QTY))					AS NEW_BOTL_QTY -- 신병생산량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.MIXED_QTY, A.MIXED_CS_QTY))							AS MIXED_QTY -- 혼입량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.FAULTY_QTY, A.FAULTY_CS_QTY))						AS FAULTY_QTY -- 불병량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.LOSS_QTY, A.LOSS_CS_QTY))							AS LOSS_QTY -- 결감량
+		    
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) = 1 THEN 'TOTAL'
+		            ELSE NULL
+		            END) AS "Def"
+		FROM
+		(
+		    -- 일자, 사업부문, 용량, 브랜드, 공장별 용기정보
+		    SELECT
+		          SUBSTR(AB.PERIOD_YYYYMMDD, 0, 4)  AS PERIOD_YYYYMMDD
+		        , AA.LIQUOR_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.ORG_CODE
+		        
+		        -- 고병 생산량(고병의 출고_생산)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_생산' THEN AB.QTY
+		                   ELSE 0
+		                   END) AS PRDT_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_생산' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS PRDT_CS_QTY
+		                
+		        -- 신병사용량(신병 출고_대체 - 신병 입고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS NEW_BOTL_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS NEW_BOTL_CS_QTY
+		                
+		        -- 고병출고량(고병 출고_대체 - 고병 입고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS OLD_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS OLD_CS_QTY
+		                
+		        -- 불병량(불병 입고_대체 - 불병 출고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS FAULTY_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS FAULTY_CS_QTY
+		                
+		        -- 파병량(고병 출고_결감_기타)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_결감_기타' THEN AB.QTY
+		                   ELSE 0
+		                   END) AS LOSS_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_결감_기타' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS LOSS_CS_QTY
+		
+		        -- 혼입량(고병 입고_대체 -  고병 출고_대체 - 신병사용량 + 불병량)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS MIXED_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS MIXED_CS_QTY
+		    FROM SCMU.W_SOP_TB_VESSEL_M AA
+		
+		    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE 
+		
+		    WHERE 1 = 1
+		        AND AA.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+		        AND AA.VESSEL_CODE   = '1'
+		        AND AA.COMPANY_TYPE  = 'OWNER'
+		        AND AA.USE_YN        = 'Y'
+		        
+				AND AA.VOLUME_VALUE  IN
+                <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+                
+                AND AA.BRAND_CODE	IN
+                <foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+
+		        AND AB.PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+		        AND AB.TRANSACTION_TYPE_CODE IN ('출고_결감_기타', '출고_대체', '입고_대체', '출고_생산')
+		        AND AB.ORG_TYPE     = 'MFG'
+				AND AB.ORG_CODE      IN
+               <foreach collection="mfgCode" item="i" open="(" close=")" separator=",">
+                   #{i, jdbcType=VARCHAR}
+               </foreach>
+               
+		        AND AB.QTY              != 0
+		    GROUP BY SUBSTR(AB.PERIOD_YYYYMMDD, 0, 4), AA.LIQUOR_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.ORG_CODE
+		) A
+		
+		LEFT JOIN
+		(
+		    -- 생산,재고 마트에서 과일소주 생산량 추출
+		    -- 360 수출만 해당
+		    -- 브랜드 매핑
+		    -- 환산 C/S = 단순 C/S * 환산지수
+		    SELECT
+		          SUBSTR(BA.PERIOD_YYYYMMDD, 0, 4) AS PERIOD_YYYYMMDD
+		        , BA.LIQUOR_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE AS BRAND_CODE, BA.ORG_CODE
+		        , SUM(BA.PRDT_ACTUAL_QTY * NVL(BB.PACKING_UNIT, 0)) 		AS LIQUEUR_PRDT_QTY
+		        , SUM(BA.PRDT_ACTUAL_QTY * NVL(BB.UOM_CONVERSION_VALUE, 0)) AS LIQUEUR_PRDT_CS_QTY
+		    FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F BA
+		    
+		    INNER JOIN EDW.W_CM_TB_FG_ITEM_M BB ON BB.SEGMENT3     = '리큐르'
+		                                       AND BB.ITEM_TYPE    = 'FG'
+		                                       AND BB.ITEM_STATUS  = 'Active'
+		                                       AND BB.DOM_EXP_CODE = '1'
+		                                       AND BB.ITEM_CODE    = BA.ITEM_CODE
+		                                          
+			INNER JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M BC ON BC.BRAND_CODE   = BA.BRAND_CODE
+	                                                      AND BC.VOLUME_VALUE = BA.VOLUME_VALUE
+		    WHERE 1 = 1
+		        AND BA.PERIOD_YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+		        AND BA.LIQUOR_CODE     = #{liquorCode, jdbcType=VARCHAR}
+		        AND BA.VESSEL_CODE     = '1'
+		        AND BA.VOLUME_VALUE    = '360'
+		        AND BA.ORG_TYPE        = 'MFG'
+		        
+                AND BA.ORG_CODE        IN
+                <foreach collection="mfgCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+		
+		    GROUP BY SUBSTR(BA.PERIOD_YYYYMMDD, 0, 4), BA.LIQUOR_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE, BA.ORG_CODE
+		) B ON B.PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+		   AND B.LIQUOR_CODE     = A.LIQUOR_CODE
+		   AND B.VOLUME_VALUE    = A.VOLUME_VALUE
+		   AND B.BRAND_CODE      = A.BRAND_CODE
+		   AND B.ORG_CODE        = A.ORG_CODE
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M C ON C.LIQUOR_CODE = A.LIQUOR_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M D ON D.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                    AND D.USE_YN     = 'Y'
+		                                    AND D.CODE       = A.BRAND_CODE
+		                                    
+		LEFT JOIN EDW.W_CM_TB_MFG_M E ON E.MFG_CODE = A.ORG_CODE
+		
+		GROUP BY GROUPING SETS (
+		                            (A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE, A.BRAND_CODE, A.ORG_CODE),
+		                            (A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE)
+		                        )
+		ORDER BY A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE, DECODE(GROUPING_ID(A.BRAND_CODE), 1, -1, MAX(D.SEQ)), A.ORG_CODE
+	</select>
+	
+	<!-- 월간 조회 -->
+	<select id="searchMonthly" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03051DaoMapper.searchMonthly */
+		      TO_CHAR(TO_DATE(A.PERIOD_YYYYMMDD, 'YYYYMM'), 'YYYY-MM')     AS PERIOD_YYYYMMDD
+		    , A.LIQUOR_CODE
+		    , MAX(C.LIQUOR_DESC)    AS LIQUOR_DESC
+		    , A.VOLUME_VALUE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN 'TOTAL'
+		            ELSE A.BRAND_CODE
+		            END)            AS BRAND_CODE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN '전체'
+		            ELSE MAX(D.NAME)
+		            END)            AS BRAND_NAME
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN 'TOTAL'
+		            ELSE A.ORG_CODE
+		            END)            AS MFG_CODE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN '전체'
+		            ELSE MAX(E.MFG_NAME)
+		            END)            AS MFG_NAME
+		
+		    -- 신병사용율(과일소주제외)
+		    -- (신병사용량 - 과일소주 생산량) / (생산량 - 과일소주 생산량)
+		    , (CASE WHEN A.LIQUOR_CODE = '20' AND SUM(A.PRDT_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0)) > 0
+		    		THEN SUM(A.NEW_BOTL_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0)) / SUM(A.PRDT_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0))
+		            ELSE 0
+		            END) AS ADJ_NEW_BOTL_RATE
+		    
+		    -- 신병사용율
+		    -- 신병사용량 / 생산량
+		    , (CASE WHEN SUM(A.PRDT_QTY) > 0 THEN SUM(A.NEW_BOTL_QTY) / SUM(A.PRDT_QTY)
+		            ELSE 0
+		            END) AS NEW_BOTL_RATE
+		    
+		    -- 혼입불파병율
+		    -- 혼입량이 음수 -> (불병량 + 결감량 + ABS(혼입량)) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 혼입량이 양수 -> (불병량 + 결감량) / (생산량 - 신병사용량 + 불병량 + 파병량)
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]> 0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0 
+		            THEN (SUM(A.FAULTY_QTY + A.LOSS_QTY) + ABS(SUM(A.MIXED_QTY))) / SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            
+		            WHEN SUM(A.MIXED_QTY) >= 0 
+		             AND SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY) > 0
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) / SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS MIXED_FAULTY_RATE
+		    
+		    -- 혼입율
+		    -- 혼입량이 음수 -> ABS(혼입량) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 그 외 0
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]> 0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0
+		            THEN ABS(SUM(A.MIXED_QTY)) / SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS MIXED_RATE
+		    
+		    -- 불파병율
+		    -- 혼입량이 음수 -> (불병량 + 파병량) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 그 외 (불병량 + 파병량) / (생산량 - 신병사용량 + 불병량 + 파병량)
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]>  0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0 
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) /SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            
+		            WHEN SUM(A.MIXED_QTY) >= 0 
+		             AND SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY) > 0
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) / SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS FAULTY_RATE
+		    
+		    , SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.PRDT_QTY, A.PRDT_CS_QTY))							AS PRDT_QTY -- 생산량
+		    , SUM(NVL(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', B.LIQUEUR_PRDT_QTY, B.LIQUEUR_PRDT_CS_QTY), 0))	AS LIQUEUR_PRDT_QTY -- 과일소주 생산량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.NEW_BOTL_QTY, A.NEW_BOTL_CS_QTY))					AS NEW_BOTL_QTY -- 신병생산량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.MIXED_QTY, A.MIXED_CS_QTY))							AS MIXED_QTY -- 혼입량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.FAULTY_QTY, A.FAULTY_CS_QTY))						AS FAULTY_QTY -- 불병량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.LOSS_QTY, A.LOSS_CS_QTY))							AS LOSS_QTY -- 결감량
+		    
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) = 1 THEN 'TOTAL'
+		            ELSE NULL
+		            END) AS "Def"
+		FROM
+		(
+		    -- 일자, 사업부문, 용량, 브랜드, 공장별 용기정보
+		    SELECT
+		          SUBSTR(AB.PERIOD_YYYYMMDD, 0, 6)  AS PERIOD_YYYYMMDD
+		        , AA.LIQUOR_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.ORG_CODE
+		        
+		        -- 고병 생산량(고병의 출고_생산)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_생산' THEN AB.QTY
+		                   ELSE 0
+		                   END) AS PRDT_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_생산' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS PRDT_CS_QTY
+		                
+		        -- 신병사용량(신병 출고_대체 - 신병 입고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS NEW_BOTL_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS NEW_BOTL_CS_QTY
+		                
+		        -- 고병출고량(고병 출고_대체 - 고병 입고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS OLD_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS OLD_CS_QTY
+		                
+		        -- 불병량(불병 입고_대체 - 불병 출고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS FAULTY_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS FAULTY_CS_QTY
+		                
+		        -- 파병량(고병 출고_결감_기타)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_결감_기타' THEN AB.QTY
+		                   ELSE 0
+		                   END) AS LOSS_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_결감_기타' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS LOSS_CS_QTY
+		
+		        -- 혼입량(고병 입고_대체 -  고병 출고_대체 - 신병사용량 + 불병량)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS MIXED_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS MIXED_CS_QTY
+		    FROM SCMU.W_SOP_TB_VESSEL_M AA
+		
+		    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE 
+		
+		    WHERE 1 = 1
+		        AND AA.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+		        AND AA.VESSEL_CODE   = '1'
+		        AND AA.COMPANY_TYPE  = 'OWNER'
+		        AND AA.USE_YN        = 'Y'
+		        
+				AND AA.VOLUME_VALUE  IN
+                <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+                
+                AND AA.BRAND_CODE	IN
+                <foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+
+		        AND AB.PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+		        AND AB.TRANSACTION_TYPE_CODE IN ('출고_결감_기타', '출고_대체', '입고_대체', '출고_생산')
+		        AND AB.ORG_TYPE     = 'MFG'
+				AND AB.ORG_CODE      IN
+               <foreach collection="mfgCode" item="i" open="(" close=")" separator=",">
+                   #{i, jdbcType=VARCHAR}
+               </foreach>
+               
+		        AND AB.QTY              != 0
+		    GROUP BY SUBSTR(AB.PERIOD_YYYYMMDD, 0, 6), AA.LIQUOR_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.ORG_CODE
+		) A
+		
+		LEFT JOIN
+		(
+		    -- 생산,재고 마트에서 과일소주 생산량 추출
+		    -- 360 수출만 해당
+		    -- 브랜드 매핑
+		    -- 환산 C/S = 단순 C/S * 환산지수
+		    SELECT
+		          SUBSTR(BA.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+		        , BA.LIQUOR_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE AS BRAND_CODE, BA.ORG_CODE
+		        , SUM(BA.PRDT_ACTUAL_QTY * NVL(BB.PACKING_UNIT, 0)) 		AS LIQUEUR_PRDT_QTY
+		        , SUM(BA.PRDT_ACTUAL_QTY * NVL(BB.UOM_CONVERSION_VALUE, 0)) AS LIQUEUR_PRDT_CS_QTY
+		    FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F BA
+		    
+		    INNER JOIN EDW.W_CM_TB_FG_ITEM_M BB ON BB.SEGMENT3     = '리큐르'
+		                                       AND BB.ITEM_TYPE    = 'FG'
+		                                       AND BB.ITEM_STATUS  = 'Active'
+		                                       AND BB.DOM_EXP_CODE = '1'
+		                                       AND BB.ITEM_CODE    = BA.ITEM_CODE
+		                                    
+			INNER JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M BC ON BC.BRAND_CODE   = BA.BRAND_CODE
+	                                                      AND BC.VOLUME_VALUE = BA.VOLUME_VALUE
+		    WHERE 1 = 1
+		        AND BA.PERIOD_YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+		        AND BA.LIQUOR_CODE     = #{liquorCode, jdbcType=VARCHAR}
+		        AND BA.VESSEL_CODE     = '1'
+		        AND BA.VOLUME_VALUE    = '360'
+		        AND BA.ORG_TYPE        = 'MFG'
+		        
+                AND BA.ORG_CODE        IN
+                <foreach collection="mfgCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+		
+		    GROUP BY SUBSTR(BA.PERIOD_YYYYMMDD, 0, 6), BA.LIQUOR_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE, BA.ORG_CODE
+		) B ON B.PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+		   AND B.LIQUOR_CODE     = A.LIQUOR_CODE
+		   AND B.VOLUME_VALUE    = A.VOLUME_VALUE
+		   AND B.BRAND_CODE      = A.BRAND_CODE
+		   AND B.ORG_CODE        = A.ORG_CODE
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M C ON C.LIQUOR_CODE = A.LIQUOR_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M D ON D.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                    AND D.USE_YN     = 'Y'
+		                                    AND D.CODE       = A.BRAND_CODE
+		                                    
+		LEFT JOIN EDW.W_CM_TB_MFG_M E ON E.MFG_CODE = A.ORG_CODE
+		
+		GROUP BY GROUPING SETS (
+		                            (A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE, A.BRAND_CODE, A.ORG_CODE),
+		                            (A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE)
+		                        )
+		ORDER BY A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE, DECODE(GROUPING_ID(A.BRAND_CODE), 1, -1, MAX(D.SEQ)), A.ORG_CODE
+	</select>
+	
+	<!-- 일간 조회 -->
+	<select id="searchDaily" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03051DaoMapper.searchDaily */
+		      TO_CHAR(TO_DATE(A.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS PERIOD_YYYYMMDD
+		    , A.LIQUOR_CODE
+		    , MAX(C.LIQUOR_DESC)    AS LIQUOR_DESC
+		    , A.VOLUME_VALUE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN 'TOTAL'
+		            ELSE A.BRAND_CODE
+		            END)            AS BRAND_CODE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN '전체'
+		            ELSE MAX(D.NAME)
+		            END)            AS BRAND_NAME
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN 'TOTAL'
+		            ELSE A.ORG_CODE
+		            END)            AS MFG_CODE
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) =1 THEN '전체'
+		            ELSE MAX(E.MFG_NAME)
+		            END)            AS MFG_NAME
+		
+		    -- 신병사용율(과일소주제외)
+		    -- (신병사용량 - 과일소주 생산량) / (생산량 - 과일소주 생산량)
+		    , (CASE WHEN A.LIQUOR_CODE = '20' AND SUM(A.PRDT_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0)) > 0
+		    		THEN SUM(A.NEW_BOTL_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0)) / SUM(A.PRDT_QTY - NVL(B.LIQUEUR_PRDT_QTY, 0))
+		            ELSE 0
+		            END) AS ADJ_NEW_BOTL_RATE
+		    
+		    -- 신병사용율
+		    -- 신병사용량 / 생산량
+		    , (CASE WHEN SUM(A.PRDT_QTY) > 0 THEN SUM(A.NEW_BOTL_QTY) / SUM(A.PRDT_QTY)
+		            ELSE 0
+		            END) AS NEW_BOTL_RATE
+		    
+		    -- 혼입불파병율
+		    -- 혼입량이 음수 -> (불병량 + 결감량 + ABS(혼입량)) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 혼입량이 양수 -> (불병량 + 결감량) / (생산량 - 신병사용량 + 불병량 + 파병량)
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]> 0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0 
+		            THEN (SUM(A.FAULTY_QTY + A.LOSS_QTY) + ABS(SUM(A.MIXED_QTY))) / SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            
+		            WHEN SUM(A.MIXED_QTY) >= 0 
+		             AND SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY) > 0
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) / SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS MIXED_FAULTY_RATE
+		    
+		    -- 혼입율
+		    -- 혼입량이 음수 -> ABS(혼입량) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 그 외 0
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]> 0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0
+		            THEN ABS(SUM(A.MIXED_QTY)) / SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS MIXED_RATE
+		    
+		    -- 불파병율
+		    -- 혼입량이 음수 -> (불병량 + 파병량) / 고병투입량(생산량 + 고병출고량 + 파병량)
+		    -- 그 외 (불병량 + 파병량) / (생산량 - 신병사용량 + 불병량 + 파병량)
+		    , (CASE WHEN SUM(A.MIXED_QTY) <![CDATA[ < ]]>  0 
+		             AND SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY) > 0 
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) /SUM(A.PRDT_QTY + A.OLD_QTY + A.LOSS_QTY)
+		            
+		            WHEN SUM(A.MIXED_QTY) >= 0 
+		             AND SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY) > 0
+		            THEN SUM(A.FAULTY_QTY + A.LOSS_QTY) / SUM(A.PRDT_QTY - A.NEW_BOTL_QTY + A.FAULTY_QTY + A.LOSS_QTY)
+		            ELSE 0
+		            END) AS FAULTY_RATE
+		    
+		    , SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.PRDT_QTY, A.PRDT_CS_QTY))							AS PRDT_QTY -- 생산량
+		    , SUM(NVL(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', B.LIQUEUR_PRDT_QTY, B.LIQUEUR_PRDT_CS_QTY), 0))	AS LIQUEUR_PRDT_QTY -- 과일소주 생산량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.NEW_BOTL_QTY, A.NEW_BOTL_CS_QTY))					AS NEW_BOTL_QTY -- 신병생산량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.MIXED_QTY, A.MIXED_CS_QTY))							AS MIXED_QTY -- 혼입량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.FAULTY_QTY, A.FAULTY_CS_QTY))						AS FAULTY_QTY -- 불병량
+			, SUM(DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', A.LOSS_QTY, A.LOSS_CS_QTY))							AS LOSS_QTY -- 결감량
+		    
+		    , (CASE WHEN GROUPING_ID(A.BRAND_CODE) = 1 THEN 'TOTAL'
+		            ELSE NULL
+		            END) AS "Def"
+		FROM
+		(
+		    -- 일자, 사업부문, 용량, 브랜드, 공장별 용기정보
+		    SELECT
+		          AB.PERIOD_YYYYMMDD
+		        , AA.LIQUOR_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.ORG_CODE
+		        
+		        -- 고병 생산량(고병의 출고_생산)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_생산' THEN AB.QTY
+		                   ELSE 0
+		                   END) AS PRDT_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_생산' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS PRDT_CS_QTY
+		                
+		        -- 신병사용량(신병 출고_대체 - 신병 입고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS NEW_BOTL_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS NEW_BOTL_CS_QTY
+		                
+		        -- 고병출고량(고병 출고_대체 - 고병 입고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS OLD_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS OLD_CS_QTY
+		                
+		        -- 불병량(불병 입고_대체 - 불병 출고_대체)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS FAULTY_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY' AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS FAULTY_CS_QTY
+		                
+		        -- 파병량(고병 출고_결감_기타)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_결감_기타' THEN AB.QTY
+		                   ELSE 0
+		                   END) AS LOSS_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD' AND AB.TRANSACTION_TYPE_CODE = '출고_결감_기타' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS LOSS_CS_QTY
+		
+		        -- 혼입량(고병 입고_대체 -  고병 출고_대체 - 신병사용량 + 불병량)
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '입고_대체' THEN AB.QTY
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '출고_대체' THEN AB.QTY * -1
+		                   ELSE 0
+		                   END) AS MIXED_QTY
+		        , SUM(CASE WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'OLD'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'NEW'     AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '입고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN AB.QTY / AA.PBOX_PACKING_UNIT
+		                   WHEN AA.BOTL_TYPE = 'FAULTY'  AND AB.TRANSACTION_TYPE_CODE = '출고_대체' AND NVL(AA.PBOX_PACKING_UNIT, 0) != 0 THEN (AB.QTY * -1) / AA.PBOX_PACKING_UNIT
+		                   ELSE 0
+		                   END) AS MIXED_CS_QTY
+		    FROM SCMU.W_SOP_TB_VESSEL_M AA
+		
+		    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.ITEM_CODE = AA.ITEM_CODE 
+		
+		    WHERE 1 = 1
+		        AND AA.LIQUOR_CODE   = #{liquorCode, jdbcType=VARCHAR}
+		        AND AA.VESSEL_CODE   = '1'
+		        AND AA.COMPANY_TYPE  = 'OWNER'
+		        AND AA.USE_YN        = 'Y'
+		        
+				AND AA.VOLUME_VALUE  IN
+                <foreach collection="volumeValue" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+                
+                AND AA.BRAND_CODE	IN
+                <foreach collection="brandCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+
+		        AND AB.PERIOD_YYYYMMDD  BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+		        AND AB.TRANSACTION_TYPE_CODE IN ('출고_결감_기타', '출고_대체', '입고_대체', '출고_생산')
+		        AND AB.ORG_TYPE     = 'MFG'
+				AND AB.ORG_CODE      IN
+               <foreach collection="mfgCode" item="i" open="(" close=")" separator=",">
+                   #{i, jdbcType=VARCHAR}
+               </foreach>
+               
+		        AND AB.QTY              != 0
+		    GROUP BY AB.PERIOD_YYYYMMDD, AA.LIQUOR_CODE, AA.VOLUME_VALUE, AA.BRAND_CODE, AB.ORG_CODE
+		) A
+		
+		LEFT JOIN
+		(
+		    -- 생산,재고 마트에서 과일소주 생산량 추출
+		    -- 360 수출만 해당
+		    -- 브랜드 매핑
+		    -- 환산 C/S = 단순 C/S * 환산지수
+		    SELECT
+		          BA.PERIOD_YYYYMMDD
+		        , BA.LIQUOR_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE AS BRAND_CODE, BA.ORG_CODE
+		        , SUM(BA.PRDT_ACTUAL_QTY * NVL(BB.PACKING_UNIT, 0)) 		AS LIQUEUR_PRDT_QTY
+		        , SUM(BA.PRDT_ACTUAL_QTY * NVL(BB.UOM_CONVERSION_VALUE, 0)) AS LIQUEUR_PRDT_CS_QTY
+		    FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F BA
+		    
+		    INNER JOIN EDW.W_CM_TB_FG_ITEM_M BB ON BB.SEGMENT3     = '리큐르'
+		                                       AND BB.ITEM_TYPE    = 'FG'
+		                                       AND BB.ITEM_STATUS  = 'Active'
+		                                       AND BB.DOM_EXP_CODE = '1'
+		                                       AND BB.ITEM_CODE    = BA.ITEM_CODE
+		                                    
+			INNER JOIN SCMU.W_SOP_TB_VESSEL_BRAND_MAP_M BC ON BC.BRAND_CODE   = BA.BRAND_CODE
+                                                          AND BC.VOLUME_VALUE = BA.VOLUME_VALUE
+		    WHERE 1 = 1
+		        AND BA.PERIOD_YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+		        AND BA.LIQUOR_CODE     = #{liquorCode, jdbcType=VARCHAR}
+		        AND BA.VESSEL_CODE     = '1'
+		        AND BA.VOLUME_VALUE    = '360'
+		        AND BA.ORG_TYPE        = 'MFG'
+		        
+                AND BA.ORG_CODE        IN
+                <foreach collection="mfgCode" item="i" open="(" close=")" separator=",">
+                    #{i, jdbcType=VARCHAR}
+                </foreach>
+		
+		    GROUP BY BA.PERIOD_YYYYMMDD, BA.LIQUOR_CODE, BA.VOLUME_VALUE, BC.VESSEL_BRAND_CODE, BA.ORG_CODE
+		) B ON B.PERIOD_YYYYMMDD = A.PERIOD_YYYYMMDD
+		   AND B.LIQUOR_CODE     = A.LIQUOR_CODE
+		   AND B.VOLUME_VALUE    = A.VOLUME_VALUE
+		   AND B.BRAND_CODE      = A.BRAND_CODE
+		   AND B.ORG_CODE        = A.ORG_CODE
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M C ON C.LIQUOR_CODE = A.LIQUOR_CODE
+		
+		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M D ON D.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                    AND D.USE_YN     = 'Y'
+		                                    AND D.CODE       = A.BRAND_CODE
+		                                    
+		LEFT JOIN EDW.W_CM_TB_MFG_M E ON E.MFG_CODE = A.ORG_CODE
+		
+		GROUP BY GROUPING SETS (
+		                            (A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE, A.BRAND_CODE, A.ORG_CODE),
+		                            (A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE)
+		                        )
+		ORDER BY A.PERIOD_YYYYMMDD, A.LIQUOR_CODE, A.VOLUME_VALUE, DECODE(GROUPING_ID(A.BRAND_CODE), 1, -1, MAX(D.SEQ)), A.ORG_CODE
+	</select>
+</mapper>

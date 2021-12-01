@@ -1,7 +1,0 @@
-package kr.co.softcampus.beans;
-
-public class DataBean2 {
-	
-	private int data1;
-	private int data2;
-}

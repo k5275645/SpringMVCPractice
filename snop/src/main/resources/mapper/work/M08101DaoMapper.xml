@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 주단위 생산 CAPA 설정 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08101DaoMapper">
+    
+    <!-- Header 조회 -->
+    <select id="searchHeader" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M08101DaoMapper.searchHeader */
+		      T1.CODE											 AS CODE
+		    , 'COL' || (ROW_NUMBER() OVER (ORDER BY T1.SEQ) - 1) AS NAME
+		    , (CASE WHEN ROW_NUMBER() OVER (ORDER BY T1.SEQ) = 1 THEN '근무형태'
+		            ELSE NULL
+		            END) AS HEADER1_DESC
+		            
+		    , (CASE WHEN ROW_NUMBER() OVER (ORDER BY T1.SEQ) = 1 THEN COUNT(1) OVER (PARTITION BY 1)
+		            ELSE NULL
+		            END) AS HEADER1_SPAN
+		            
+		    , T1.SEGMENT4 AS HEADER2_DESC
+		    
+		FROM SCMU.W_SOP_TB_COM_CODE_M T1
+		
+		WHERE 1 = 1
+		    AND T1.GROUP_CODE = 'SFT_PTRN_DTY'
+		    AND T1.USE_YN = 'Y'
+		    AND T1.SEGMENT2 = #{liquorCd, jdbcType=VARCHAR}
+    </select>
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M08101DaoMapper.search */
+		      T1.CODE            	  AS WEEK_WORK_DCNT_TP_CODE
+		    , MAX(T1.SEGMENT2)        AS LIQUOR_CODE
+		    , MAX(T3.LIQUOR_DESC)     AS LIQUOR_DESC
+		    , MAX(T1.SEGMENT4)		  AS WEEK_WORK_DCNT_INT
+		    , MAX(T1.SEGMENT5)        AS WEEK_WORK_DCNT
+		    , MAX(T1.SEGMENT7)        AS TP_CODE
+		    , MAX(T1.DESCRIPTION)     AS DESCRIPTION
+		
+		    <foreach collection="header" item="list" index="i">
+			, SUM(CASE WHEN T2.SFT_PTRN_DTY_CODE = #{list.CODE, jdbcType=VARCHAR} THEN T2.WORK_DCNT
+					   ELSE 0
+					   END) AS "${list.CODE}"
+			</foreach>
+		                       
+		FROM SCMU.W_SOP_TB_COM_CODE_M T1
+		
+		LEFT JOIN SCMU.W_SOP_TB_WEEK_PRDT_STD_M T2 ON T2.WEEK_WORK_DCNT_TP_CODE = T1.CODE
+		
+		LEFT JOIN EDW.W_CM_TB_LIQUOR_M T3 ON T3.LIQUOR_CODE = T1.SEGMENT2
+		
+		WHERE 1 = 1
+		    AND T1.GROUP_CODE = 'WEEK_WORK_DCNT_TP'
+		    AND T1.USE_YN = 'Y'
+		    AND T1.SEGMENT2 = #{liquorCd, jdbcType=VARCHAR}
+		
+		GROUP BY T1.CODE
+		ORDER BY T1.CODE, MAX(T1.SEQ)
+    </select>
+    
+    <!-- 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH UPDATE_TBL AS /* com.hitejinro.snop.work.dao.M08101DaoMapper.validate */
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.WEEK_WORK_DCNT_TP_CODE, jdbcType=VARCHAR}	AS WEEK_WORK_DCNT_TP_CODE
+    				, #{list.SFT_PTRN_DTY_CODE, jdbcType=VARCHAR}		AS SFT_PTRN_DTY_CODE
+    				, #{list.WORK_DCNT, jdbcType=VARCHAR}				AS WORK_DCNT
+    				, #{list.LIQUOR_CODE, jdbcType=VARCHAR}				AS LIQUOR_CODE
+    			FROM DUAL
+    		</foreach>
+    	)
+    	SELECT
+    		  A.WEEK_WORK_DCNT_TP_CODE
+    		, A.SFT_PTRN_DTY_CODE
+    		, A.IDX || '번째 행에 오류 : ' || SUBSTR(A.WEEK_WORK_DCNT_TP_CODE_ERR || A.SFT_PTRN_DTY_CODE_ERR || WORK_DCNT_ERR || LIQUOR_CODE_ERR, 3) AS ERR_MSG
+    	FROM
+    	(
+    		SELECT
+    			  ROWNUM AS IDX
+    			, T1.WEEK_WORK_DCNT_TP_CODE
+    			, T1.SFT_PTRN_DTY_CODE
+    			
+    			, (CASE WHEN T1.WEEK_WORK_DCNT_TP_CODE IS NULL THEN ', 주간근무일수유형 코드는 필수값'
+    					WHEN T2.CODE IS NULL 				   THEN ', 유효하지않은 주간근무일수유형 코드'
+    					ELSE ''
+    			   END) AS WEEK_WORK_DCNT_TP_CODE_ERR
+    			   
+    			, (CASE WHEN T1.SFT_PTRN_DTY_CODE IS NULL THEN ', 근무형태 코드는 필수값'
+    					WHEN T3.CODE IS NULL 			  THEN ', 유효하지않은 근무형태 코드'
+    					ELSE ''
+    			   END) AS SFT_PTRN_DTY_CODE_ERR
+    			   
+    			, (CASE WHEN T1.WORK_DCNT IS NULL 			THEN ', 근무일수는 필수값'
+    					WHEN T1.WORK_DCNT <![CDATA[ < ]]> 0 THEN ', 근무일수는 음수 불가'
+    					ELSE ''
+    			   END) AS WORK_DCNT_ERR
+    			   
+    			, (CASE WHEN T1.LIQUOR_CODE IS NULL THEN ', 사업부문코드는 필수값'
+    					WHEN T4.LIQUOR_CODE IS NULL THEN ', 유효하지않은 사업부문코드'
+    				   	ELSE ''
+    			   END) AS LIQUOR_CODE_ERR
+    			   
+    		FROM UPDATE_TBL T1
+    		
+    		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'WEEK_WORK_DCNT_TP'
+    											 AND T2.CODE = T1.WEEK_WORK_DCNT_TP_CODE
+    											 
+    		LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T3 ON T3.GROUP_CODE = 'SFT_PTRN_DTY'
+    											 AND T3.CODE	   = T1.SFT_PTRN_DTY_CODE
+    											 
+			LEFT JOIN EDW.W_CM_TB_LIQUOR_M T4 ON T4.LIQUOR_CODE = T1.LIQUOR_CODE
+    	) A
+    	WHERE 1 = 1
+    		AND SUBSTR(A.WEEK_WORK_DCNT_TP_CODE_ERR || A.SFT_PTRN_DTY_CODE_ERR || WORK_DCNT_ERR || LIQUOR_CODE_ERR, 3) IS NOT NULL
+    	ORDER BY A.IDX
+    </select>
+    
+    <!-- 저장 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_WEEK_PRDT_STD_M T /* com.hitejinro.snop.work.dao.M08101DaoMapper.save */
+    	USING
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.WEEK_WORK_DCNT_TP_CODE, jdbcType=VARCHAR}	AS WEEK_WORK_DCNT_TP_CODE
+    				, #{list.SFT_PTRN_DTY_CODE, jdbcType=VARCHAR}		AS SFT_PTRN_DTY_CODE
+    				, #{list.WORK_DCNT, jdbcType=VARCHAR}				AS WORK_DCNT
+    				, #{list.LIQUOR_CODE, jdbcType=VARCHAR}				AS LIQUOR_CODE
+    			FROM DUAL
+    		</foreach>
+    	) S ON (
+    				  	  T.WEEK_WORK_DCNT_TP_CODE = S.WEEK_WORK_DCNT_TP_CODE
+    				  AND T.SFT_PTRN_DTY_CODE	   = S.SFT_PTRN_DTY_CODE
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.WORK_DCNT 		 = S.WORK_DCNT
+				, T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+    			, T.LAST_UPDATE_DATE = SYSDATE
+			
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.WEEK_WORK_DCNT_TP_CODE, T.SFT_PTRN_DTY_CODE, T.WORK_DCNT, T.LIQUOR_CODE
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.WEEK_WORK_DCNT_TP_CODE, S.SFT_PTRN_DTY_CODE, S.WORK_DCNT, S.LIQUOR_CODE
+		    , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+    <!-- 팝업 > 조회 -->
+    <select id="searchGroupCd" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M08101DaoMapper.search */
+		      T1.CODE			AS CODE
+		    , T1.NAME			AS NAME
+		    , T1.DESCRIPTION	AS DESCRIPTION
+		    , T1.SEGMENT1		AS SEGMENT1
+		    , T1.SEGMENT2		AS SEGMENT2
+		    , T1.SEGMENT3		AS SEGMENT3
+		    , T1.SEGMENT4		AS SEGMENT4
+		    , T1.SEGMENT6		AS SEGMENT6
+		    , T1.SEGMENT7		AS SEGMENT7
+		    , T1.SEQ			AS SEQ
+		    , T1.USE_YN			AS USE_YN
+		FROM SCMU.W_SOP_TB_COM_CODE_M T1
+		WHERE 1 = 1
+		    AND GROUP_CODE = 'WEEK_WORK_DCNT_TP'
+		ORDER BY T1.CODE, T1.SEQ
+    </select>
+    
+    <!-- 팝업 > 조회 -->
+    <update id="updateGroupCd" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_COM_CODE_M T /* com.hitejinro.snop.work.dao.M08101DaoMapper.search */
+    	USING
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i"> 
+    			SELECT
+    				  #{list.CODE, jdbcType=VARCHAR}			AS CODE
+    				, #{list.NAME, jdbcType=VARCHAR}			AS NAME
+    				, #{list.DESCRIPTION, jdbcType=VARCHAR}		AS DESCRIPTION
+    				, #{list.SEQ, jdbcType=VARCHAR}				AS SEQ
+    				, #{list.USE_YN, jdbcType=VARCHAR}			AS USE_YN
+    				, #{list.SEGMENT1, jdbcType=VARCHAR}		AS SEGMENT1
+   					, #{list.SEGMENT2, jdbcType=VARCHAR}		AS SEGMENT2
+   					, #{list.SEGMENT3, jdbcType=VARCHAR}		AS SEGMENT3
+   					, #{list.SEGMENT4, jdbcType=VARCHAR}		AS SEGMENT4
+   					, #{list.SEGMENT6, jdbcType=VARCHAR}		AS SEGMENT6
+   					, #{list.SEGMENT7, jdbcType=VARCHAR}		AS SEGMENT7
+    			FROM DUAL
+    		</foreach>
+    	) S ON (
+    					 T.GROUP_CODE = 'WEEK_WORK_DCNT_TP'
+    				 AND T.CODE		  = S.CODE
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.NAME 			 = S.NAME
+				, T.DESCRIPTION 	 = S.DESCRIPTION
+				, T.SEQ 			 = S.SEQ
+				, T.USE_YN			 = S.USE_YN
+				, T.SEGMENT2 		 = S.SEGMENT2
+				, T.SEGMENT4 		 = S.SEGMENT4
+				, T.SEGMENT5 		 = TO_CHAR(S.SEGMENT4 || '일')
+				, T.SEGMENT7 		 = S.SEGMENT7
+				, T.LAST_UPDATED_BY  = #{userId, jdbcType=VARCHAR}
+    			, T.LAST_UPDATE_DATE = SYSDATE
+    			
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.GROUP_CODE, T.CODE, T.NAME, T.DESCRIPTION, T.SEQ, T.USE_YN
+			, T.SEGMENT1, T.SEGMENT2, T.SEGMENT3, T.SEGMENT4, T.SEGMENT5, T.SEGMENT6, T.SEGMENT7
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  'WEEK_WORK_DCNT_TP', S.CODE, S.NAME, S.DESCRIPTION, S.SEQ, S.USE_YN
+			, S.SEGMENT1, S.SEGMENT2, S.SEGMENT3, S.SEGMENT4, TO_CHAR(S.SEGMENT4 || '일'), S.SEGMENT6, S.SEGMENT7
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+</mapper>

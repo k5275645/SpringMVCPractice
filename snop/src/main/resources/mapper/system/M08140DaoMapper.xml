@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 사용자 관리 -->
+<mapper namespace="com.hitejinro.snop.system.dao.M08140DaoMapper">
+
+    <!-- 사용자 조회 -->
+    <select id ="search" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.system.dao.M08140DaoMapper.search */
+           T1.EMPLOYEE_NUMBER, T1.USER_NM, T1.USER_ID
+         , T1.DEPT_CD, T1.DEPT_NM
+         , DECODE(T2.AUTH_CD, NULL, 'N/A', T2.AUTH_CD) AS AUTH_CD
+         , T1.POSITION_CODE, T1.POSITION_NAME
+         , T1.DUTY_CODE, T1.DUTY_NAME
+         , T1.OFFICE_EMAIL
+         , T1.MOBILE_PHONE
+         , T1.USE_YN
+         , T1.AUTO_AUTH_LOCK_YN
+         , T1.AUTH_ORG_LEVEL        -- 조직 레벨 권한 : 공통그룹코드=AUTH_ORG_LEVEL 참고. 사용자의 접근 가능한 조직 레벨
+         , T1.AUTH_ORG_CODE         -- 권한 조직 코드 : 조직레벨권한에 따라서 생성된, 접근 가능한 조직코드
+         , T3.AUTH_ADD_ORG_CODE_LIST
+         , TO_CHAR(T1.LAST_UPDATE_DATE, 'YYYY-MM-DD HH24:MI:SS') AS LAST_UPDATE_DATE
+         , T1.LAST_UPDATED_BY
+      FROM SCMU.W_SOP_TB_USER_M      T1
+ LEFT JOIN SCMU.W_SOP_TB_AUTH_USER_M T2
+        ON T2.USER_ID = T1.USER_ID
+ LEFT JOIN (    -- T3. 사용자의 추가 조직권한 리스트(권역/지점)
+                SELECT USER_ID
+                     , LISTAGG(ORG_CODE, ';') WITHIN GROUP(ORDER BY ORG_CODE) AS AUTH_ADD_ORG_CODE_LIST
+                  FROM SCMU.W_SOP_TB_USER_AUTH_ADD_DEPT_M
+                 WHERE 1 = 1
+                 GROUP BY USER_ID
+           )                         T3
+        ON T3.USER_ID = T1.USER_ID
+ LEFT JOIN EDW.W_HR_TB_DEPARTMENT_M  T4
+        ON T4.DEPARTMENT_CODE = T1.DEPT_CD
+     WHERE 1 = 1
+       AND T1.USE_YN = DECODE(#{useYN, jdbcType=VARCHAR}, '!ALL', T1.USE_YN, #{useYN, jdbcType=VARCHAR})
+       AND (
+                -- 검색조건이 NULL ->  전체 조회
+                (#{searchType} IS NULL AND 1 = 1)
+                OR
+                -- 검색조건이 = 'USER_ID' -> 사번 조회
+                (#{searchType} = 'USER_ID' AND T1.USER_ID LIKE ('%' || #{searchWord, jdbcType=VARCHAR} || '%'))
+                OR
+                -- 검색조건이 = 'USER_NM' -> 이름 조회
+                (#{searchType} = 'USER_NM' AND T1.USER_NM LIKE ('%' || #{searchWord, jdbcType=VARCHAR} || '%'))
+                OR
+                -- 검색조건이 = 'DEPT_NM' -> 부서명 조회
+                (#{searchType} = 'DEPT_NM' AND T1.DEPT_NM LIKE ('%' || #{searchWord, jdbcType=VARCHAR} || '%'))
+           )
+       AND (    -- 권한존재여부
+                (#{hasAuth, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{hasAuth, jdbcType=VARCHAR} = 'Y' AND T2.AUTH_CD IS NOT NULL)
+                OR
+                (#{hasAuth, jdbcType=VARCHAR} = 'N' AND T2.AUTH_CD IS NULL)
+           )
+       AND (    -- 예외조직권한 여부
+                (#{hasAuthAddOrg, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+                OR
+                (#{hasAuthAddOrg, jdbcType=VARCHAR} = 'Y' AND T3.AUTH_ADD_ORG_CODE_LIST IS NOT NULL)
+                OR
+                (#{hasAuthAddOrg, jdbcType=VARCHAR} = 'N' AND T3.AUTH_ADD_ORG_CODE_LIST IS NULL)
+           )
+     ORDER BY CASE WHEN T2.AUTH_CD IN ('A0000', 'A0010') THEN 1 ELSE -1 END -- 관리자 계정은 뒤로
+            , CASE WHEN T1.AUTO_AUTH_LOCK_YN = 'Y' THEN -1 ELSE 1 END -- 자동권한잠금여부가 수동을 우선 표현(중요해서)
+            , CASE WHEN T3.AUTH_ADD_ORG_CODE_LIST IS NOT NULL THEN -1 ELSE 1 END -- 추가 조직권한이 존재하면 우선 표현(중요)
+            , T2.AUTH_CD, T4.ORDER_NO, T1.DEPT_NM, T1.DEPT_CD
+            , T1.USER_ID, T1.USER_NM
+    </select>
+    
+    <!-- 권한 리스트 조회 -->
+    <select id="selectAuthList" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.system.dao.M08140DaoMapper.selectAuthList */
+       T1.AUTH_CD AS CODE
+     , T1.AUTH_NM AS NAME
+  FROM SCMU.W_SOP_TB_AUTH_M T1
+ WHERE 1 = 1
+   AND T1.USE_YN  = 'Y'
+ ORDER BY T1.AUTH_CD
+    </select>
+    
+    <!-- 조직(권역/지점) 리스트 조회 -->
+    <select id="selectOrgList" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.system.dao.M08140DaoMapper.selectOrgList */
+           DEPARTMENT_CODE, DEPARTMENT_KOREAN_NAME
+         , DEPARTMENT_TYPE, DEPARTMENT_LEVEL, ORDER_NO
+         , PRE_DEPARTMENT_CODE, PRE_DEPARTMENT_KOREAN_NAME
+         , SUBSTR(SYS_CONNECT_BY_PATH(DEPARTMENT_KOREAN_NAME, ' > ') , 3) AS DEPARTMENT_NAME_PATH
+         , LEVEL AS DEPARTMENT_TREE_LEVEL
+         , CASE WHEN DEPARTMENT_TYPE = '지점' THEN DEPARTMENT_CODE
+                WHEN DEPARTMENT_TYPE = '파트' THEN PRE_DEPARTMENT_CODE
+           END      AS DEPT_CODE -- 지점코드
+      FROM EDW.W_HR_TB_DEPARTMENT_M
+     WHERE 1 = 1
+       AND OU_CODE      = 'HJ0'
+       AND ENABLED_FLAG = 'Y'
+       AND DEPARTMENT_TYPE IN ('권역', '지점')
+       AND DEPT_TYPE       = '지점'
+START WITH PRE_DEPARTMENT_CODE IS NULL
+           AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+   CONNECT BY NOCYCLE PRIOR DEPARTMENT_CODE = PRE_DEPARTMENT_CODE
+                            AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+   ORDER SIBLINGS BY ORDER_NO, DEPARTMENT_CODE
+    </select>
+
+
+    <!-- 사용자 사용여부/자동권한관리 수정 -->
+    <update id="update" parameterType="map">
+MERGE /* com.hitejinro.snop.system.dao.M08140DaoMapper.update */
+ INTO SCMU.W_SOP_TB_USER_M T
+USING (
+            WITH DEPT_TREE_TBL AS (
+                    SELECT DEPARTMENT_CODE, DEPARTMENT_KOREAN_NAME, DEPARTMENT_TYPE, DEPARTMENT_LEVEL
+                         , SUBSTR(SYS_CONNECT_BY_PATH(DEPARTMENT_KOREAN_NAME, ' > ') , 3)   AS DEPARTMENT_NAME_PATH
+                         , SYS_CONNECT_BY_PATH(DEPARTMENT_CODE, '|') || '|'                 AS DEPARTMENT_CODE_PATH
+                      FROM EDW.W_HR_TB_DEPARTMENT_M
+                     WHERE 1 = 1
+                       AND OU_CODE      = 'HJ0'
+                       AND ENABLED_FLAG = 'Y'
+                       AND DEPT_TYPE    = '지점' -- 영업만 대상
+                       -- 파트에서 상위로 올라가게 구성. 그래야, 지점/권역을 찾을 수 있음
+                START WITH DEPARTMENT_TYPE = '파트'
+                           AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+                   CONNECT BY NOCYCLE PRIOR PRE_DEPARTMENT_CODE = DEPARTMENT_CODE
+                                            AND OU_CODE = 'HJ0' AND ENABLED_FLAG = 'Y'
+                   ORDER SIBLINGS BY ORDER_NO, DEPARTMENT_CODE
+            )
+            SELECT SA.USER_ID, SA.USE_YN, SA.AUTO_AUTH_LOCK_YN, SA.AUTH_ORG_LEVEL
+                 , CASE WHEN SA.AUTH_ORG_LEVEL = 'OU'        THEN 'HJ0'
+                        WHEN SA.AUTH_ORG_LEVEL = 'LOGISTICS' THEN NVL(SB.LOGISTICS_CENTER, '-')
+                        WHEN SA.AUTH_ORG_LEVEL = 'MFG'       THEN CASE WHEN SB.DEPARTMENT_NAME LIKE '강원%' THEN 'MH1'
+                                                                       WHEN SB.DEPARTMENT_NAME LIKE '전주%' THEN 'MH3'
+                                                                       WHEN SB.DEPARTMENT_NAME LIKE '이천%' THEN 'MJ1'
+                                                                       WHEN SB.DEPARTMENT_NAME LIKE '청주%' THEN 'MJ2'
+                                                                       WHEN SB.DEPARTMENT_NAME LIKE '익산%' THEN 'MJ3'
+                                                                       WHEN SB.DEPARTMENT_NAME LIKE '마산%' THEN 'MJ4'
+                                                                       ELSE '-'
+                                                                  END
+                        WHEN SA.AUTH_ORG_LEVEL = 'TERRITORY' THEN NVL((
+                                                                            SELECT Z.DEPARTMENT_CODE
+                                                                              FROM DEPT_TREE_TBL Z
+                                                                             WHERE 1 = 1
+                                                                               AND Z.DEPARTMENT_TYPE = '권역'
+                                                                               AND INSTR(Z.DEPARTMENT_CODE_PATH, '|' || SB.DEPARTMENT_CODE || '|') > 0
+                                                                               AND ROWNUM = 1
+                                                                      ), '-')
+                        WHEN SA.AUTH_ORG_LEVEL = 'DEPARTMENT' THEN NVL((
+                                                                            SELECT Z.DEPARTMENT_CODE
+                                                                              FROM DEPT_TREE_TBL Z
+                                                                             WHERE 1 = 1
+                                                                               AND Z.DEPARTMENT_TYPE = '지점'
+                                                                               AND INSTR(Z.DEPARTMENT_CODE_PATH, '|' || SB.DEPARTMENT_CODE || '|') > 0
+                                                                               AND ROWNUM = 1
+                                                                       ), '-')
+                        ELSE '-'
+                   END AS AUTH_ORG_CODE
+              FROM (
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+SELECT #{list.USER_ID, jdbcType=VARCHAR}             AS USER_ID
+     , #{list.USE_YN, jdbcType=VARCHAR}              AS USE_YN
+     , #{list.AUTO_AUTH_LOCK_YN, jdbcType=VARCHAR}   AS AUTO_AUTH_LOCK_YN
+     , #{list.AUTH_ORG_LEVEL, jdbcType=VARCHAR}      AS AUTH_ORG_LEVEL
+  FROM DUAL
+        </foreach>
+                   )                            SA
+         LEFT JOIN EDW.W_HR_TB_EMPLOYEE_M       SB
+                ON SB.EMPLOYEE_NUMBER = SA.USER_ID
+               AND SB.OU_CODE = 'HJ0'
+         LEFT JOIN EDW.W_HR_TB_DEPARTMENT_M     SC
+                ON SC.OU_CODE = SB.OU_CODE
+               AND SC.DEPARTMENT_CODE = SB.DEPARTMENT_CODE
+             WHERE 1 = 1
+      ) S
+    ON (T.USER_ID = S.USER_ID)
+        WHEN MATCHED THEN
+            UPDATE SET
+                  T.USE_YN             = S.USE_YN
+                , T.AUTO_AUTH_LOCK_YN  = S.AUTO_AUTH_LOCK_YN
+                , T.AUTH_ORG_LEVEL     = S.AUTH_ORG_LEVEL
+                , T.AUTH_ORG_CODE      = CASE WHEN T.AUTH_ORG_LEVEL = S.AUTH_ORG_LEVEL THEN T.AUTH_ORG_CODE
+                                              ELSE S.AUTH_ORG_CODE
+                                         END
+                , T.LAST_UPDATED_BY    = CASE WHEN T.USE_YN != S.USE_YN OR T.AUTO_AUTH_LOCK_YN != S.AUTO_AUTH_LOCK_YN OR T.AUTH_ORG_LEVEL != S.AUTH_ORG_LEVEL THEN #{userId, jdbcType=VARCHAR}
+                                              ELSE T.LAST_UPDATED_BY
+                                         END
+                , T.LAST_UPDATE_DATE   = CASE WHEN T.USE_YN != S.USE_YN OR T.AUTO_AUTH_LOCK_YN != S.AUTO_AUTH_LOCK_YN OR T.AUTH_ORG_LEVEL != S.AUTH_ORG_LEVEL THEN SYSDATE
+                                              ELSE T.LAST_UPDATE_DATE
+                                         END
+    </update>
+    
+    <!-- 권한/사용자 삭제 -->
+    <delete id="deleteAuthUser" parameterType="map">
+        DELETE /* com.hitejinro.snop.system.dao.M08140DaoMapper.deleteAuthUser */
+        FROM SCMU.W_SOP_TB_AUTH_USER_M T
+        WHERE 1 = 1
+            AND EXISTS
+            (
+                SELECT S.USER_ID, S.USE_YN
+                FROM
+                (
+                    <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+                        SELECT
+                              #{list.USER_ID, jdbcType=VARCHAR}         AS USER_ID
+                            , #{list.AUTH_CD, jdbcType=VARCHAR}         AS AUTH_CD
+                            , #{list.USE_YN, jdbcType=VARCHAR}          AS USE_YN
+                        FROM DUAL
+                    </foreach>
+                ) S
+                WHERE 1 = 1
+                    AND 
+                    (
+                        S.AUTH_CD = 'N/A'
+                        OR
+                        S.USE_YN = 'N'
+                    )
+                    AND T.USER_ID = S.USER_ID
+            )
+    </delete>
+    
+    <!-- 권한/사용자 추가/수정 -->
+    <update id="updateAuthUser" parameterType="map">
+        MERGE INTO SCMU.W_SOP_TB_AUTH_USER_M T1 /* com.hitejinro.snop.system.dao.M08140DaoMapper.updateAuth */
+        USING
+        (
+            SELECT
+                S1.USER_ID, S1.AUTH_CD
+            FROM
+            (
+                <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+                    SELECT
+                          #{list.USER_ID, jdbcType=VARCHAR}         AS USER_ID
+                        , #{list.AUTH_CD, jdbcType=VARCHAR}         AS AUTH_CD
+                        , #{list.USE_YN, jdbcType=VARCHAR}          AS USE_YN
+                    FROM DUAL
+                </foreach>
+            ) S1
+            WHERE 1 = 1
+                AND S1.AUTH_CD != 'N/A'
+                AND S1.USE_YN  = 'Y'
+        ) S ON (
+                    T1.USER_ID = S.USER_ID
+                )
+        WHEN MATCHED THEN
+            UPDATE SET
+                    T1.AUTH_CD = S.AUTH_CD
+        WHEN NOT MATCHED THEN
+            INSERT
+            (
+                  T1.USER_ID, T1.AUTH_CD, T1.CREATED_BY, T1.CREATION_DATE
+            )
+            VALUES
+            (
+                  S.USER_ID, S.AUTH_CD, #{userId, jdbcType=VARCHAR}, SYSDATE
+            )
+    </update>
+
+
+    <!-- 데이터 저장 : 사용자의 추가 조직권한(권역/지점) 추가(전체 삭제 후 추가 방식) -->
+    <update id="insertUserAuthAddDept" parameterType="map">
+INSERT /* com.hitejinro.snop.work.dao.M08140DaoMapper.insertUserAuthAddDept */
+  INTO SCMU.W_SOP_TB_USER_AUTH_ADD_DEPT_M
+       (USER_ID, ORG_CODE
+       , CREATED_BY, CREATION_DATE)
+    SELECT A.USER_ID, A.ORG_CODE
+         , #{userId, jdbcType=VARCHAR} AS CREATED_BY, SYSDATE AS CREATION_DATE
+      FROM (
+                SELECT #{USER_ID, jdbcType=VARCHAR} AS USER_ID
+                     , REGEXP_SUBSTR(#{AUTH_ADD_ORG_CODE_LIST, jdbcType=VARCHAR}, '[^;]+', 1, LEVEL) AS ORG_CODE
+                  FROM DUAL
+               CONNECT BY REGEXP_SUBSTR(#{AUTH_ADD_ORG_CODE_LIST, jdbcType=VARCHAR}, '[^;]+', 1, LEVEL) IS NOT NULL
+           ) A
+     WHERE 1 = 1
+       AND ORG_CODE IS NOT NULL -- 비어있을때는 추가하지 않기 위해서
+    </update>
+    
+    <!-- 데이터 저장 : 사용자의 추가 조직권한(권역/지점) 삭제(전체 삭제 후 추가 방식) -->
+    <delete id="deleteUserAuthAddDept" parameterType="map">
+DELETE /* com.hitejinro.snop.work.dao.M08140DaoMapper.deleteUserAuthAddDept */
+  FROM SCMU.W_SOP_TB_USER_AUTH_ADD_DEPT_M
+ WHERE 1 = 1
+   AND USER_ID = #{USER_ID, jdbcType=VARCHAR}
+    </delete>
+    
+</mapper>

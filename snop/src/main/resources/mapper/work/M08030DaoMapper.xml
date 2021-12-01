@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 체화재고 기준정보 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08030DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08030DaoMapper.search */
+		       T1.LIQUOR_CODE
+		     , T1.VESSEL_CODE
+		     , T1.BRAND_CODE
+		     , T1.ITEM_CODE
+		     , T2.DESCRIPTION AS ITEM_NAME
+		     , T1.ITEM_GB_CODE
+		     , T1.EVENT_DATE_FLAG
+		     , T1.START_DAY_CNT
+		     , T1.AGRADE_FROM_DAY_CNT
+		     , T1.AGRADE_TO_DAY_CNT
+		     , T1.BGRADE_FROM_DAY_CNT
+		     , T1.BGRADE_TO_DAY_CNT
+		     , T1.CGRADE_FROM_DAY_CNT
+		     , T1.END_FLAG
+		  FROM SCMU.W_SOP_TB_ACCUM_STOCK_M T1 
+             , EDW.W_CM_TB_FG_ITEM_M T2
+		<if test="eventGb != null and eventGb == '일반'">
+         WHERE T1.ITEM_CODE = T2.ITEM_CODE(+)
+           AND T1.ITEM_CODE = '-'
+		</if>
+		<if test="eventGb != null and eventGb == '기획'">
+         WHERE T1.ITEM_CODE = T2.ITEM_CODE
+		</if>
+		<if test="liquor != null and liquor != '!ALL'">
+           AND T1.LIQUOR_CODE = #{liquor, jdbcType=VARCHAR}
+        </if>
+        <if test="vesselCode != null and vesselCode != '!ALL'">
+           AND T1.VESSEL_CODE = #{vesselCode, jdbcType=VARCHAR}
+        </if>
+        <if test="itemName != null and itemName != ''">
+           AND T2.DESCRIPTION LIKE '%' || #{itemName, jdbcType=VARCHAR} || '%'
+        </if>
+        <if test="endFlag == null or endFlag == ''">
+           AND T1.END_FLAG = 'N'
+        </if>
+         ORDER BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T2.DESCRIPTION
+    </select>
+    
+    <!-- 데이터 저장 : 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH /* com.hitejinro.snop.work.dao.M08030DaoMapper.validate */
+    	UPDATE_TBL AS 
+    	(
+			<foreach collection="saveData" item="list" separator="UNION ALL" index="i">
+				SELECT
+					  #{list.action, jdbcType=VARCHAR}					AS ACTION
+					, #{list.LIQUOR_CODE, jdbcType=VARCHAR}				AS LIQUOR_CODE
+					, #{list.VESSEL_CODE, jdbcType=VARCHAR}				AS VESSEL_CODE
+					, #{list.BRAND_CODE, jdbcType=VARCHAR}				AS BRAND_CODE
+					, #{list.ITEM_CODE, jdbcType=VARCHAR}				AS ITEM_CODE
+				FROM DUAL
+			</foreach>
+    	)
+		SELECT COUNT(1)		AS ERR_CNT
+              , LISTAGG(IDX || '행 :: 사업부문=' || LIQUOR_CODE || ', 용기 코드='|| VESSEL_CODE || ', 브랜드 코드='|| BRAND_CODE  || ', 아이템 코드='|| ITEM_CODE 
+                            ||' :: ' || SUBSTR(ITEM_CODE_ERR || DO_NOT_EXIST_ERR, 3)
+                          , '\r\n') WITHIN GROUP (ORDER BY IDX, LIQUOR_CODE, VESSEL_CODE, BRAND_CODE, ITEM_CODE) AS ERR_MSG
+        FROM
+        (
+            SELECT ROWNUM AS IDX
+                 , T1.LIQUOR_CODE
+                 , T1.VESSEL_CODE
+                 , T1.BRAND_CODE
+                 , T1.ITEM_CODE
+				 , (CASE WHEN T1.ITEM_CODE IS NULL	THEN ', 제품코드는 필수값'
+						 WHEN T1.ACTION = 'insert' AND T2.ITEM_CODE IS NOT NULL THEN ', 중복입력된 항목'
+						 WHEN COUNT(1) OVER (PARTITION BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.BRAND_cODE, T1.ITEM_CODE) > 1      THEN ', 중복입력된 항목'
+						 ELSE ''
+				    END) AS ITEM_CODE_ERR
+				 , (CASE WHEN T1.ITEM_CODE != '-'
+						 AND T3.ITEM_CODE IS NULL THEN ', 존재하지 않는 제품코드'
+						 ELSE ''
+				     END) AS DO_NOT_EXIST_ERR
+			  FROM UPDATE_TBL 								T1
+			  LEFT JOIN (SELECT * FROM SCMU.W_SOP_TB_ACCUM_STOCK_M WHERE END_FLAG = 'N')		T2 
+				     ON T2.LIQUOR_CODE = T1.LIQUOR_CODE 
+				    AND T2.VESSEL_CODE = T1.VESSEL_CODE 
+				    AND T2.BRAND_CODE = T1.BRAND_CODE
+				    AND T2.ITEM_CODE = T1.ITEM_CODE
+			  LEFT JOIN EDW.W_CM_TB_FG_ITEM_M 				T3 
+				     ON T3.ITEM_CODE = T1.ITEM_CODE
+				    AND T1.ITEM_CODE != '-'
+		) A
+		WHERE 1 = 1
+		  AND SUBSTR(A.ITEM_CODE_ERR || DO_NOT_EXIST_ERR, 3) IS NOT NULL
+    </select>
+    
+    <!-- 데이터 저장 : 삭제 -->
+    <delete id="delete" parameterType="map">
+    	DELETE /* com.hitejinro.snop.work.dao.M08030DaoMapper.delete */
+    	  FROM SCMU.W_SOP_TB_ACCUM_STOCK_M T1
+    	 WHERE 1 != 1
+			<foreach collection="deleteList" item="list" separator="or" index="i" open=" or (" close=")">
+			(   T1.LIQUOR_CODE = #{list.LIQUOR_CODE, jdbcType=VARCHAR}
+			AND T1.VESSEL_CODE = #{list.VESSEL_CODE, jdbcType=VARCHAR}
+			AND T1.BRAND_CODE = #{list.BRAND_CODE, jdbcType=VARCHAR}
+			AND T1.ITEM_CODE = #{list.ITEM_CODE, jdbcType=VARCHAR} )
+			</foreach>
+    </delete>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO /* com.hitejinro.snop.system.dao.M08030DaoMapper.update */ 
+    		  SCMU.W_SOP_TB_ACCUM_STOCK_M T 
+    	USING
+    	(
+			<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				SELECT #{list.LIQUOR_CODE, jdbcType=VARCHAR}			AS LIQUOR_CODE
+					 , #{list.VESSEL_CODE, jdbcType=VARCHAR}			AS VESSEL_CODE
+					 , #{list.BRAND_CODE, jdbcType=VARCHAR}				AS BRAND_CODE
+					 , #{list.ITEM_CODE, jdbcType=VARCHAR}				AS ITEM_CODE
+					 , #{list.ITEM_GB_CODE, jdbcType=VARCHAR}			AS ITEM_GB_CODE
+					 , #{list.EVENT_DATE_FLAG, jdbcType=VARCHAR}		AS EVENT_DATE_FLAG
+					 , #{list.START_DAY_CNT, jdbcType=VARCHAR}			AS START_DAY_CNT
+					 , #{list.AGRADE_FROM_DAY_CNT, jdbcType=VARCHAR}	AS AGRADE_FROM_DAY_CNT
+					 , #{list.AGRADE_TO_DAY_CNT, jdbcType=VARCHAR}		AS AGRADE_TO_DAY_CNT
+					 , #{list.BGRADE_FROM_DAY_CNT, jdbcType=VARCHAR}	AS BGRADE_FROM_DAY_CNT
+					 , #{list.BGRADE_TO_DAY_CNT, jdbcType=VARCHAR}		AS BGRADE_TO_DAY_CNT
+					 , #{list.CGRADE_FROM_DAY_CNT, jdbcType=VARCHAR}	AS CGRADE_FROM_DAY_CNT
+					 , #{list.END_FLAG, jdbcType=VARCHAR}				AS END_FLAG
+				  FROM DUAL
+			</foreach>
+    	) S ON (
+    				 T.LIQUOR_CODE = S.LIQUOR_CODE
+    			 AND T.VESSEL_CODE = S.VESSEL_CODE
+    			 AND T.BRAND_CODE = S.BRAND_CODE
+    			 AND T.ITEM_CODE = S.ITEM_CODE
+    			)
+		WHEN MATCHED THEN
+			UPDATE SET
+				  T.ITEM_GB_CODE		= S.ITEM_GB_CODE
+				, T.EVENT_DATE_FLAG	    = S.EVENT_DATE_FLAG
+				, T.START_DAY_CNT		= S.START_DAY_CNT
+				, T.AGRADE_FROM_DAY_CNT	= S.AGRADE_FROM_DAY_CNT
+				, T.AGRADE_TO_DAY_CNT	= S.AGRADE_TO_DAY_CNT
+				, T.BGRADE_FROM_DAY_CNT	= S.BGRADE_FROM_DAY_CNT
+				, T.BGRADE_TO_DAY_CNT	= S.BGRADE_TO_DAY_CNT
+				, T.CGRADE_FROM_DAY_CNT	= S.CGRADE_FROM_DAY_CNT
+				, T.END_FLAG			= S.END_FLAG
+				, T.LAST_UPDATED_BY		= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE	= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+		      T.LIQUOR_CODE, T.VESSEL_CODE, T.BRAND_CODE, T.ITEM_CODE
+		    , T.ITEM_GB_CODE, T.EVENT_DATE_FLAG, T.START_DAY_CNT, T.AGRADE_FROM_DAY_CNT, T.AGRADE_TO_DAY_CNT
+		    , T.BGRADE_FROM_DAY_CNT, T.BGRADE_TO_DAY_CNT, T.CGRADE_FROM_DAY_CNT, T.END_FLAG
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+		      S.LIQUOR_CODE, S.VESSEL_CODE, S.BRAND_CODE, S.ITEM_CODE
+		    , S.ITEM_GB_CODE, S.EVENT_DATE_FLAG, S.START_DAY_CNT, S.AGRADE_FROM_DAY_CNT, S.AGRADE_TO_DAY_CNT
+		    , S.BGRADE_FROM_DAY_CNT, S.BGRADE_TO_DAY_CNT, S.CGRADE_FROM_DAY_CNT, S.END_FLAG
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		)
+    </update>
+    
+	<!-- 팝업 데이터 조회 -->
+    <select id="searchPop" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08030DaoMapper.searchPop */
+			   T1.ITEM_CODE                  -- 제품코드
+		     , T1.DESCRIPTION                -- 제품명
+		     , T1.LIQUOR_CODE
+		  FROM EDW.W_CM_TB_FG_ITEM_M T1
+		     , (SELECT ITEM_CODE
+		             , SUM(STOCK_QTY) AS STOCK_QTY
+		          FROM M_SOP_TB_ITEM_STOCK_PRDT_F
+		         WHERE PERIOD_YYYYMMDD = ( SELECT MAX(PERIOD_YYYYMMDD)
+		                                     FROM M_SOP_TB_ITEM_STOCK_PRDT_F
+		                                    WHERE PERIOD_YYYYMMDD >= TRUNC(SYSDATE-35) )
+		         GROUP BY ITEM_CODE ) T2
+		 WHERE T1.LIQUOR_CODE IN ('10', '20')
+		   AND T1.ITEM_TYPE = 'FG'
+		   AND T1.ITEM_STATUS = 'Active'
+		   AND T1.EVENT_ITEM_FLAG = '기획'
+		   <if test="itemCode != null and itemCode != ''">
+		   AND (T1.ITEM_CODE LIKE #{itemCode, jdbcType=VARCHAR} || '%'	OR T1.DESCRIPTION LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%')
+		   </if>
+		   AND T1.ITEM_CODE NOT IN (SELECT ITEM_CODE FROM SCMU.W_SOP_TB_ACCUM_STOCK_M WHERE END_FLAG = 'N')
+		   AND T1.ITEM_CODE = T2.ITEM_CODE
+    </select>
+</mapper>

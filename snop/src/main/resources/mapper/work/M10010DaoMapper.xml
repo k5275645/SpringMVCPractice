@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- SnOP회의 > 주간S&OP회의 화면준비 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M10010DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M10010DaoMapper.search */
+           A.MENU_CD, B.MENU_NM, B.MENU_DESC, B.MENU_NM_PATH
+         , A.SEQ, A.RMKS, A.MENU_VAR
+      FROM SCMU.W_SOP_TB_SNOP_CONF_M A
+ LEFT JOIN (
+                SELECT MENU_CD, MENU_NM, MENU_DESC, URL, SEQ, USE_YN, HRNK_MENU_CD
+                     , SUBSTR(SYS_CONNECT_BY_PATH(MENU_NM, ' > '), 4) AS MENU_NM_PATH
+                     , LEVEL AS LVL
+                  FROM SCMU.W_SOP_TB_MENU_M A
+                 WHERE 1 = 1
+                   AND USE_YN = 'Y'
+                   AND CONNECT_BY_ISLEAF = 1 -- 최하위 레벨만 조회
+                 START WITH HRNK_MENU_CD IS NULL AND USE_YN = 'Y'
+               CONNECT BY NOCYCLE PRIOR MENU_CD = HRNK_MENU_CD AND USE_YN = 'Y'
+                 ORDER SIBLINGS BY SEQ, MENU_NM
+           )                         B
+        ON B.MENU_CD = A.MENU_CD
+     WHERE 1 = 1
+     ORDER BY A.SEQ, B.MENU_NM_PATH, A.MENU_CD
+    </select>
+    
+    <!-- 최하위 메뉴 리스트 조회 -->
+    <select id="selectLeafMenuList" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M10010DaoMapper.selectLeafMenuList */
+           A.MENU_CD, A.MENU_NM, A.MENU_DESC, A.URL, A.SEQ, A.USE_YN, A.HRNK_MENU_CD
+         , SUBSTR(SYS_CONNECT_BY_PATH(A.MENU_NM, ' > '), 4) AS MENU_NM_PATH
+         , LEVEL AS LVL
+      FROM SCMU.W_SOP_TB_MENU_M A
+     WHERE 1 = 1
+       AND A.USE_YN = 'Y'
+       AND CONNECT_BY_ISLEAF = 1 -- 최하위 레벨만 조회
+     START WITH A.HRNK_MENU_CD IS NULL AND A.USE_YN = 'Y'
+   CONNECT BY NOCYCLE PRIOR A.MENU_CD = A.HRNK_MENU_CD AND A.USE_YN = 'Y'
+     ORDER SIBLINGS BY A.SEQ, A.MENU_NM
+    </select>
+    
+    <!-- 데이터 저장 : 삭제 -->
+    <delete id="delete" parameterType="map">
+DELETE /* com.hitejinro.snop.system.dao.M10010DaoMapper.delete */
+  FROM SCMU.W_SOP_TB_SNOP_CONF_M T
+ WHERE 1 = 1
+   AND T.MENU_CD IN (
+        <foreach collection="deleteList" item="list" separator=", " index="i">
+#{list.MENU_CD, jdbcType=VARCHAR}
+        </foreach>
+            )
+    </delete>
+    
+    <!-- 데이터 저장 : 추가/수정 -->
+    <update id="update" parameterType="map">
+MERGE INTO /* com.hitejinro.snop.system.dao.M10010DaoMapper.update */
+           SCMU.W_SOP_TB_SNOP_CONF_M T
+     USING (
+        <foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    SELECT #{list.MENU_CD, jdbcType=VARCHAR}                                                                    AS MENU_CD
+         , TO_NUMBER(#{list.SEQ, jdbcType=VARCHAR})                                                             AS SEQ
+         , #{list.RMKS, jdbcType=VARCHAR}                                                                       AS RMKS
+         , #{list.MENU_VAR, jdbcType=VARCHAR}                                                                   AS MENU_VAR
+         , #{list.action, jdbcType=VARCHAR}                                                                     AS ROW_ACTION   -- 행 상태 : insert, update, delete
+         , ROWNUM                                                                                               AS RNUM
+      FROM DUAL
+        </foreach>
+           ) S
+        ON (T.MENU_CD = S.MENU_CD)
+        
+      WHEN MATCHED THEN
+        UPDATE SET T.SEQ                = S.SEQ
+                 , T.RMKS               = S.RMKS
+                 , T.MENU_VAR           = S.MENU_VAR
+                 , T.LAST_UPDATED_BY    = #{userId, jdbcType=VARCHAR}
+                 , T.LAST_UPDATE_DATE   = SYSDATE
+
+      WHEN NOT MATCHED THEN
+        INSERT (T.MENU_CD, T.SEQ, T.RMKS, T.MENU_VAR
+                , T.ATTRIBUTE1, T.ATTRIBUTE2, T.ATTRIBUTE3, T.ATTRIBUTE4, T.ATTRIBUTE5, T.ATTRIBUTE6, T.ATTRIBUTE7, T.ATTRIBUTE8, T.ATTRIBUTE9
+                , T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE)
+        VALUES (S.MENU_CD, S.SEQ, S.RMKS, S.MENU_VAR
+                , NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE)
+    </update>
+
+</mapper>

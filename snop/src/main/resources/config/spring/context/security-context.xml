@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans:beans 
+    xmlns="http://www.springframework.org/schema/security"
+    xmlns:beans="http://www.springframework.org/schema/beans"
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/context 
+    http://www.springframework.org/schema/context/spring-context.xsd
+    http://www.springframework.org/schema/security
+    http://www.springframework.org/schema/security/spring-security.xsd
+    ">
+    
+    <http pattern="/resources/**" security="none"></http>
+    <http pattern="/favicon.ico" security="none"></http>
+    
+	<http auto-config="true" use-expressions="true" create-session="ifRequired" entry-point-ref="loginUrlAuthenticationEntryPointImpl">
+		
+		<!-- iframe X-Frame-Options 비활성화 -->
+		<!-- default : deny, iframe을 어느 방식으로든 참조불가 -->
+		<headers>
+			<frame-options disabled="true"/>
+		</headers>
+		
+		<!-- 로그인 관련 경로는 허용 -->
+		<!-- 나머지는 인증된 사용자만 허용 -->
+		<intercept-url pattern="/security/**" access="permitAll" />
+		<intercept-url pattern="/**" access="hasAnyRole('ROLE_ADMIN','ROLE_USER')" />
+		
+        <!-- 
+        	login-page : 로그인 페이지 url
+        	login-processing-url : view form의 action과 일치
+
+        	authentication-success-handler-ref : 로그인 성공시 handler
+        	authentication-failure-handler-ref : 로그인 실패시 handler
+        	
+        	username-parameter : 로그인 요청시 id
+        	password-parameter : 로그인 요청시 password
+        	
+        	access-denied-handler : 권한없음(403). deprecated
+         -->
+		<form-login 
+			login-page="/security/login"
+			login-processing-url="/security/auth"
+			authentication-success-handler-ref="authenticationSuccessHandlerImpl"
+			authentication-failure-handler-ref="authenticationFailureHandlerImpl"
+			
+			username-parameter="employeeNumber" password-parameter="password"
+		/>
+				
+		<logout
+			logout-url="/security/logout"
+		  	logout-success-url="/security/login"
+		  	invalidate-session="true"
+		  	delete-cookies="JSESSIONID"
+		/>
+			
+		  <csrf/>
+			
+		<!-- 
+			invalid-session-url : 만료되진 않으나 유효하지 않은 세션
+			expired-url : 세션 만료시
+		 -->		
+<!-- 		<session-management invalid-session-url="/security/login" session-fixation-protection="migrateSession">
+			<concurrency-control expired-url="/security/login" session-registry-ref="sessionRegistry"/>
+		</session-management> -->
+		
+		<access-denied-handler ref="accessDeniedHandlerImpl"/>
+	</http>
+
+    <beans:bean id="authenticationSuccessHandlerImpl" class="com.hitejinro.snop.security.service.AuthenticationSuccessHandlerImpl"></beans:bean>
+	<beans:bean id="authenticationFailureHandlerImpl" class="com.hitejinro.snop.security.service.AuthenticationFailureHandlerImpl"></beans:bean>
+	<beans:bean id="accessDeniedHandlerImpl" class="com.hitejinro.snop.security.service.AccessDeniedHandlerImpl"></beans:bean>
+	<beans:bean id="userDetailsServiceImpl" class="com.hitejinro.snop.security.service.UserDetailsServiceImpl" />
+	<beans:bean id="authenticationProviderImpl" class="com.hitejinro.snop.security.service.AuthenticationProviderImpl" />
+	<beans:bean id="loginUrlAuthenticationEntryPointImpl" class="com.hitejinro.snop.security.service.LoginUrlAuthenticationEntryPointImpl">
+		<beans:constructor-arg index="0" type="java.lang.String" value="/security/login" />
+	</beans:bean>
+	<beans:bean id="sessionRegistry" class="org.springframework.security.core.session.SessionRegistryImpl"></beans:bean>
+	
+	<authentication-manager alias="authenticationManager">
+        <authentication-provider ref="authenticationProviderImpl" />
+	</authentication-manager>
+	
+	<beans:bean id="passwordEncoder" class="org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder"/>
+
+    <beans:bean id="authenticationFilter" class="org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter" >
+        <beans:property name="authenticationManager" ref="org.springframework.security.authenticationManager" />
+        <beans:property name="postOnly" value="false"/>
+    </beans:bean>
+	
+</beans:beans>
+

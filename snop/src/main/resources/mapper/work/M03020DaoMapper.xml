@@ -1,0 +1,431 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 공장/물류센터 용기일보 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M03020DaoMapper">
+	
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+		WITH VESSEL_TBL AS /* com.hitejinro.snop.work.dao.M03020DaoMapper.searchHeader */
+		(
+		    SELECT S.LIQUOR_CODE, S.VESSEL_CODE, S.BRAND_CODE, S.VOLUME_VALUE, S.KEG_TYPE
+		    FROM SCMU.W_SOP_TB_VESSEL_M S
+		    WHERE 1 = 1
+		        AND S.LIQUOR_CODE  = DECODE(#{liquorCode, jdbcType=VARCHAR}, '!ALL', S.LIQUOR_CODE, #{liquorCode, jdbcType=VARCHAR})
+		        AND S.VESSEL_CODE  != '9'
+		        AND S.COMPANY_TYPE = 'OWNER'
+		        AND S.USE_YN       = 'Y'
+		    GROUP BY S.LIQUOR_CODE, S.VESSEL_CODE, S.BRAND_CODE, S.VOLUME_VALUE, S.KEG_TYPE
+		)
+		
+		SELECT
+		      T1.LIQUOR_CODE, T1.LIQUOR_DESC, T1.LIQUOR_SEQ
+		    , T1.VESSEL_CODE, T1.VESSEL_SORT
+		    , T1.BRAND_CODE, T1.BRAND_NAME, T1.BRAND_SEQ
+		    , T1.VOLUME_VALUE
+		    , T1.KEG_TYPE, T1.KEG_DESC, T1.KEG_SEQ
+		    , T1.ORG_CODE, T1.ORG_NAME, T1.ORG_SEQ
+		    , T1.BOTL_TYPE, T1.BOTL_DESC, T1.BOTL_SEQ
+		    , T1.LIQUOR_ROWNUM, T1.VESSEL_ROWNUM
+		
+		    , 'COL' || (ROW_NUMBER() OVER (ORDER BY T1.LIQUOR_SEQ, T1.VESSEL_CODE, T1.BRAND_SEQ, T1.KEG_SEQ, T1.VOLUME_VALUE, T1.ORG_SEQ, DECODE(T1.ORG_CODE, 'TOTAL', -1, 1), T1.ORG_CODE, T1.BOTL_SEQ) -1) AS NAME
+		    , DECODE(T1.ORG_CODE, 'TOTAL', 'total', 'numeric') AS DEF
+		    , (CASE WHEN T1.ORG_CODE = 'TOTAL' THEN '1'
+		            ELSE '0'
+		            END) AS VISIBLE
+		
+		    -- first header
+		    , (CASE WHEN T1.ORG_CODE = 'TOTAL' AND T1.LIQUOR_ROWNUM = 1 THEN T1.LIQUOR_DESC
+		            ELSE NULL
+		            END) AS HEADER1_DESC
+		    , (CASE WHEN T1.ORG_CODE = 'TOTAL' AND T1.LIQUOR_ROWNUM = 1 THEN COUNT(1) OVER (PARTITION BY T1.LIQUOR_CODE)
+		            ELSE NULL
+		            END) AS HEADER1_SPAN
+		
+		    -- second header
+		    -- PBOX 및 공통 사업부분(PALLET) - 용기명
+		    -- 그 외 용기명 브랜드명 용량
+		    , (CASE WHEN T1.ORG_CODE    != 'TOTAL'      THEN NULL
+		            WHEN T1.VESSEL_CODE = 'PBOX'        THEN T1.VESSEL_SORT
+		            WHEN T1.LIQUOR_CODE = '00'          THEN T1.VESSEL_SORT
+		            ELSE T1.VESSEL_SORT || ' ' || T1.BRAND_NAME || DECODE(T1.KEG_TYPE, '-', '', '(' || T1.KEG_DESC || ')') || ' ' || T1.VOLUME_VALUE
+		            END) AS HEADER2_DESC
+		    , (CASE WHEN T1.ORG_CODE     != 'TOTAL'     THEN NULL
+		            WHEN T1.VESSEL_CODE  = 'PBOX'       THEN COUNT(1) OVER (PARTITION BY T1.LIQUOR_CODE, T1.VESSEL_CODE)
+		            ELSE COUNT(1) OVER (PARTITION BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.BRAND_CODE, T1.VOLUME_VALUE, T1.KEG_TYPE)
+		            END) AS HEADER2_SPAN
+		
+		    -- third header
+		    -- PBOX - 브랜드명 용량
+		    -- 그 외 공장 및 물류센터
+		    , (CASE WHEN T1.VESSEL_CODE = 'PBOX' AND T1.VESSEL_ROWNUM = 1                       THEN T1.ORG_NAME
+		            WHEN T1.VESSEL_CODE = 'PBOX' AND T1.VESSEL_ROWNUM != 1                      THEN T1.BRAND_NAME || ' ' || T1.VOLUME_VALUE 
+		            WHEN T1.VESSEL_CODE = '1'    AND T1.ORG_CODE NOT IN ('TOTAL', 'LOGISTICS')  THEN T1.ORG_NAME || '_' || T1.BOTL_DESC
+		            ELSE T1.ORG_NAME
+		            END) AS HEADER3_DESC
+		    , (CASE WHEN T1.ORG_CODE     != 'TOTAL'  THEN NULL
+		            WHEN T1.VESSEL_CODE = 'PBOX'     THEN COUNT(1) OVER (PARTITION BY T1.LIQUOR_CODE, T1.VESSEL_CODE)
+		            ELSE COUNT(1) OVER (PARTITION BY T1.LIQUOR_CODE, T1.VESSEL_CODE, T1.BRAND_CODE, T1.VOLUME_VALUE, T1.KEG_TYPE)
+		            END) AS HEADER3_EXPAND
+		FROM
+		(
+		    SELECT
+		          D.LIQUOR_CODE
+		        , E.LIQUOR_DESC
+		        , NVL(E.SORT_NUMBER, 99)        AS LIQUOR_SEQ
+		        , D.VESSEL_CODE
+		        , NVL(F.VESSEL_SORT, G.NAME)    AS VESSEL_SORT
+		        , D.BRAND_CODE
+		        , H.NAME                        AS BRAND_NAME
+		        , NVL(H.SEQ, -1)                AS BRAND_SEQ
+		        , D.VOLUME_VALUE
+		        , NVL(D.KEG_TYPE, '-')          AS KEG_TYPE
+		        , NVL(I.NAME, 'N/A')            AS KEG_DESC
+		        , NVL(I.SEQ, -1)                AS KEG_SEQ
+		        , D.ORG_CODE, D.ORG_NAME, D.ORG_SEQ
+		        , NVL(D.BOTL_TYPE, 'TOTAL')     AS BOTL_TYPE
+		        , NVL(D.BOTL_DESC, '총계')      AS BOTL_DESC
+		        , NVL(D.BOTL_SEQ, -1)           AS BOTL_SEQ
+		        , ROW_NUMBER() OVER (PARTITION BY D.LIQUOR_CODE 
+		                            ORDER BY NVL(E.SORT_NUMBER, 99), D.VESSEL_CODE, NVL(H.SEQ, -1), NVL(I.SEQ, -1), D.VOLUME_VALUE, D.ORG_SEQ, DECODE(D.ORG_CODE, 'TOTAL', -1, 1), D.ORG_CODE, NVL(D.BOTL_SEQ, -1)) AS LIQUOR_ROWNUM
+		        , ROW_NUMBER() OVER (PARTITION BY D.LIQUOR_CODE, D.VESSEL_CODE 
+		                            ORDER BY NVL(E.SORT_NUMBER, 99), D.VESSEL_CODE, NVL(H.SEQ, -1), NVL(I.SEQ, -1), D.VOLUME_VALUE, D.ORG_SEQ, DECODE(D.ORG_CODE, 'TOTAL', -1, 1), D.ORG_CODE, NVL(D.BOTL_SEQ, -1)) AS VESSEL_ROWNUM
+		    FROM
+		    (
+		        -- 공병, 생통, PALLET
+		        SELECT 
+		              A.LIQUOR_CODE, A.VESSEL_CODE, A.BRAND_CODE, A.VOLUME_VALUE, A.KEG_TYPE
+		            , B.ORG_CODE, B.ORG_NAME, B.ORG_SEQ
+		            , C.BOTL_TYPE, C.BOTL_DESC, C.BOTL_SEQ
+		        FROM VESSEL_TBL A
+		
+		        LEFT JOIN
+		        (
+		            -- 조직별 DATA 생성
+		            -- 총계/공장별/물류센터
+		            SELECT 'TOTAL' AS ORG_CODE, '합계' AS ORG_NAME, -1 AS ORG_SEQ FROM DUAL
+		            
+		            UNION ALL
+		            SELECT 'LOGISTICS' AS ORG_CODE, '물류센터' AS ORG_NAME, 99 AS ORG_SEQ FROM DUAL
+		            
+		            UNION ALL
+		            SELECT
+		                  BA.ORG_CODE
+		                , SUBSTR(BA.ORG_NAME, 0, 2)                     AS ORG_NAME
+		                , ROW_NUMBER() OVER (ORDER BY BA.ORG_CODE) * 10 AS ORG_SEQ 
+		            FROM EDW.W_CM_TB_ORGANIZATION_M BA
+		            WHERE 1 = 1
+		                AND BA.ORG_TYPE = 'MFG'
+		                AND BA.ORG_CODE NOT IN ('MH2', 'S01')
+		        ) B ON 1 = 1
+		
+		        LEFT JOIN
+		        (
+		            SELECT
+		                  DECODE(GROUPING_ID(CA.CODE), 1, 'TOTAL', CA.CODE)     AS BOTL_TYPE
+		                , DECODE(GROUPING_ID(CA.CODE), 1, '합계', MAX(CA.NAME)) AS BOTL_DESC
+		                , DECODE(GROUPING_ID(CA.CODE), 1, -1, MAX(CA.SEQ))      AS BOTL_SEQ
+		            FROM SCMU.W_SOP_TB_COM_CODE_M CA
+		            WHERE 1 = 1
+		                AND CA.GROUP_CODE = 'BOTL_TYPE'
+		                AND CA.CODE       IN ('NEW', 'OLD')
+		                AND CA.USE_YN     = 'Y'
+		            GROUP BY GROUPING SETS((CA.CODE), ())
+		        ) C ON A.VESSEL_CODE = '1'
+		
+		        WHERE 1 = 1
+		            AND A.VESSEL_CODE != 'PBOX'
+		            -- 사업부문별 필요한 조직 추출
+		            -- 공통 - 총계/공장별/물류센터
+		            -- 맥주, 소주 - 총계/해당 공장별/물류센터
+		            AND (CASE WHEN A.LIQUOR_CODE = '00'                           THEN 'Y'
+		                      WHEN A.LIQUOR_CODE = '10' AND B.ORG_CODE LIKE 'MH%'   THEN 'Y'
+		                      WHEN A.LIQUOR_CODE = '20' AND B.ORG_CODE LIKE 'MJ%'   THEN 'Y'
+		                      WHEN B.ORG_CODE IN ('TOTAL', 'LOGISTICS')             THEN 'Y'
+		                      ELSE 'N'
+		                      END) = 'Y'
+		            -- 공병 재고
+		            -- 공장별은 고병/신병
+		            -- 그 외는 총계
+		            AND (CASE WHEN A.VESSEL_CODE != '1'                                                         THEN 'Y'
+		                      WHEN B.ORG_CODE IN ('TOTAL', 'LOGISTICS')     AND C.BOTL_TYPE = 'TOTAL'           THEN 'Y'
+		                      WHEN B.ORG_CODE NOT IN ('TOTAL', 'LOGISTICS') AND C.BOTL_TYPE IN ('OLD', 'NEW')   THEN 'Y'
+		                      ELSE 'N'
+		                      END) = 'Y'
+		
+		        -- PBOX
+		        UNION ALL
+		        SELECT
+		              A.LIQUOR_CODE, A.VESSEL_CODE, A.BRAND_CODE, A.VOLUME_VALUE, A.KEG_TYPE
+		            , DECODE(GROUPING_ID(A.BRAND_CODE), 0, 'PBOX', 'TOTAL')     AS ORG_CODE
+		            , DECODE(GROUPING_ID(A.BRAND_CODE), 0, 'PBOX', '합계')      AS ORG_NAME
+		            , DECODE(GROUPING_ID(A.BRAND_CODE), 0, 99, -1)              AS ORG_SEQ
+		            , 'TOTAL'                                                   AS BOTL_TYPE
+		            , '합계'                                                    AS BOTL_DESC
+		            , -1                                                        AS BOTL_SEQ          
+		        FROM VESSEL_TBL A
+		        WHERE 1 = 1
+		            AND A.VESSEL_CODE = 'PBOX'
+		        GROUP BY GROUPING SETS((A.LIQUOR_CODE, A.VESSEL_CODE, A.BRAND_CODE, A.VOLUME_VALUE, A.KEG_TYPE), (A.LIQUOR_CODE, A.VESSEL_CODE))
+                
+                -- 공병-공장의 합계 리스트 : 공장별 고병 합계 , 공장별 신병 합계
+                UNION ALL
+                SELECT 
+                      A.LIQUOR_CODE, A.VESSEL_CODE, A.BRAND_CODE, A.VOLUME_VALUE, A.KEG_TYPE
+                    , B.ORG_CODE, B.ORG_NAME, B.ORG_SEQ
+                    , C.BOTL_TYPE, C.BOTL_DESC, C.BOTL_SEQ
+                FROM VESSEL_TBL A
+        
+                LEFT JOIN
+                (
+                    -- 조직별 DATA 생성 : 공장만 대상
+                    SELECT 'MFG' AS ORG_CODE, '공장합계' AS ORG_NAME, -1 AS ORG_SEQ FROM DUAL
+                ) B ON 1 = 1
+        
+                LEFT JOIN
+                (
+                    SELECT
+                          CA.CODE     AS BOTL_TYPE
+                        , CA.NAME     AS BOTL_DESC
+                        , CA.SEQ      AS BOTL_SEQ
+                    FROM SCMU.W_SOP_TB_COM_CODE_M CA
+                    WHERE 1 = 1
+                        AND CA.GROUP_CODE = 'BOTL_TYPE'
+                        AND CA.CODE       IN ('NEW', 'OLD')
+                        AND CA.USE_YN     = 'Y'
+                ) C ON A.VESSEL_CODE = '1'
+        
+                WHERE 1 = 1
+                    AND A.VESSEL_CODE = '1' -- 공병만 대상
+		    ) D
+		
+		    LEFT JOIN EDW.W_CM_TB_LIQUOR_M E ON E.LIQUOR_CODE = D.LIQUOR_CODE
+		
+		    LEFT JOIN
+		    (
+		        SELECT VESSEL_CODE, MAX(VESSEL_SORT) AS VESSEL_SORT
+		        FROM EDW.W_CM_TB_FG_ITEM_M
+		        WHERE 1 = 1
+		            AND ITEM_TYPE   ='FG'
+		            AND ITEM_STATUS = 'Active'
+		        GROUP BY VESSEL_CODE
+		    ) F ON F.VESSEL_CODE = D.VESSEL_CODE
+		
+		    LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M G ON G.GROUP_CODE = 'OTHER_VESSEL_LIST'
+		                                        AND G.CODE       = D.VESSEL_CODE
+		                                        AND G.USE_YN     = 'Y'
+		
+		    LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M H ON H.GROUP_CODE = 'BOTL_BRAND_LIST'
+		                                        AND H.CODE       = D.BRAND_CODE
+		                                        AND H.USE_YN     = 'Y'
+		
+		    LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M I ON I.GROUP_CODE = 'KEG_TYPE'
+		                                        AND I.CODE       = D.KEG_TYPE
+		                                        AND I.USE_YN     = 'Y'
+			WHERE 1 = 1
+				AND D.VESSEL_CODE IN
+				<foreach collection="vesselCode" item="i" open="(" close=")" separator=",">
+					#{i, jdbcType=VARCHAR}
+	            </foreach>
+				AND (	-- 조직구분 조건절
+						(#{orgType, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+						OR
+						(#{orgType, jdbcType=VARCHAR} = 'MFG' AND (D.ORG_CODE IN ('TOTAL', 'PBOX', 'MFG') OR D.ORG_CODE LIKE 'M%'))
+						OR
+						(#{orgType, jdbcType=VARCHAR} = 'LOGISTICS' AND D.ORG_CODE IN ('TOTAL', 'PBOX', 'LOGISTICS'))
+				    )
+				AND (	-- 조직 조건절(멀티)
+						(NVL(#{orgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+						
+						-- 공장은 공장 고병/신병, 공장 총계 표시
+						OR
+						(
+							INSTR(#{orgCode, jdbcType=VARCHAR}, 'M') > 0
+							AND
+							(
+								D.ORG_CODE IN (
+												SELECT DISTINCT TRIM(REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR},'[^,]+', 1, LEVEL) ) AS ORG_CODE
+												FROM DUAL
+												CONNECT BY REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL
+								              )
+								OR
+								D.ORG_CODE = 'MFG'
+							)
+                        )
+                        
+                        -- 물류센터는 하나로 합쳐져 있으므로, 하나라도 존재하면 보여주기
+						OR
+						(
+						    INSTR(#{orgCode, jdbcType=VARCHAR}, 'C') > 0 AND D.ORG_CODE = 'LOGISTICS'
+                        )
+                        
+						OR D.ORG_CODE IN ('PBOX', 'TOTAL') -- PBOX와 합계(TOTAL)은 무조건 보여야 한다.
+				    )
+		) T1
+		ORDER BY T1.LIQUOR_SEQ, T1.VESSEL_CODE, T1.BRAND_SEQ, T1.KEG_SEQ, T1.VOLUME_VALUE, T1.ORG_SEQ, DECODE(T1.ORG_CODE, 'TOTAL', -1, 1), T1.ORG_CODE, T1.BOTL_SEQ
+	</select>
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M03020DaoMapper.search */
+		    TO_CHAR(TO_DATE(A.PERIOD_YYYYMMDD, 'YYYYMMDD'), 'YYYY-MM-DD') AS PERIOD_YYYYMMDD
+		    
+		-- 용기 = 병
+		-- COLUMN     LIQUOR_CODE VESSEL_CODE BRAND_CODE  VOLUME_VALUE KEG_TYPE ORG_CODE      BOTL_TYPE
+		-- ==============================================================================================
+		-- 총계        10          1           B1010       330          -        TOTAL         TOTAL
+		-- 공장별      10          1           B1010       330          -        MFG            OLD
+		-- 공장별      10          1           B1010       330          -        MFG            NEW
+		-- 공장별      10          1           B1010       330          -        MH1            OLD
+		-- 공장별      10          1           B1010       330          -        MH1            NEW
+		-- 물류센터    10          1           B1010       330          -        LOGISTICS      NEW
+		
+		-- 용기 = 생통
+		-- COLUMN     LIQUOR_CODE VESSEL_CODE BRAND_CODE  VOLUME_VALUE KEG_TYPE ORG_CODE      BOTL_TYPE
+		-- ==============================================================================================
+		-- 총계        10          1           B1010       20000        COMMON   TOTAL         TOTAL
+		-- 공장별      10          1           B1010       20000        COMMON   MH1           TOTAL
+		-- 공장별      10          1           B1010       20000        COMMON   MH1           TOTAL
+		-- 물류센터    10          1           B1010       20000        COMMON   LOGISTICS     TOTAL
+		
+		-- 용기 = PALLET
+		-- COLUMN     LIQUOR_CODE VESSEL_CODE BRAND_CODE  VOLUME_VALUE KEG_TYPE ORG_CODE      BOTL_TYPE
+		-- ==============================================================================================
+		-- 총계        00          PALLET      -            -           -       TOTAL         TOTAL
+		-- 공장별      00          PALLET      -            -           -       MH1           TOTAL
+		-- 공장별      00          PALLET      -            -           -       MH3           TOTAL
+		-- 물류센터    00          PALLET      -            -           -       LOGISTICS     TOTAL
+		
+		-- 용기 = PBOX
+		-- COLUMN     LIQUOR_CODE VESSEL_CODE BRAND_CODE  VOLUME_VALUE KEG_TYPE ORG_CODE      BOTL_TYPE
+		-- ==============================================================================================
+		-- 총계        10          PBOX        		                    -        TOTAL         TOTAL
+		-- 일반        10          PBOX        B1010       330          -        PBOX          TOTAL
+		<foreach collection="header" item="list" index="i">
+			<choose>
+			<!-- PBOX가 아닌경우 총계 항목 -->
+			<when test='!"PBOX".equals(list.VESSEL_CODE) and "TOTAL".equals(list.ORG_CODE)'>
+		    , SUM(CASE WHEN A.LIQUOR_CODE = #{list.LIQUOR_CODE, jdbcType=VARCHAR} AND A.BRAND_CODE    = #{list.BRAND_CODE, jdbcType=VARCHAR}
+		                AND A.VESSEL_CODE = #{list.VESSEL_CODE, jdbcType=VARCHAR} AND A.VOLUME_VALUE  = #{list.VOLUME_VALUE, jdbcType=VARCHAR}
+		                AND A.KEG_TYPE    = #{list.KEG_TYPE, jdbcType=VARCHAR}	  AND A.BOTL_TYPE	  = #{list.BOTL_TYPE, jdbcType=VARCHAR}
+		               THEN A.QTY
+		               ELSE 0
+		               END) AS ${list.NAME}
+			</when>
+			<!-- 공병 구분별 공장의 합계 -->
+			<when test='"1".equals(list.VESSEL_CODE) and "MFG".equals(list.ORG_CODE)'>
+		    , SUM(CASE WHEN A.LIQUOR_CODE = #{list.LIQUOR_CODE, jdbcType=VARCHAR} AND A.BRAND_CODE    = #{list.BRAND_CODE, jdbcType=VARCHAR}
+		                AND A.VESSEL_CODE = #{list.VESSEL_CODE, jdbcType=VARCHAR} AND A.VOLUME_VALUE  = #{list.VOLUME_VALUE, jdbcType=VARCHAR}
+		                AND A.KEG_TYPE    = #{list.KEG_TYPE, jdbcType=VARCHAR}	  AND A.ORG_CODE	  != 'LOGISTICS'
+		                AND A.BOTL_TYPE   = #{list.BOTL_TYPE, jdbcType=VARCHAR}
+		               THEN A.QTY
+		               ELSE 0
+		               END) AS ${list.NAME}
+			</when>
+			<!-- PBOX가 아닌경우 일반 항목(공장 신병,고병/물류센터) -->
+			<when test='!"PBOX".equals(list.VESSEL_CODE) and !"TOTAL".equals(list.ORG_CODE) and !"MFG".equals(list.ORG_CODE)'>
+		    , SUM(CASE WHEN A.LIQUOR_CODE = #{list.LIQUOR_CODE, jdbcType=VARCHAR} AND A.BRAND_CODE    = #{list.BRAND_CODE, jdbcType=VARCHAR}
+		                AND A.VESSEL_CODE = #{list.VESSEL_CODE, jdbcType=VARCHAR} AND A.VOLUME_VALUE  = #{list.VOLUME_VALUE, jdbcType=VARCHAR}
+		                AND A.KEG_TYPE    = #{list.KEG_TYPE, jdbcType=VARCHAR}	  AND A.ORG_CODE	  = #{list.ORG_CODE, jdbcType=VARCHAR}
+		                AND A.BOTL_TYPE   = #{list.BOTL_TYPE, jdbcType=VARCHAR}
+		               THEN A.QTY
+		               ELSE 0
+		               END) AS ${list.NAME}
+			</when>
+			<!-- PBOX의 총계 항목 -->
+			<when test='"PBOX".equals(list.VESSEL_CODE) and "TOTAL".equals(list.ORG_CODE)'>
+		    , SUM(CASE WHEN A.LIQUOR_CODE = #{list.LIQUOR_CODE, jdbcType=VARCHAR} AND A.VESSEL_CODE = 'PBOX'
+		    			AND A.KEG_TYPE    = '-' 								  AND A.BOTL_TYPE = 'TOTAL'
+					   THEN A.QTY
+		               ELSE 0
+		               END) AS ${list.NAME}
+			</when>
+			<!-- PBOX의 일반 항목 -->
+			<when test='"PBOX".equals(list.VESSEL_CODE) and "PBOX".equals(list.ORG_CODE)'>
+		    , SUM(CASE WHEN A.LIQUOR_CODE = #{list.LIQUOR_CODE, jdbcType=VARCHAR} AND A.BRAND_CODE 	 = #{list.BRAND_CODE, jdbcType=VARCHAR} 
+		    			AND A.VESSEL_CODE = 'PBOX' 								  AND A.VOLUME_VALUE = #{list.VOLUME_VALUE, jdbcType=VARCHAR}
+		    			AND A.KEG_TYPE    = '-' 								  AND A.BOTL_TYPE = 'TOTAL'
+		    		   THEN A.QTY
+		               ELSE 0
+		               END) AS ${list.NAME}
+			</when>
+			</choose>
+		</foreach>
+		FROM
+		(
+			-- LEVEL0 - 일자/사업부문/브랜드/용기/용량/생통구분/병구분/조직(공장별 + 물류센터)별 재고수량
+			-- LEVEL1 - 일자/사업부문/브랜드/용기/용량/생통구분/조직(공장별 + 물류센터)별 재고수량
+		    SELECT
+		          AB.PERIOD_YYYYMMDD, AA.LIQUOR_CODE, AA.BRAND_CODE
+		        , AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.KEG_TYPE
+		        , DECODE(GROUPING_ID(AA.BOTL_TYPE), 1, 'TOTAL', AA.BOTL_TYPE)   AS BOTL_TYPE 
+		        , DECODE(AB.ORG_TYPE, 'MFG', AB.ORG_CODE, 'LOGISTICS')          AS ORG_CODE
+		        
+		        , SUM(CASE WHEN AA.VESSEL_CODE IN ('PBOX', 'PALLET') 
+		                    AND AB.TRANSACTION_TYPE_CODE = '공기말재고' 
+		                   THEN AB.QTY / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, GREATEST(NVL(AA.PBOX_PACKING_UNIT, 1), 1))
+		                   
+		                   WHEN AA.VESSEL_CODE NOT IN ('PBOX', 'PALLET')
+		                    AND AB.TRANSACTION_TYPE_CODE = '기말재고'
+		                   THEN AB.QTY / DECODE(#{acctType, jdbcType=VARCHAR}, 'ACCT_BULK_QTY', 1, GREATEST(NVL(AA.PBOX_PACKING_UNIT, 1), 1))
+		                   ELSE 0
+		                   END) AS QTY
+		    FROM SCMU.W_SOP_TB_VESSEL_M AA
+		
+		    INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F AB ON AB.PERIOD_YYYYMMDD       BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+		                                             AND AB.TRANSACTION_TYPE_CODE IN ('기말재고', '공기말재고')
+		                                             AND AB.ITEM_CODE             = AA.ITEM_CODE
+		    WHERE 1 = 1
+		        AND AA.LIQUOR_CODE  = DECODE(#{liquorCode, jdbcType=VARCHAR}, '!ALL', AA.LIQUOR_CODE, #{liquorCode, jdbcType=VARCHAR})
+		        AND AA.VESSEL_CODE  != '9'
+		        AND AA.VESSEL_CODE	IN
+				<foreach collection="vesselCode" item="i" open="(" close=")" separator=",">
+					#{i, jdbcType=VARCHAR}
+	            </foreach>
+		        AND AA.COMPANY_TYPE = 'OWNER'
+		        AND AA.BOTL_TYPE    IN ('OLD', 'NEW', '-') -- 병은 신병/고병, PBOX, PALLET
+		        AND AA.USE_YN       = 'Y'
+		        
+		        AND AB.QTY != 0
+
+                AND
+                ( 	-- 사업부문에 따른 공장 추출
+                    (CASE WHEN AB.ORG_TYPE = 'LOGISTICS' THEN 'Y'
+                          WHEN AA.LIQUOR_CODE = '00'     THEN 'Y'
+                          WHEN AA.LIQUOR_CODE = '10' AND AB.ORG_CODE LIKE 'MH%' THEN 'Y'
+                          WHEN AA.LIQUOR_CODE = '20' AND AB.ORG_CODE LIKE 'MJ%' THEN 'Y'
+                          ELSE 'N'
+                          END) = 'Y'
+                )
+
+				AND (	-- 조직구분 조건절
+						(#{orgType, jdbcType=VARCHAR} = '!ALL' AND 1 = 1)
+						OR
+						(#{orgType, jdbcType=VARCHAR} = 'MFG' AND AB.ORG_TYPE = 'MFG')
+						OR
+						(#{orgType, jdbcType=VARCHAR} = 'LOGISTICS' AND AB.ORG_TYPE = 'LOGISTICS')
+				    )
+				AND (	-- 조직 조건절(멀티)
+						(NVL(#{orgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+						OR
+						(
+								AB.ORG_CODE IN (
+													SELECT DISTINCT TRIM(REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR},'[^,]+', 1, LEVEL) ) AS ORG_CODE
+													  FROM DUAL
+													CONNECT BY REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL
+								               )
+                        )
+				    )
+
+		        
+		    GROUP BY GROUPING SETS(
+		                            (AB.PERIOD_YYYYMMDD, AA.LIQUOR_CODE, AA.BRAND_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.BOTL_TYPE, AA.KEG_TYPE, DECODE(AB.ORG_TYPE, 'MFG', AB.ORG_CODE, 'LOGISTICS'))
+		                          , (AB.PERIOD_YYYYMMDD, AA.LIQUOR_CODE, AA.BRAND_CODE, AA.VESSEL_CODE, AA.VOLUME_VALUE, AA.KEG_TYPE, DECODE(AB.ORG_TYPE, 'MFG', AB.ORG_CODE, 'LOGISTICS'))
+		                          )
+		) A
+		WHERE 1 = 1
+		    AND A.QTY != 0
+		GROUP BY A.PERIOD_YYYYMMDD
+		ORDER BY A.PERIOD_YYYYMMDD
+	</select>
+</mapper>

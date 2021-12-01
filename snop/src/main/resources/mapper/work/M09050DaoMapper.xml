@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 생산관리 > 부적합품 관리 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M09050DaoMapper">
+
+	<!-- 부적합품 관리 > 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09050DaoMapper.search */
+		      TO_CHAR(TO_DATE(T1.NC_NCM_DATE,'YYYYMMDD'), 'YYYY-MM-DD') AS NC_NCM_DATE
+		    , SUBSTR(T1.NC_ORGANIZATION_NAME, 1, 4) 					AS NC_ORGANIZATION_NAME
+		    , T1.NC_ITEM
+		    , T1.NC_ITEM_DESC
+		    , T1.NC_NONCONFORMANCE_GRADE
+		    , T1.NC_NCM_DEPT
+		    , T1.NC_SHORT_DESCRIPTION
+		    , T1.NC_DETAILED_DESCRIPTION
+		    , T1.NC_COMPONENT_ITEM_DESC
+		    , T1.NC_DEFECT_CODE_COMMENT
+		    , T1.NC_QUANTITY_NONCONFORMING
+		    , T1.NC_SUPPLIER
+		    , T1.NC_COMMITTEE_COMMENTS
+		    , T1.CA_DETAILED_DESCRIPTION
+		    , T1.CI_DETAILED_DESCRIPTION
+		FROM EDW.W_QM_TB_NCM_PROCESS_F 		 T1
+   		LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M T2	ON T2.ORG_ID = T1.NC_ORGANIZATION_ID
+		WHERE 1 = 1
+		    AND SUBSTR(T1.NC_NCM_DATE, 1, 6) BETWEEN #{frYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+		    <if test="mfgCd != null and mfgCd !=''">
+		   		<foreach open="AND T2.ORG_CODE IN (" collection="mfgCd" item="mfgCd" index="i" separator=", " close=")">
+		   		#{mfgCd, jdbcType=VARCHAR}
+		   		</foreach>
+		   	</if>
+		ORDER BY T1.NC_NCM_DATE DESC, T1.NC_ORGANIZATION_NAME, T1.NC_ITEM
+	</select>
+	
+</mapper>

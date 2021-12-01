@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 생산관리 > 제조원가 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M09060DaoMapper">
+
+    <!-- 최신 마감년월 조회 -->
+    <select id="selectMaxPeriod" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M09060DaoMapper.selectMaxPeriod */
+       /*+ INDEX_DESC(A PK_M_FN_TB_PROD_COST_F) */
+       MAX(A.PERIOD_YYYYMM_CODE) AS MAX_YYYYMM
+  FROM EDW.M_FN_TB_PROD_COST_F A
+ WHERE 1 = 1
+   AND A.OU_CODE = 'HJ0'
+   AND ROWNUM = 1
+    </select>
+
+
+    <!-- 데이터 조회 : 그리드 헤더 조회(기간 데이터) -->
+    <select id="searchHeader" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M09060DaoMapper.searchHeader */
+           A.PERIOD_CODE, A.PERIOD_NAME, A.PERIOD_SEQ, A.FR_YYYYMM, A.TO_YYYYMM
+         , B.ACCT_CD, B.ACCT_NM, B.ACCT_SEQ
+         , C.DATA_INFO
+         , 'COL_' || ROW_NUMBER() OVER (ORDER BY A.PERIOD_SEQ, B.ACCT_SEQ)  AS COL_ID           -- COL_ID : 그리드의 바디에서 사용할 Column ID
+         , CASE WHEN B.ACCT_SEQ = 1 THEN COUNT(1) OVER (PARTITION BY A.PERIOD_CODE)
+                ELSE 1 
+           END                                                              AS HEADER_COL_SPAN  -- 구간의 중복개수 : 헤더의 첫번째 행을 Column Merge하기 위해서
+      FROM (
+        <![CDATA[
+                SELECT 'ACCUM'                                                                          AS PERIOD_CODE
+                     , '누계(' || TO_CHAR(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR}, 'YYYYMM'), 'YYYY-MM') || ' ~ ' || TO_CHAR(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR}, 'YYYYMM'), 'YYYY-MM') || ')'
+                                                                                                        AS PERIOD_NAME
+                     , 100                                                                              AS PERIOD_SEQ
+                     , #{frYYYYMM, jdbcType=VARCHAR}                                                                        AS FR_YYYYMM
+                     , #{toYYYYMM, jdbcType=VARCHAR}                                                                        AS TO_YYYYMM
+                  FROM DUAL
+                 UNION ALL
+                SELECT TO_CHAR(ADD_MONTHS(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -12), 'YYYYMM')       AS PERIOD_CODE
+                     , '전년동월(' || TO_CHAR(ADD_MONTHS(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -12), 'YYYY-MM') || ')'
+                                                                                                        AS PERIOD_NAME
+                     , 300                                                                              AS PERIOD_SEQ
+                     , TO_CHAR(ADD_MONTHS(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -12), 'YYYYMM')       AS FR_YYYYMM
+                     , TO_CHAR(ADD_MONTHS(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -12), 'YYYYMM')       AS TO_YYYYMM
+                  FROM DUAL
+                 UNION ALL
+                SELECT TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYYMM')   AS PERIOD_CODE
+                     , CASE WHEN #{toYYYYMM, jdbcType=VARCHAR} = TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYYMM') THEN '당월(' || TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYY-MM') || ')'
+                            ELSE TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYY-MM')
+                       END                                                                              AS PERIOD_NAME
+                     , CASE WHEN #{toYYYYMM, jdbcType=VARCHAR} = TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYYMM') THEN 200
+                            ELSE 400 + LEVEL
+                       END                                                                              AS PERIOD_SEQ
+                     , TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYYMM')   AS FR_YYYYMM
+                     , TO_CHAR(ADD_MONTHS(TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), LEVEL-1), 'YYYYMM')   AS TO_YYYYMM
+                  FROM DUAL
+               CONNECT BY LEVEL <= MONTHS_BETWEEN(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), TO_DATE(#{frYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD')) + 1
+        ]]>
+           ) A
+CROSS JOIN (
+                SELECT 'PRDT_CONV_QTY'              AS ACCT_CD, '생산량' AS ACCT_NM, 1 AS ACCT_SEQ FROM DUAL UNION ALL
+                SELECT 'CONV_UNIT_MANUFT_COST_AMT'  AS ACCT_CD, '환산c/s당\r\n제조원가' AS ACCT_NM, 2 AS ACCT_SEQ FROM DUAL UNION ALL
+                SELECT 'MANUFT_COST_AMT'            AS ACCT_CD, '제조원가' AS ACCT_NM, 3 AS ACCT_SEQ FROM DUAL UNION ALL
+                SELECT 'RAW_MAT_COST_AMT'           AS ACCT_CD, '원재료' AS ACCT_NM, 4 AS ACCT_SEQ FROM DUAL UNION ALL
+                SELECT 'LABOR_COST_AMT'             AS ACCT_CD, '노무비' AS ACCT_NM, 5 AS ACCT_SEQ FROM DUAL UNION ALL
+                SELECT 'MANUFT_ECST_AMT'            AS ACCT_CD, '제조경비' AS ACCT_NM, 6 AS ACCT_SEQ FROM DUAL
+           ) B
+CROSS JOIN (
+                SELECT '마김월 : ' || NVL2(MAX(PERIOD_YYYYMM_CODE), SUBSTR(MAX(PERIOD_YYYYMM_CODE), 1, 4) || '-' || SUBSTR(MAX(PERIOD_YYYYMM_CODE), 5, 2), 'N/A')
+                       || ', 조회일시 : ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') AS DATA_INFO
+                  FROM EDW.M_FN_TB_PROD_COST_F
+                 WHERE 1 = 1
+                   AND PERIOD_YYYYMM_CODE BETWEEN #{frYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+           ) C
+     WHERE 1 = 1
+     ORDER BY A.PERIOD_SEQ, B.ACCT_SEQ
+    </select>
+    
+    <!-- 데이터 조회 : 그리드 바디 조회 -->
+    <select id="searchBody" parameterType="map" resultType="map">
+SELECT /* com.hitejinro.snop.work.dao.M09060DaoMapper.searchBody */
+       X.LIQUOR_CODE, X.ORG_CODE, X.ITEM_CODE
+     , X.LIQUOR_NAME, X.ORG_NAME, X.BRAND_NAME, X.USAGE_NAME, X.VESSEL_NAME, X.VOLUME_VALUE, X.ITEM_NAME
+     /* 년월과 계정의 조합 리스트
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.PRDT_CONV_QTY, 0) ELSE 0 END)                AS COL_1
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.MANUFT_COST_AMT, 0) ELSE 0 END)
+       / DECODE(SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.PRDT_CONV_QTY, 0) ELSE 0 END), 0, NULL
+                , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.PRDT_CONV_QTY, 0) ELSE 0 END))    AS COL_2
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.MANUFT_COST_AMT, 0) ELSE 0 END)              AS COL_3
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.RAW_MAT_COST_AMT, 0) ELSE 0 END)             AS COL_4
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.LABOR_COST_AMT, 0) ELSE 0 END)               AS COL_5
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN '202101' AND '202109' THEN NVL(X.MANUFT_ECST_AMT, 0) ELSE 0 END)              AS COL_6
+     */
+        <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+            <choose>
+                <when test="item.ACCT_CD != null and item.ACCT_CD eq 'PRDT_CONV_QTY'.toString()">
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.PRDT_CONV_QTY, 0) ELSE 0 END)                AS ${item.COL_ID}
+                </when>
+                <when test="item.ACCT_CD != null and item.ACCT_CD eq 'CONV_UNIT_MANUFT_COST_AMT'.toString()">
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.MANUFT_COST_AMT, 0) ELSE 0 END)
+       / DECODE(SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.PRDT_CONV_QTY, 0) ELSE 0 END), 0, NULL
+                , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.PRDT_CONV_QTY, 0) ELSE 0 END))    AS ${item.COL_ID}
+                </when>
+                <when test="item.ACCT_CD != null and item.ACCT_CD eq 'MANUFT_COST_AMT'.toString()">
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.MANUFT_COST_AMT, 0) ELSE 0 END)              AS ${item.COL_ID}
+                </when>
+                <when test="item.ACCT_CD != null and item.ACCT_CD eq 'RAW_MAT_COST_AMT'.toString()">
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.RAW_MAT_COST_AMT, 0) ELSE 0 END)             AS ${item.COL_ID}
+                </when>
+                <when test="item.ACCT_CD != null and item.ACCT_CD eq 'LABOR_COST_AMT'.toString()">
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.LABOR_COST_AMT, 0) ELSE 0 END)               AS ${item.COL_ID}
+                </when>
+                <when test="item.ACCT_CD != null and item.ACCT_CD eq 'MANUFT_ECST_AMT'.toString()">
+     , SUM(CASE WHEN X.PERIOD_YYYYMM_CODE BETWEEN #{item.FR_YYYYMM, jdbcType=VARCHAR} AND #{item.TO_YYYYMM, jdbcType=VARCHAR} THEN NVL(X.MANUFT_ECST_AMT, 0) ELSE 0 END)              AS ${item.COL_ID}
+                </when>
+                    <otherwise></otherwise>
+            </choose>
+        </foreach>
+
+  FROM (
+            SELECT A.PERIOD_YYYYMM_CODE
+                 , B.LIQUOR_CODE, A.ORG_CODE, A.ITEM_CODE
+                 , NVL(D.LIQUOR_DESC, B.LIQUOR_CODE)                    AS LIQUOR_NAME
+                 , NVL(REPLACE(C.ORG_NAME, ' 생산', ''), A.ORG_CODE)    AS ORG_NAME
+                 , MAX(B.BRAND_NAME)                                    AS BRAND_NAME
+                 , MAX(B.USAGE_NAME)                                    AS USAGE_NAME
+                 , MAX(B.VESSEL_SORT)                                   AS VESSEL_NAME
+                 , MAX(B.VOLUME_VALUE)                                  AS VOLUME_VALUE
+                 , MAX(B.DESCRIPTION)                                   AS ITEM_NAME
+                 , SUM(CASE WHEN A.TYPE = '환산생산량' AND A.COST_GROUP IN ('환산생산량')                                 THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS PRDT_CONV_QTY    -- 환산c/s 생산량
+                 , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('재료비', '노무비', '제조경비', '외주가공비') THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS MANUFT_COST_AMT  -- 제조원가 금액
+                 , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('재료비')                                     THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS RAW_MAT_COST_AMT -- 원재료비 금액
+                 , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('노무비')                                     THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS LABOR_COST_AMT   -- 노무비 금액
+                 , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('제조경비', '외주가공비')                     THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS MANUFT_ECST_AMT  -- 제조경비 금액
+                 , MAX(B.BRAND_SORT_ORDER)                              AS BRAND_SORT_ORDER
+                 , MAX(B.USAGE_SORT_ORDER)                              AS USAGE_SORT_ORDER
+                 , MAX(B.VESSEL_SORT_ORDER)                             AS VESSEL_SORT_ORDER
+              FROM EDW.M_FN_TB_PROD_COST_F      A
+              JOIN EDW.W_CM_TB_FG_ITEM_M        B
+                ON B.ITEM_CODE = A.ITEM_CODE
+         LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M   C
+                ON C.ORG_CODE = A.ORG_CODE
+         LEFT JOIN EDW.W_CM_TB_LIQUOR_M         D
+                ON D.LIQUOR_CODE = B.LIQUOR_CODE
+             WHERE 1 = 1
+               AND A.OU_CODE            = 'HJ0'
+               AND (
+                        A.PERIOD_YYYYMM_CODE BETWEEN #{frYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+                        OR
+                        A.PERIOD_YYYYMM_CODE = TO_CHAR(ADD_MONTHS(TO_DATE(#{toYYYYMM, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -12), 'YYYYMM')
+                   )
+               AND A.BUSINESS_CODE      IN ('1', '2')
+               AND A.TYPE               IN ('환산생산량', '제조원가')
+               AND A.COST_GROUP         IN ('환산생산량', '재료비', '노무비', '제조경비', '외주가공비')
+               AND NVL(A.AMT_QTY, 0)    != 0 -- 속도향상용
+               AND B.LIQUOR_CODE        = #{liquorCode, jdbcType=VARCHAR}
+               AND (    -- 공장
+                        (NVL(#{orgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (A.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+               AND (    -- 중분류
+                        (NVL(#{itemSegment2, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.SEGMENT2 IN (SELECT REGEXP_SUBSTR(#{itemSegment2, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{itemSegment2, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+               AND (    -- 소분류
+                        (NVL(#{itemSegment3, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.SEGMENT3 IN (SELECT REGEXP_SUBSTR(#{itemSegment3, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{itemSegment3, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+               AND (    -- 브랜드
+                        (NVL(#{brandCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.BRAND_CODE IN (SELECT REGEXP_SUBSTR(#{brandCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{brandCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+               AND (    -- 용도
+                        (NVL(#{usageCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.USAGE_CODE IN (SELECT REGEXP_SUBSTR(#{usageCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{usageCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+               AND (    -- 용기
+                        (NVL(#{vesselCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.VESSEL_CODE IN (SELECT REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+               AND (    -- 내수수출구분 : 1(내수), 2(수출)
+                        (NVL(#{domExpCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.DOM_EXP_CODE = #{domExpCode, jdbcType=VARCHAR})
+                   )
+               AND (    -- 주력구분 : 주력, 비주력
+                        (NVL(#{mainFlag, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR})
+                   )
+               AND (    -- 속성(기획상품여부) : 일반, 기획, 한정
+                        (NVL(#{eventItemFlag, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                        OR
+                        (B.EVENT_ITEM_FLAG IN (SELECT REGEXP_SUBSTR(#{eventItemFlag, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{eventItemFlag, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                   )
+             GROUP BY A.PERIOD_YYYYMM_CODE, B.LIQUOR_CODE, A.ORG_CODE, A.ITEM_CODE, NVL(D.LIQUOR_DESC, B.LIQUOR_CODE), NVL(REPLACE(C.ORG_NAME, ' 생산', ''), A.ORG_CODE)
+       ) X
+ WHERE 1 = 1
+   -- 사용자의 데이터 권한 체크 : SCMU.FN_SOP_AUTH_DATA(P_USER_ID, P_DEPT_LEVEL, P_DEPT_CODE, P_ORG_CODE)
+   AND 'Y' = SCMU.FN_SOP_AUTH_DATA(#{userId, jdbcType=VARCHAR}, '-', '-', X.ORG_CODE)
+ GROUP BY X.LIQUOR_CODE, X.ORG_CODE, X.ITEM_CODE, X.LIQUOR_NAME, X.ORG_NAME, X.BRAND_NAME, X.USAGE_NAME, X.VESSEL_NAME, X.VOLUME_VALUE, X.ITEM_NAME
+ ORDER BY X.LIQUOR_CODE, X.ORG_CODE, MAX(X.BRAND_SORT_ORDER), X.BRAND_NAME, MAX(X.USAGE_SORT_ORDER), X.USAGE_NAME, MAX(X.VESSEL_SORT_ORDER), X.VESSEL_NAME, X.VOLUME_VALUE, X.ITEM_NAME
+    </select>
+
+
+    
+    <!-- 데이터 조회 : 차트 조회 -->
+    <select id="searchChart" parameterType="map" resultType="map">
+    SELECT /* com.hitejinro.snop.work.dao.M09060DaoMapper.searchChart */
+           X.LIQUOR_CODE, X.LIQUOR_NAME
+         , CASE WHEN Y.ORG_GUBUN = 'TOTAL' THEN X.LIQUOR_CODE
+                ELSE                            X.ORG_CODE
+           END                                      AS ORG_CODE
+         , CASE WHEN Y.ORG_GUBUN = 'TOTAL' THEN X.LIQUOR_NAME
+                ELSE                            X.ORG_NAME
+           END                                      AS ORG_NAME
+
+         , SUM(NVL(X.PRDT_CONV_QTY, 0))             AS PRDT_CONV_QTY                -- 환산c/s 생산량
+         , SUM(NVL(X.MANUFT_COST_AMT, 0)) / DECODE(SUM(NVL(X.PRDT_CONV_QTY, 0)), 0, NULL, SUM(NVL(X.PRDT_CONV_QTY, 0)))
+                                                    AS CONV_UNIT_MANUFT_COST_AMT    -- 환산c/s당 제조원가 금액
+         , SUM(NVL(X.MANUFT_COST_AMT, 0))           AS MANUFT_COST_AMT              -- 제조원가 금액
+         , SUM(NVL(X.RAW_MAT_COST_AMT, 0))          AS RAW_MAT_COST_AMT             -- 원재료비 금액
+         , SUM(NVL(X.LABOR_COST_AMT, 0))            AS LABOR_COST_AMT               -- 노무비 금액
+         , SUM(NVL(X.MANUFT_ECST_AMT, 0))           AS MANUFT_ECST_AMT              -- 제조경비 금액
+         
+         , SUM(NVL(X.RAW_MAT_COST_AMT, 0)) / DECODE(SUM(NVL(X.MANUFT_COST_AMT, 0)), 0, NULL, SUM(NVL(X.MANUFT_COST_AMT, 0)))
+                                                    AS RAW_MAT_COST_RATE            -- 원재료비 금액 비중(제조원가 대비)
+         , SUM(NVL(X.LABOR_COST_AMT, 0)) / DECODE(SUM(NVL(X.MANUFT_COST_AMT, 0)), 0, NULL, SUM(NVL(X.MANUFT_COST_AMT, 0)))
+                                                    AS LABOR_COST_RATE              -- 노무비 금액 비중(제조원가 대비)
+         , SUM(NVL(X.MANUFT_ECST_AMT, 0)) / DECODE(SUM(NVL(X.MANUFT_COST_AMT, 0)), 0, NULL, SUM(NVL(X.MANUFT_COST_AMT, 0)))
+                                                    AS MANUFT_ECST_RATE             -- 제조경비 금액 비중(제조원가 대비)
+
+         , MAX(Y.ORG_GUBUN_SEQ)                     AS ORG_GUBUN_SEQ
+
+      FROM (
+                SELECT A.PERIOD_YYYYMM_CODE
+                     , B.LIQUOR_CODE
+                     , NVL(D.LIQUOR_DESC, B.LIQUOR_CODE)                    AS LIQUOR_NAME
+                     , A.ORG_CODE
+                     , NVL(REPLACE(C.ORG_NAME, ' 생산', ''), A.ORG_CODE)    AS ORG_NAME
+                     , SUM(CASE WHEN A.TYPE = '환산생산량' AND A.COST_GROUP IN ('환산생산량')                                 THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS PRDT_CONV_QTY    -- 환산c/s 생산량
+                     , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('재료비', '노무비', '제조경비', '외주가공비') THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS MANUFT_COST_AMT  -- 제조원가 금액
+                     , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('재료비')                                     THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS RAW_MAT_COST_AMT -- 원재료비 금액
+                     , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('노무비')                                     THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS LABOR_COST_AMT   -- 노무비 금액
+                     , SUM(CASE WHEN A.TYPE = '제조원가'   AND A.COST_GROUP IN ('제조경비', '외주가공비')                     THEN NVL(A.AMT_QTY, 0) ELSE 0 END) AS MANUFT_ECST_AMT  -- 제조경비 금액
+
+                  FROM EDW.M_FN_TB_PROD_COST_F      A
+                  JOIN EDW.W_CM_TB_FG_ITEM_M        B
+                    ON B.ITEM_CODE = A.ITEM_CODE
+             LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M   C
+                    ON C.ORG_CODE = A.ORG_CODE
+             LEFT JOIN EDW.W_CM_TB_LIQUOR_M         D
+                    ON D.LIQUOR_CODE = B.LIQUOR_CODE
+                 WHERE 1 = 1
+                   AND A.OU_CODE            = 'HJ0'
+                   AND A.PERIOD_YYYYMM_CODE = #{toYYYYMM, jdbcType=VARCHAR}
+                   AND A.BUSINESS_CODE      IN ('1', '2')
+                   AND A.TYPE               IN ('환산생산량', '제조원가')
+                   AND A.COST_GROUP         IN ('환산생산량', '재료비', '노무비', '제조경비', '외주가공비')
+                   AND NVL(A.AMT_QTY, 0)    != 0 -- 속도향상용
+                   AND B.LIQUOR_CODE        = #{liquorCode, jdbcType=VARCHAR}
+                   AND (    -- 공장
+                            (NVL(#{orgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (A.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{orgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                   AND (    -- 중분류
+                            (NVL(#{itemSegment2, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.SEGMENT2 IN (SELECT REGEXP_SUBSTR(#{itemSegment2, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{itemSegment2, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                   AND (    -- 소분류
+                            (NVL(#{itemSegment3, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.SEGMENT3 IN (SELECT REGEXP_SUBSTR(#{itemSegment3, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{itemSegment3, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                   AND (    -- 브랜드
+                            (NVL(#{brandCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.BRAND_CODE IN (SELECT REGEXP_SUBSTR(#{brandCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{brandCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                   AND (    -- 용도
+                            (NVL(#{usageCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.USAGE_CODE IN (SELECT REGEXP_SUBSTR(#{usageCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{usageCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                   AND (    -- 용기
+                            (NVL(#{vesselCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.VESSEL_CODE IN (SELECT REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{vesselCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                   AND (    -- 내수수출구분 : 1(내수), 2(수출)
+                            (NVL(#{domExpCode, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.DOM_EXP_CODE = #{domExpCode, jdbcType=VARCHAR})
+                       )
+                   AND (    -- 주력구분 : 주력, 비주력
+                            (NVL(#{mainFlag, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR})
+                       )
+                   AND (    -- 속성(기획상품여부) : 일반, 기획, 한정
+                            (NVL(#{eventItemFlag, jdbcType=VARCHAR}, '!ALL') = '!ALL' AND 1 = 1)
+                            OR
+                            (B.EVENT_ITEM_FLAG IN (SELECT REGEXP_SUBSTR(#{eventItemFlag, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{eventItemFlag, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL))
+                       )
+                 GROUP BY A.PERIOD_YYYYMM_CODE, B.LIQUOR_CODE, A.ORG_CODE, NVL(D.LIQUOR_DESC, B.LIQUOR_CODE), NVL(REPLACE(C.ORG_NAME, ' 생산', ''), A.ORG_CODE)
+           ) X
+CROSS JOIN (
+                SELECT 'TOTAL' AS ORG_GUBUN, 1 AS ORG_GUBUN_SEQ FROM DUAL UNION ALL
+                SELECT 'ORG'   AS ORG_GUBUN, 2 AS ORG_GUBUN_SEQ FROM DUAL
+           ) Y
+     WHERE 1 = 1
+       -- 사용자의 데이터 권한 체크 : SCMU.FN_SOP_AUTH_DATA(P_USER_ID, P_DEPT_LEVEL, P_DEPT_CODE, P_ORG_CODE)
+       AND 'Y' = SCMU.FN_SOP_AUTH_DATA(#{userId, jdbcType=VARCHAR}, '-', '-', X.ORG_CODE)
+     GROUP BY X.LIQUOR_CODE, X.LIQUOR_NAME
+            , CASE WHEN Y.ORG_GUBUN = 'TOTAL' THEN X.LIQUOR_CODE ELSE X.ORG_CODE END
+            , CASE WHEN Y.ORG_GUBUN = 'TOTAL' THEN X.LIQUOR_NAME ELSE X.ORG_NAME END
+     ORDER BY X.LIQUOR_CODE, MAX(Y.ORG_GUBUN_SEQ), CASE WHEN Y.ORG_GUBUN = 'TOTAL' THEN X.LIQUOR_CODE ELSE X.ORG_CODE END
+    </select>
+    
+</mapper>

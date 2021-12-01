@@ -1,0 +1,607 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M01010 : 실시간 판매현황(당일 판매예측)
+ * 작성일자 :: 2021.06.29
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M01010DaoMapper">
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+        WITH TBL_SALE_QTY_SOURCE_DATA AS ( /* com.hitejinro.snop.work.dao.M01010DaoMapper.search */
+        /* 실시간 판매현황 조회의 원천이 되는 데이터 조회하기 1)화면에 보여질 데이터 From-To, 2)예상산출을 위한 기간Sysdate-기간 */
+        SELECT T1.ITEM_CODE
+             <!-- , T2.DESCRIPTION AS ITEM_NAME -->
+             , T2.DESCRIPTION AS ITEM_NAME
+             , T1.SALES_DATE
+             , HHMMSS
+             , SUM(SALES_QTY) SALES_QTY
+             , T2.LIQUOR_CODE
+             , T2.USAGE_CODE
+             , T2.VESSEL_CODE
+             , T2.BRAND_SORT_ORDER
+             , T2.VESSEL_SORT_ORDER
+          FROM (SELECT CASE WHEN Z.TO_ITEM_CODE IS NULL THEN T1.ITEM_CODE ELSE Z.TO_ITEM_CODE END                    AS ITEM_CODE
+                     , SALES_DATE
+                     , CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 44 THEN SUBSTR(HHMMSS,1,2)
+                            WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN LPAD(TO_NUMBER(SUBSTR(HHMMSS,1,2))+1,2,'0')
+                       END || ':' ||
+                       CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 14 THEN '00'
+                            WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 15 AND 44 THEN '30'
+                            WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN '00'
+                       END AS HHMMSS
+                     , SUM(CONV_SALES_QTY) SALES_QTY
+                  FROM EDW.M_OM_TB_SALE_TIME_F T1
+             LEFT JOIN SCMU.W_SOP_TB_ITEM_MAP_M  Z
+                    ON Z.FR_ITEM_CODE = T1.ITEM_CODE
+                 WHERE 1=1
+                   AND ( T1.SALES_DATE BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                      OR T1.SALES_DATE BETWEEN TO_CHAR(SYSDATE-TO_NUMBER(#{calcDayCnt, jdbcType=VARCHAR}), 'YYYYMMDD') AND TO_CHAR(SYSDATE,'YYYYMMDD') )
+                 GROUP BY CASE WHEN Z.TO_ITEM_CODE IS NULL THEN T1.ITEM_CODE ELSE Z.TO_ITEM_CODE END
+                        , SALES_DATE
+                        , CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 44 THEN SUBSTR(HHMMSS,1,2)
+                               WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN LPAD(TO_NUMBER(SUBSTR(HHMMSS,1,2))+1,2,'0')
+                          END || ':' ||
+                          CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 14 THEN '00'
+                               WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 15 AND 44 THEN '30'
+                               WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN '00'
+                          END
+                   ) T1
+             , (SELECT *
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1=1
+                   AND LIQUOR_CODE IN ('10', '20')
+                   AND ITEM_TYPE IN ('FG', 'PH')
+                   AND ITEM_STATUS = 'Active'
+                   AND BRAND_CODE != '27'
+                <if test="liquorCode != null and liquorCode != '!ALL'">
+                   AND LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                </if>
+                <if test="itemCode != null and itemCode != ''">
+                   AND ( ITEM_CODE LIKE '%'||#{itemCode, jdbcType=VARCHAR}||'%'
+                      OR DESCRIPTION LIKE '%'||#{itemCode, jdbcType=VARCHAR}||'%' )
+                </if>
+                <if test="mainFlag != null and mainFlag != '!ALL'">
+                   AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                </if>
+                <if test="usageCode != null and usageCode != ''">
+                    <foreach open="AND USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+                        #{item, jdbcType=VARCHAR}
+                    </foreach>
+                </if>
+                <if test="vesselCode != null and vesselCode != ''">
+                    <foreach open="AND VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+                        #{item, jdbcType=VARCHAR}
+                    </foreach>
+                </if>
+                <if test="volumeCode != null and volumeCode != ''">
+                    <foreach open="AND VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+                        #{item, jdbcType=VARCHAR}
+                    </foreach>
+                </if>
+                   ) T2
+         WHERE T1.ITEM_CODE = T2.ITEM_CODE
+         GROUP BY T1.ITEM_CODE
+	            , T2.DESCRIPTION
+	            , T1.SALES_DATE
+	            , HHMMSS
+	            , T2.LIQUOR_CODE
+	            , T2.USAGE_CODE
+	            , T2.VESSEL_CODE
+	            , T2.BRAND_SORT_ORDER
+	            , T2.VESSEL_SORT_ORDER
+        )
+        , TBL_SALE_QTY AS (
+        /* 화면 조회를 위한 기간별 데이터 조회(일요일 제외) */
+        SELECT T1.ITEM_CODE
+             <!-- , T2.DESCRIPTION AS ITEM_NAME -->
+             , T1.ITEM_NAME
+             , T1.SALES_DATE
+             , HHMMSS
+             , SALES_QTY
+             , T2.BUSINESS_DAY_FLAG
+             , T1.LIQUOR_CODE
+             , T1.USAGE_CODE
+             , T1.VESSEL_CODE
+             , T1.BRAND_SORT_ORDER
+             , T1.VESSEL_SORT_ORDER
+          FROM (SELECT *
+                  FROM TBL_SALE_QTY_SOURCE_DATA
+                 WHERE SALES_DATE BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                   ) T1
+             , (SELECT *
+                  FROM W_SOP_VW_CALENDAR_M
+                 WHERE YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                   AND DAY_OF_WEEK != 1) T2
+         WHERE T1.SALES_DATE = T2.YYYYMMDD
+        )
+        , TBL_SALE_QTY_SOURCE_FILTER_DATA AS (
+        /* 실시간 판매현황 조회의 원천이 되는 데이터 조회하기 1)화면에 보여질 데이터 From-To, 2)예상산출을 위한 기간Sysdate-기간 */
+        SELECT T1.ITEM_CODE
+             <!-- , T2.DESCRIPTION AS ITEM_NAME -->
+             , T3.ABBR_ITEM_NAME AS ITEM_NAME
+             , T1.SALES_DATE
+             , HHMMSS
+             , SALES_QTY
+             , T2.LIQUOR_CODE
+             , T2.USAGE_CODE
+             , T2.VESSEL_CODE
+             , T2.BRAND_SORT_ORDER
+             , T2.VESSEL_SORT_ORDER
+             , T3.ORDER_SEQ
+          FROM TBL_SALE_QTY_SOURCE_DATA T1
+             , (SELECT *
+                  FROM EDW.W_CM_TB_FG_ITEM_M
+                 WHERE 1=1
+                <if test="liquorCode != null and liquorCode != '!ALL'">
+                   AND LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+                </if>
+                <if test="itemCode != null and itemCode != ''">
+                   AND ( ITEM_CODE LIKE '%'||#{itemCode, jdbcType=VARCHAR}||'%'
+                      OR DESCRIPTION LIKE '%'||#{itemCode, jdbcType=VARCHAR}||'%' )
+                </if>
+                   AND ITEM_TYPE IN ('FG', 'PH')
+                   AND ITEM_STATUS = 'Active'
+                <if test="mainFlag != null and mainFlag != '!ALL'">
+                   AND MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+                </if>
+                <if test="usageCode != null and usageCode != ''">
+                    <foreach open="AND USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+                        #{item, jdbcType=VARCHAR}
+                    </foreach>
+                </if>
+                <if test="vesselCode != null and vesselCode != ''">
+                    <foreach open="AND VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+                        #{item, jdbcType=VARCHAR}
+                    </foreach>
+                </if>
+                <if test="volumeCode != null and volumeCode != ''">
+                    <foreach open="AND VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+                        #{item, jdbcType=VARCHAR}
+                    </foreach>
+                </if>
+                   ) T2
+             , (SELECT DISTINCT ITEM_CODE
+                     , ABBR_ITEM_NAME
+                     , ORDER_SEQ
+                  FROM W_SOP_TB_INTEREST_ITEM_M A
+                     , (SELECT PERIOD_YYYYMM
+                             , INP_DGR
+                          FROM (SELECT PERIOD_YYYYMM
+                                     , MAX(INP_DGR) INP_DGR
+                                  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M
+                                 <!-- WHERE PERIOD_YYYYMM BETWEEN SUBSTR(#{startYYYYMMDD, jdbcType=VARCHAR},1,6) AND  SUBSTR(#{endYYYYMMDD, jdbcType=VARCHAR},1,6) -->
+                                 WHERE 1=1
+                                 GROUP BY PERIOD_YYYYMM
+                                 ORDER BY PERIOD_YYYYMM DESC)
+                         WHERE ROWNUM = 1) B
+                 WHERE A.PERIOD_YYYYMM = B.PERIOD_YYYYMM
+                   AND A.INP_DGR = B.INP_DGR
+                   AND 1 = 1) T3
+         WHERE T1.ITEM_CODE = T2.ITEM_CODE
+           AND T1.ITEM_CODE = T3.ITEM_CODE
+        )
+        , TBL_SALE_FILTER_QTY AS (
+        /* 화면 조회를 위한 기간별 데이터 조회(일요일 제외) */
+        SELECT T1.ITEM_CODE
+             <!-- , T2.DESCRIPTION AS ITEM_NAME -->
+             , T1.ITEM_NAME
+             , T1.SALES_DATE
+             , HHMMSS
+             , SALES_QTY
+             , T2.BUSINESS_DAY_FLAG
+             , T1.LIQUOR_CODE
+             , T1.USAGE_CODE
+             , T1.VESSEL_CODE
+             , T1.BRAND_SORT_ORDER
+             , T1.VESSEL_SORT_ORDER
+             , T1.ORDER_SEQ
+          FROM (SELECT *
+                  FROM TBL_SALE_QTY_SOURCE_FILTER_DATA
+                 WHERE SALES_DATE BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                   ) T1
+             , (SELECT *
+                  FROM W_SOP_VW_CALENDAR_M
+                 WHERE YYYYMMDD BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+                   AND DAY_OF_WEEK != 1) T2
+         WHERE T1.SALES_DATE = T2.YYYYMMDD
+        )
+        , TBL_TIME_GRID AS (
+        SELECT CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 44 THEN SUBSTR(HHMMSS,1,2)
+                    WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN LPAD(TO_NUMBER(SUBSTR(HHMMSS,1,2))+1,2,'0')
+               END || ':' ||
+               CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 14 THEN '00'
+                    WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 15 AND 44 THEN '30'
+                    WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN '00'
+               END AS HHMMSS
+          FROM EDW.M_OM_TB_SALE_TIME_F
+         WHERE HHMMSS BETWEEN '05:50' AND '24:00'
+           AND SALES_DATE > '20190101'
+         GROUP BY CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 44 THEN SUBSTR(HHMMSS,1,2)
+                       WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN LPAD(TO_NUMBER(SUBSTR(HHMMSS,1,2))+1,2,'0')
+                  END || ':' ||
+                  CASE WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 0 AND 14 THEN '00'
+                       WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 15 AND 44 THEN '30'
+                       WHEN (TO_NUMBER(SUBSTR(HHMMSS,4,2))) BETWEEN 45 AND 59 THEN '00'
+                  END
+        )
+        , TBL_LAST_TIME_GRID AS (
+        SELECT MAX(HHMMSS) LAST_HHMMSS
+          FROM TBL_SALE_QTY_SOURCE_DATA
+         WHERE SALES_DATE = TO_CHAR(SYSDATE, 'YYYYMMDD')
+        )
+        , TBL_THIS_DAY_SALES_QTY AS (
+        /* 판매예측1-1-1 아이템별 현재 시간대의 판매량 조회 */
+        SELECT ITEM_CODE
+             , NVL(SUM(SALES_QTY),0) AS SALES_QTY
+          FROM TBL_SALE_QTY_SOURCE_DATA
+         WHERE HHMMSS = (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID)
+         <!-- WHERE HHMMSS = TO_CHAR(SYSDATE,'HH24') || ':' ||
+                        CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                             WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+                        END -->
+           AND SALES_DATE = TO_CHAR(SYSDATE, 'YYYYMMDD')
+         GROUP BY ITEM_CODE )
+        , TBL_THIS_DAY_SALES_QTY_ALL AS (
+        /* 판매예측1-1-2 주종별 현재 시간대의 판매량 조회 */
+        SELECT LIQUOR_CODE
+             , NVL(SUM(SALES_QTY),0) AS SALES_QTY
+          FROM TBL_SALE_QTY_SOURCE_DATA
+         WHERE HHMMSS = (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID)
+           AND SALES_DATE = TO_CHAR(SYSDATE, 'YYYYMMDD')
+         GROUP BY LIQUOR_CODE )
+        , TBL_FORCAST_SALES_DATE AS (
+        /* 판매예측1-2-1 아이템별 현재 시간대의 판매량과 비슷한 판매량을 가진 날짜 조회 */
+        SELECT ITEM_CODE
+             , LIQUOR_CODE
+             , SALES_DATE
+             , DEF_SALES_DATE
+             , SALES_QTY DEF_SALES_QTY
+          FROM (SELECT T1.ITEM_CODE
+                     , T1.LIQUOR_CODE
+                     , SALES_DATE
+                     , CASE WHEN NVL(T1.SALES_QTY,0) <![CDATA[ < ]]> NVL(T2.SALES_QTY,0) THEN TO_CHAR(SYSDATE,'YYYYMMDD')
+                            ELSE T1.SALES_DATE
+                       END DEF_SALES_DATE
+                     , T2.SALES_QTY
+                     , ROW_NUMBER() OVER (PARTITION BY T1.ITEM_CODE ORDER BY ABS(T1.SALES_QTY-T2.SALES_QTY), T1.SALES_DATE DESC) ITEM_ORDER
+                  FROM TBL_SALE_QTY_SOURCE_DATA T1
+                     , TBL_THIS_DAY_SALES_QTY T2
+                 WHERE HHMMSS = (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID)
+                 <!-- WHERE HHMMSS = TO_CHAR(SYSDATE,'HH24') || ':' ||
+                                CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                                     WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+                                END -->
+                   AND SALES_DATE BETWEEN TO_CHAR(SYSDATE-TO_NUMBER(#{calcDayCnt, jdbcType=VARCHAR}), 'YYYYMMDD') AND TO_CHAR(SYSDATE,'YYYYMMDD')
+                   AND SALES_DATE != TO_CHAR(SYSDATE, 'YYYYMMDD')
+                   <!-- 특정시간대에 데이터가 빠지는 항목들로 인해 예측값이 이상하게 나오는 경우가 생김 시간대별 데이터가 모두 생긴 경우가 아닌 날짜는 예측에서 제외로직 추가 -->
+                   AND SALES_DATE NOT IN (SELECT SALES_DATE
+											FROM (SELECT DISTINCT SALES_DATE
+											           , HHMMSS
+											        FROM EDW.M_OM_TB_SALE_TIME_F
+											       WHERE SALES_DATE BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+											         AND HHMMSS > '11:00')
+										   GROUP BY SALES_DATE
+										  HAVING COUNT(*) <![CDATA[ < ]]> 19)
+                   AND T1.ITEM_CODE = T2.ITEM_CODE
+                   <!-- AND NVL(T1.SALES_QTY,0) >= NVL(T2.SALES_QTY,0) 판매예측을 위한 근사치 조회시 현재 판매량보다 적은 판매량은 근사치를 찾을때 제외한다. 2021-08-27 과장 진우석 요청 -->
+                 ORDER BY ITEM_CODE, ABS(T1.SALES_QTY-T2.SALES_QTY) )
+         WHERE 1 = 1
+           AND ITEM_ORDER = 1)
+        , TBL_FORCAST_SALES_DATE_ALL AS (
+        /* 판매예측1-2-2 아이템별 현재 시간대의 판매량과 비슷한 판매량을 가진 날짜 조회 */
+        SELECT ITEM_CODE
+             , LIQUOR_CODE
+             , SALES_DATE
+             , DEF_SALES_DATE
+             , SALES_QTY DEF_SALES_QTY
+          FROM (SELECT T1.LIQUOR_CODE ITEM_CODE
+                     , T1.LIQUOR_CODE
+                     , SALES_DATE
+                     , CASE WHEN NVL(T1.SALES_QTY,0) <![CDATA[ < ]]> NVL(T2.SALES_QTY,0) THEN TO_CHAR(SYSDATE,'YYYYMMDD')
+                            ELSE T1.SALES_DATE
+                       END DEF_SALES_DATE
+                     , T2.SALES_QTY
+                     , ROW_NUMBER() OVER (PARTITION BY T1.LIQUOR_CODE ORDER BY ABS(T1.SALES_QTY-T2.SALES_QTY), T1.SALES_DATE DESC) ITEM_ORDER
+                  FROM (SELECT LIQUOR_CODE
+                             , SALES_DATE
+                             , HHMMSS
+                             , SUM(SALES_QTY) AS SALES_QTY
+                          FROM TBL_SALE_QTY_SOURCE_DATA
+                         WHERE 1 = 1
+                         GROUP BY LIQUOR_CODE, SALES_DATE, HHMMSS ) T1
+                     , TBL_THIS_DAY_SALES_QTY_ALL T2
+                 WHERE HHMMSS = (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID)
+                 <!-- WHERE HHMMSS = TO_CHAR(SYSDATE,'HH24') || ':' ||
+                                CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                                     WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+                                END -->
+                   AND SALES_DATE BETWEEN TO_CHAR(SYSDATE-TO_NUMBER(#{calcDayCnt, jdbcType=VARCHAR}), 'YYYYMMDD') AND TO_CHAR(SYSDATE,'YYYYMMDD')
+                   AND SALES_DATE != TO_CHAR(SYSDATE, 'YYYYMMDD')
+                   <!-- 특정시간대에 데이터가 빠지는 항목들로 인해 예측값이 이상하게 나오는 경우가 생김 시간대별 데이터가 모두 생긴 경우가 아닌 날짜는 예측에서 제외로직 추가 -->
+                   AND SALES_DATE NOT IN (SELECT SALES_DATE
+											FROM (SELECT DISTINCT SALES_DATE
+											           , HHMMSS
+											        FROM EDW.M_OM_TB_SALE_TIME_F
+											       WHERE SALES_DATE BETWEEN #{startYYYYMMDD, jdbcType=VARCHAR} AND #{endYYYYMMDD, jdbcType=VARCHAR}
+											         AND HHMMSS > '11:00')
+										   GROUP BY SALES_DATE
+										  HAVING COUNT(*) <![CDATA[ < ]]> 19)
+                   AND T1.LIQUOR_CODE = T2.LIQUOR_CODE
+                   <!-- AND NVL(T1.SALES_QTY,0) >= NVL(T2.SALES_QTY,0) 판매예측을 위한 근사치 조회시 현재 판매량보다 적은 판매량은 근사치를 찾을때 제외한다. 2021-08-27 과장 진우석 요청 -->
+                 ORDER BY ITEM_CODE, ABS(T1.SALES_QTY-T2.SALES_QTY) )
+         WHERE 1 = 1
+           AND ITEM_ORDER = 1)
+        , TBL_FORCAST_SALES_FILTER_QTY AS (
+        /* 판매예측1-3 아이템별 현재 시간대의 판매량과 비슷한 판매량을 가진 날짜의 마감 데이터 조회 */
+        SELECT T2.ITEM_CODE
+             , CASE WHEN T2.DEF_SALES_DATE = TO_CHAR(SYSDATE,'YYYYMMDD') THEN DEF_SALES_QTY
+                    ELSE SALES_QTY
+               END AS FORCAST_QTY
+          FROM TBL_SALE_QTY_SOURCE_FILTER_DATA T1
+             , TBL_FORCAST_SALES_DATE T2
+         WHERE T1.HHMMSS = '24:00'
+           AND T1.SALES_DATE = T2.SALES_DATE
+           AND T1.ITEM_CODE = T2.ITEM_CODE)
+        , TBL_FORCAST_SALES_QTY_LIQUOR_ALL AS (
+        /* 판매예측1-3 아이템별 현재 시간대의 판매량과 비슷한 판매량을 가진 날짜의 마감 데이터 조회(주종별 전체) */
+        SELECT T1.LIQUOR_CODE
+             , CASE WHEN T2.DEF_SALES_DATE = TO_CHAR(SYSDATE,'YYYYMMDD') THEN DEF_SALES_QTY
+                    ELSE SUM(SALES_QTY)
+                END AS FORCAST_QTY
+          FROM TBL_SALE_QTY_SOURCE_DATA T1
+             , TBL_FORCAST_SALES_DATE_ALL T2
+         WHERE T1.HHMMSS = '24:00'
+           AND T1.SALES_DATE = T2.SALES_DATE
+           AND T1.LIQUOR_CODE = T2.LIQUOR_CODE
+         GROUP BY T1.LIQUOR_CODE, T2.DEF_SALES_DATE, DEF_SALES_QTY)
+        , TBL_FORCAST_SALES_QTY_AFTER_TIME AS (
+        /* 예측시간 이후의 데이터를 모두 예측일자에 맞게 변경위한 예측 일자의 이후 시간대별 조회 */
+        SELECT T1.ITEM_CODE
+
+             , T1.ITEM_NAME
+             , TO_CHAR(SYSDATE, 'YYYYMMDD') AS SALES_DATE
+             , HHMMSS
+             , CASE WHEN T2.DEF_SALES_DATE = TO_CHAR(SYSDATE, 'YYYYMMDD') THEN DEF_SALES_QTY
+                    ELSE SALES_QTY
+               END AS SALES_QTY
+             , 'Y' AS BUSINESS_DAY_FLAG
+             , T1.LIQUOR_CODE
+             , T1.USAGE_CODE
+             , T1.VESSEL_CODE
+             , T1.BRAND_SORT_ORDER
+             , T1.VESSEL_SORT_ORDER
+             , T1.ORDER_SEQ
+          FROM TBL_SALE_QTY_SOURCE_FILTER_DATA T1
+             , TBL_FORCAST_SALES_DATE T2
+         WHERE T1.HHMMSS > (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID)
+         <!-- WHERE T1.HHMMSS > TO_CHAR(SYSDATE,'HH24') || ':' ||
+                           CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                                WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+                           END -->
+           AND T1.SALES_DATE = T2.SALES_DATE
+           AND T1.ITEM_CODE = T2.ITEM_CODE
+        )
+        , TBL_FORCAST_SALES_QTY_AFTER_TIME_ALL AS (
+        /* 전체데이터의 예측시간 이후의 데이터를 모두 예측일자에 맞게 변경위한 예측 일자의 이후 시간대별 조회 */
+        SELECT T1.LIQUOR_CODE ITEM_CODE
+
+             , T1.LIQUOR_CODE ITEM_NAME
+             , TO_CHAR(SYSDATE, 'YYYYMMDD') AS SALES_DATE
+             , HHMMSS
+             , CASE WHEN T2.DEF_SALES_DATE = TO_CHAR(SYSDATE, 'YYYYMMDD') THEN DEF_SALES_QTY
+                    ELSE SUM(SALES_QTY)
+               END AS SALES_QTY
+             , 'Y' AS BUSINESS_DAY_FLAG
+             , T1.LIQUOR_CODE
+             , '' USAGE_CODE
+             , '' VESSEL_CODE
+             , '' BRAND_SORT_ORDER
+             , '' VESSEL_SORT_ORDER
+          FROM TBL_SALE_QTY_SOURCE_DATA T1
+             , TBL_FORCAST_SALES_DATE_ALL T2
+         WHERE T1.HHMMSS > (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID)
+         <!-- WHERE T1.HHMMSS > TO_CHAR(SYSDATE,'HH24') || ':' ||
+                           CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                                WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+                           END -->
+           AND T1.SALES_DATE = T2.SALES_DATE
+           AND T1.LIQUOR_CODE = T2.LIQUOR_CODE
+         GROUP BY  T1.LIQUOR_CODE
+	             , T2.DEF_SALES_DATE
+	             , T1.HHMMSS
+	             , T1.LIQUOR_CODE
+	             , T2.DEF_SALES_QTY
+        )
+        SELECT T2.*
+             , (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID) AS LAST_HHMMSS
+             <!-- , TO_CHAR(SYSDATE,'HH24') || ':' ||
+               CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                    WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+               END AS LAST_HHMMSS -->
+          FROM (SELECT *
+                  FROM TBL_TIME_GRID) T1
+             , (SELECT MT2.ITEM_CODE ITEM_CODE
+                     , MT2.ABBR_ITEM_NAME ITEM_NAME
+                     , MT2.ORDER_SEQ
+                     , MT2.HHMMSS
+                     , MT2.HHMMSS HHMMSS_ORDER
+                     , MT2.LIQUOR_CODE AS LIQUOR_CODE
+                     , TO_CHAR(MT2.BRAND_SORT_ORDER) BRAND_SORT_ORDER
+                     , TO_CHAR(MT2.VESSEL_SORT_ORDER) VESSEL_SORT_ORDER
+                     ${dynamicQueryTimeStr}
+                     , '!NotAll'                AS "Def"
+                  FROM (SELECT *
+                          FROM TBL_SALE_FILTER_QTY
+                         UNION ALL
+                        SELECT *
+                          FROM TBL_FORCAST_SALES_QTY_AFTER_TIME) MT1 RIGHT JOIN
+                       (SELECT *
+                          FROM (SELECT *
+                                  FROM TBL_TIME_GRID
+                                 WHERE HHMMSS != '20:00') M1
+                             , (SELECT DISTINCT A.ITEM_CODE
+                                     , A.ABBR_ITEM_NAME
+                                     , A.ORDER_SEQ
+                                     , LIQUOR_CODE
+                                     , BRAND_SORT_ORDER
+                                     , VESSEL_SORT_ORDER 
+                                  FROM W_SOP_TB_INTEREST_ITEM_M A
+                                     , (SELECT PERIOD_YYYYMM
+                                             , INP_DGR
+                                          FROM (SELECT PERIOD_YYYYMM
+                                                     , MAX(INP_DGR) INP_DGR
+                                                  FROM SCMU.W_SOP_TB_INTEREST_ITEM_M
+                                                 <!-- WHERE PERIOD_YYYYMM BETWEEN SUBSTR(#{startYYYYMMDD, jdbcType=VARCHAR},1,6) AND  SUBSTR(#{endYYYYMMDD, jdbcType=VARCHAR},1,6) -->
+                                                 WHERE 1=1
+                                                 GROUP BY PERIOD_YYYYMM
+                                                 ORDER BY PERIOD_YYYYMM DESC)
+                                         WHERE ROWNUM = 1) B
+                                     , EDW.W_CM_TB_FG_ITEM_M C
+                                 WHERE A.PERIOD_YYYYMM = B.PERIOD_YYYYMM
+                                   AND A.INP_DGR = B.INP_DGR
+                                   AND A.ITEM_CODE = C.ITEM_CODE
+				                   AND C.LIQUOR_CODE IN ('10', '20')
+				                   AND C.ITEM_TYPE IN ('FG', 'PH')
+				                   AND C.ITEM_STATUS = 'Active'
+				                <if test="liquorCode != null and liquorCode != '!ALL'">
+				                   AND C.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+				                </if>
+				                <if test="itemCode != null and itemCode != ''">
+				                   AND ( C.ITEM_CODE LIKE '%'||#{itemCode, jdbcType=VARCHAR}||'%'
+				                      OR C.DESCRIPTION LIKE '%'||#{itemCode, jdbcType=VARCHAR}||'%' )
+				                </if>
+				                <if test="mainFlag != null and mainFlag != '!ALL'">
+				                   AND C.MAIN_FLAG = #{mainFlag, jdbcType=VARCHAR}
+				                </if>
+				                <if test="usageCode != null and usageCode != ''">
+				                    <foreach open="AND C.USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+				                        #{item, jdbcType=VARCHAR}
+				                    </foreach>
+				                </if>
+				                <if test="vesselCode != null and vesselCode != ''">
+				                    <foreach open="AND C.VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+				                        #{item, jdbcType=VARCHAR}
+				                    </foreach>
+				                </if>
+				                <if test="volumeCode != null and volumeCode != ''">
+				                    <foreach open="AND C.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+				                        #{item, jdbcType=VARCHAR}
+				                    </foreach>
+				                </if>
+                                   AND 1 = 1) M2
+                         WHERE 1=1) MT2 ON MT1.ITEM_CODE = MT2.ITEM_CODE AND MT1.HHMMSS = MT2.HHMMSS
+                 GROUP BY MT2.LIQUOR_CODE, MT2.BRAND_SORT_ORDER, MT2.VESSEL_SORT_ORDER, MT2.ITEM_CODE , MT2.ABBR_ITEM_NAME, MT2.HHMMSS, MT2.ORDER_SEQ) T2
+         WHERE T1.HHMMSS = T2.HHMMSS
+         UNION ALL
+        SELECT ITEM_CODE
+             , ITEM_NAME
+             , ORDER_SEQ
+             , '일마감' HHMMSS
+             , '!ALL' HHMMSS_ORDER
+             , LIQUOR_CODE AS LIQUOR_CODE
+             , BRAND_SORT_ORDER
+             , VESSEL_SORT_ORDER
+             ${dynamicQueryMagamSumStr}
+             , '!ALL'                 AS "Def"
+             , (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID) AS LAST_HHMMSS
+             <!-- , TO_CHAR(SYSDATE,'HH24') || ':' ||
+               CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                    WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+               END AS LAST_HHMMSS -->
+          FROM (SELECT T1.ITEM_CODE
+                     , ITEM_NAME
+                     , LIQUOR_CODE
+                     , ORDER_SEQ
+                     , BRAND_SORT_ORDER
+                     , VESSEL_SORT_ORDER
+                     ${dynamicQueryMagamStr}
+                  FROM TBL_SALE_FILTER_QTY T1 LEFT JOIN
+                       TBL_FORCAST_SALES_FILTER_QTY T2 ON T1.ITEM_CODE = T2.ITEM_CODE
+                 WHERE HHMMSS = '24:00'
+                 GROUP BY LIQUOR_CODE, BRAND_SORT_ORDER, VESSEL_SORT_ORDER, T1.ITEM_CODE, ITEM_NAME, HHMMSS, T2.FORCAST_QTY, ORDER_SEQ ) T2
+         WHERE 1=1
+         GROUP BY LIQUOR_CODE, BRAND_SORT_ORDER, VESSEL_SORT_ORDER, ITEM_CODE, ITEM_NAME, ORDER_SEQ
+         UNION ALL
+        SELECT T2.*
+             , (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID) AS LAST_HHMMSS
+             <!-- , TO_CHAR(SYSDATE,'HH24') || ':' ||
+               CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                    WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+               END AS LAST_HHMMSS -->
+          FROM (SELECT *
+                  FROM TBL_TIME_GRID) T1
+             , (SELECT DECODE(LIQUOR_CODE,'10','10!ALL','20!ALL') AS ITEM_CODE
+                     , DECODE(LIQUOR_CODE,'10','맥주전체','소주전체') AS ITEM_NAME
+                     , 0 AS ORDER_SEQ
+                     , HHMMSS
+                     , HHMMSS HHMMSS_ORDER
+                     , DECODE(LIQUOR_CODE,'10','!ALL10','!ALL20') AS LIQUOR_CODE
+                     , '!ALL' AS BRAND_SORT_ORDER
+                     , '!ALL' AS VESSEL_SORT_ORDER
+                     ${dynamicQueryTimeStr}
+                     , '!NotAll'                AS "Def"
+                  FROM (SELECT *
+                          FROM TBL_SALE_QTY
+                         UNION ALL
+                        SELECT *
+                          FROM TBL_FORCAST_SALES_QTY_AFTER_TIME_ALL)
+                 GROUP BY LIQUOR_CODE, HHMMSS) T2
+         WHERE T1.HHMMSS = T2.HHMMSS
+         UNION ALL
+        SELECT DECODE(LIQUOR_CODE,'10','10!ALL','20!ALL') AS ITEM_CODE
+             , DECODE(LIQUOR_CODE,'10','맥주전체','소주전체') AS ITEM_NAME
+             , 0 AS ORDER_SEQ
+             , '일마감' HHMMSS
+             , '!ALL' HHMMSS_ORDER
+             , DECODE(LIQUOR_CODE,'10','!ALL10','!ALL20') AS LIQUOR_CODE
+             , '!ALL' AS BRAND_SORT_ORDER
+             , '!ALL' AS VESSEL_SORT_ORDER
+             ${dynamicQueryMagamSumStr}
+             , '!ALL'                 AS "Def"
+             , (SELECT LAST_HHMMSS FROM TBL_LAST_TIME_GRID) AS LAST_HHMMSS
+             <!-- , TO_CHAR(SYSDATE,'HH24') || ':' ||
+               CASE WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 0 AND 29 THEN '00'
+                    WHEN (TO_NUMBER(TO_CHAR(SYSDATE,'MI'))) BETWEEN 30 AND 59 THEN '30'
+               END AS LAST_HHMMSS -->
+          FROM (SELECT T1.LIQUOR_CODE
+                     ${dynamicQueryMagamStr}
+                  FROM TBL_SALE_QTY T1 LEFT JOIN
+                       TBL_FORCAST_SALES_QTY_LIQUOR_ALL T2 ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+                 WHERE HHMMSS = '24:00'
+                 GROUP BY T1.LIQUOR_CODE, T2.FORCAST_QTY ) T2
+         WHERE 1=1
+         GROUP BY LIQUOR_CODE
+         ORDER BY 6, 3, 5, 7, 1, 4
+    </select>
+    
+    <!-- dateGrid 조회 -->
+    <select id="searchDateGrid" parameterType="map" resultType="map">
+        SELECT YYYYMMDD /* com.hitejinro.snop.work.dao.M01010DaoMapper.searchDateGrid */
+             , BUSINESS_DAY_FLAG
+             , DAY_OF_WEEK
+             , 'DAY_'||LPAD(ROWNUM,3,'0') AS COL_ID
+             , COL_TXT
+             , (SELECT DAY_OF_WEEK FROM SCMU.W_SOP_VW_CALENDAR_M WHERE YYYYMMDD = MAX_YYYYMMDD) LAST_DAY_OF_WEEK
+          FROM (SELECT YYYYMMDD
+                     , BUSINESS_DAY_FLAG
+                     , DAY_OF_WEEK
+                     <!-- , SUBSTR(YYYYMMDD,5,2)||'월 '||SUBSTR(YYYYMMDD,7,2)||'일' AS COL_TXT -->
+                     , CASE WHEN SUBSTR(YYYYMMDD,5,1)='0' THEN SUBSTR(YYYYMMDD,6,1)
+                                                          ELSE SUBSTR(YYYYMMDD,5,2)
+                       END || '/' ||
+                       CASE WHEN SUBSTR(YYYYMMDD,7,1)='0' THEN SUBSTR(YYYYMMDD,8,1)
+                                                          ELSE SUBSTR(YYYYMMDD,7,2)
+                       END AS COL_TXT
+                     , (SELECT MAX(YYYYMMDD) MAX_YYYYMMDD
+                          FROM SCMU.W_SOP_VW_CALENDAR_M
+                         WHERE YYYYMMDD BETWEEN REPLACE(#{startYYYYMMDD, jdbcType=VARCHAR},'-', '') AND REPLACE(#{endYYYYMMDD, jdbcType=VARCHAR},'-','')
+                           AND DAY_OF_WEEK != 1) AS MAX_YYYYMMDD
+                  FROM SCMU.W_SOP_VW_CALENDAR_M
+                 WHERE YYYYMMDD BETWEEN REPLACE(#{startYYYYMMDD, jdbcType=VARCHAR},'-', '') AND REPLACE(#{endYYYYMMDD, jdbcType=VARCHAR},'-','')
+                   AND DAY_OF_WEEK != 1
+                 ORDER BY 1)
+    </select>
+</mapper>

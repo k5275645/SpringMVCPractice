@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 반제품 생산실적 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M09030DaoMapper">
+
+	<!-- 헤더 조회 -->
+	<select id="searchHeader" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M09030DaoMapper.searchHeader */
+		      A.PERIOD_SCM_YYYYWW, A.PERIOD_TYPE, A.MIN_YYYYMMDD, A.MAX_YYYYMMDD
+		    , B.TYPE_CODE, B.TYPE_DESC
+			
+			, 'COL' || (ROW_NUMBER() OVER (ORDER BY A.PERIOD_SEQ, A.PERIOD_SCM_YYYYWW, B.TYPE_SEQ) -1) AS NAME
+            , (CASE WHEN B.TYPE_CODE = 'YIELD_ISSUE_RATE' THEN 'percent'
+                    ELSE 'numeric'
+                    END) AS DEF
+            , (CASE WHEN B.TYPE_CODE = 'YIELD_ISSUE_RATE' THEN '80'
+                    ELSE '100'
+                    END) AS WIDTH
+            , (CASE WHEN B.TYPE_CODE = 'SUM_ISSUE_QTY' THEN '0'
+                    ELSE '1'
+                    END) AS VISIBLE
+                    
+		    , (CASE WHEN B.TYPE_SEQ != '1'          THEN NULL
+		            WHEN A.PERIOD_TYPE = 'MONTH'    THEN '당월'
+		            ELSE SUBSTR(A.PERIOD_SCM_YYYYWW, 0, 4)
+		              || '년 ' || LTRIM(SUBSTR(A.PERIOD_SCM_YYYYWW, 5, 2), '0')
+		              || '주(' || LTRIM(SUBSTR(A.MIN_YYYYMMDD, 5, 2), '0') || '/' || LTRIM(SUBSTR(A.MIN_YYYYMMDD, 7, 2), '0')
+		              || ' ~ ' || LTRIM(SUBSTR(A.MAX_YYYYMMDD, 5, 2), '0') || '/' || LTRIM(SUBSTR(A.MAX_YYYYMMDD, 7, 2), '0')
+		              || ')'
+		            END) AS HEADER1_DESC
+		    , (CASE WHEN B.TYPE_SEQ != '1'          THEN NULL
+		            ELSE COUNT(1) OVER (PARTITION BY A.PERIOD_SCM_YYYYWW, A.PERIOD_TYPE)
+		            END) AS HEADER1_SPAN
+		            
+			, B.TYPE_DESC AS HEADER2_DESC
+		FROM
+		(
+		    SELECT
+		          AA.YYYYMM         AS PERIOD_SCM_YYYYWW
+		        , 'MONTH'           AS PERIOD_TYPE
+		        , '1'               AS PERIOD_SEQ
+		        , MIN(AA.YYYYMMDD)  AS MIN_YYYYMMDD
+		        , MAX(AA.YYYYMMDD)  AS MAX_YYYYMMDD
+		    FROM SCMU.W_SOP_VW_CALENDAR_M AA
+		    WHERE 1 = 1
+		        AND AA.YYYYMM = #{YYYYMM, jdbcType=VARCHAR}
+		    GROUP BY AA.YYYYMM
+		
+		    UNION ALL
+		    SELECT
+		          AB.SCM_YYYYWW     AS PERIOD_SCM_YYYYWW
+		        , 'WEEK'            AS PERIOD_TYPE
+		        , '2'               AS PERIOD_SEQ
+		        , MIN(AB.YYYYMMDD)  AS MIN_YYYYMMDD
+		        , MAX(AB.YYYYMMDD)  AS MAX_YYYYMMDD
+		    FROM SCMU.W_SOP_VW_CALENDAR_M AB
+		    WHERE 1 = 1
+		        AND AB.YYYYMMDD BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+		    GROUP BY AB.SCM_YYYYWW
+		) A
+		LEFT JOIN
+		(
+		    SELECT 'BEGINNING_ONHAND_QTY' 	AS TYPE_CODE, '기초재고' 	AS TYPE_DESC, '1' AS TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'RECEIPT_QTY' 			AS TYPE_CODE, '입고' 		AS TYPE_DESC, '2' AS TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'ISSUE_QTY' 				AS TYPE_CODE, '출고' 		AS TYPE_DESC, '3' AS TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'YIELD_ISSUE_QTY' 		AS TYPE_CODE, '결감' 		AS TYPE_DESC, '4' AS TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'SUM_ISSUE_QTY' 			AS TYPE_CODE, '총출고' 		AS TYPE_DESC, '5' AS TYPE_SEQ FROM DUAL
+		    UNION ALL
+		    SELECT 'YIELD_ISSUE_RATE' 		AS TYPE_CODE, '결감률' 		AS TYPE_DESC, '6' AS TYPE_SEQ FROM DUAL		    
+		    UNION ALL
+		    SELECT 'ENDING_ONHAND_QTY' 		AS TYPE_CODE, '기말재고' 	AS TYPE_DESC, '7' AS TYPE_SEQ FROM DUAL
+		) B ON 1 = 1
+		ORDER BY A.PERIOD_SEQ, A.PERIOD_SCM_YYYYWW, B.TYPE_SEQ
+	</select>
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH STOCK_TBL AS /* com.hitejinro.snop.work.dao.M09030DaoMapper.search */
+		(
+		    SELECT
+		          AA.TRANSACTION_DATE   AS PERIOD_YYYYMMDD
+		        , AB.SCM_YYYYWW         AS PERIOD_SCM_YYYYWW
+		        , AB.YYYYMM             AS PERIOD_YYYYMM
+		        , AA.ORG_CODE           AS MFG_CODE
+		        , AA.ITEM_CODE
+		        , DECODE(AA.BUSINESS_CODE, '1', '10', '2', '20') AS LIQUOR_CODE
+		
+		        , AA.BEGINNING_ONHAND_QTY
+		        , AA.RECEIPT_QTY
+		        , AA.ISSUE_QTY
+		        , AA.YIELD_ISSUE_QTY
+		        , AA.SUM_ISSUE_QTY
+		        , AA.ENDING_ONHAND_QTY
+		    FROM EDW.W_PRD_TB_DAILY_SARM_TXN_F AA
+		
+		    INNER JOIN SCMU.W_SOP_VW_CALENDAR_M AB ON AB.YYYYMMDD = AA.TRANSACTION_DATE
+		
+		    WHERE 1 = 1
+		        AND AA.OU_CODE 			= 'HJ0'
+		        AND AA.TRANSACTION_DATE BETWEEN #{startDate, jdbcType=VARCHAR} AND #{endDate, jdbcType=VARCHAR}
+		        AND AA.BUSINESS_CODE 	= DECODE(#{liquorCode, jdbcType=VARCHAR}, '10', '1', '20', '2')
+			    AND 
+			    (    -- 공장
+			        (NVL(#{mfgCode, jdbcType=VARCHAR}, '!ALL') = '!ALL')
+			        OR
+			        AA.ORG_CODE IN (SELECT REGEXP_SUBSTR(#{mfgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) AS ORG_CODE FROM DUAL CONNECT BY REGEXP_SUBSTR(#{mfgCode, jdbcType=VARCHAR}, '[^,]+', 1, LEVEL) IS NOT NULL)
+			    )
+		)
+		
+		SELECT
+		      E.MFG_CODE
+		    , E.ITEM_CODE
+		    , MAX(G.MFG_NAME)		AS MFG_NAME
+		    , MAX(F.SEGMENT3)		AS SEGMENT3
+		    , MAX(F.DESCRIPTION)	AS DESCRIPTION
+		    
+		<foreach collection="header" item="list" index="i">
+		    , SUM(CASE WHEN E.PERIOD_TYPE = #{list.PERIOD_TYPE, jdbcType=VARCHAR} AND E.PERIOD_SCM_YYYYWW = #{list.PERIOD_SCM_YYYYWW, jdbcType=VARCHAR}
+		    		   THEN E.${list.TYPE_CODE}
+		    		   ELSE 0
+		    		   END) AS ${list.NAME}
+		</foreach>
+		FROM
+		(
+		    -- 주차별
+		    SELECT
+		          CA.PERIOD_SCM_YYYYWW
+		        , CA.MFG_CODE
+		        , CA.ITEM_CODE
+		        , 'WEEK' AS PERIOD_TYPE
+		        
+		        , SUM(CASE WHEN CA.PERIOD_YYYYMMDD = CC.MIN_PERIOD_YYYYMMDD THEN CA.BEGINNING_ONHAND_QTY ELSE 0 END) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1) 	AS BEGINNING_ONHAND_QTY
+		        , SUM(CA.RECEIPT_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                                  AS RECEIPT_QTY
+		        , SUM(CA.ISSUE_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                                    AS ISSUE_QTY
+		        , SUM(CA.YIELD_ISSUE_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                              AS YIELD_ISSUE_QTY
+		        , SUM(CA.SUM_ISSUE_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                                AS SUM_ISSUE_QTY
+		        , (CASE WHEN SUM(CA.SUM_ISSUE_QTY) = 0 THEN 0
+		        		ELSE SUM(CA.YIELD_ISSUE_QTY) / SUM(CA.SUM_ISSUE_QTY)
+		        		END) AS YIELD_ISSUE_RATE
+		        , SUM(CASE WHEN CA.PERIOD_YYYYMMDD = CC.MAX_PERIOD_YYYYMMDD THEN CA.ENDING_ONHAND_QTY ELSE 0 END) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)      AS ENDING_ONHAND_QTY
+		    FROM STOCK_TBL CA
+		
+		    LEFT JOIN
+		    (
+		        SELECT
+		              CB.PERIOD_SCM_YYYYWW, CB.MFG_CODE, CB.ITEM_CODE
+		            , MIN(CB.PERIOD_YYYYMMDD) AS MIN_PERIOD_YYYYMMDD
+		            , MAX(CB.PERIOD_YYYYMMDD) AS MAX_PERIOD_YYYYMMDD
+		        FROM STOCK_TBL CB
+		        GROUP BY CB.PERIOD_SCM_YYYYWW, CB.MFG_CODE, CB.ITEM_CODE
+		    ) CC ON CC.PERIOD_SCM_YYYYWW = CA.PERIOD_SCM_YYYYWW
+		        AND CC.MFG_CODE          = CA.MFG_CODE
+		        AND CC.ITEM_CODE         = CA.ITEM_CODE
+		    GROUP BY CA.PERIOD_SCM_YYYYWW, CA.MFG_CODE, CA.ITEM_CODE
+		
+		    -- 월별
+		    UNION ALL
+		    SELECT
+		          DA.PERIOD_YYYYMM  AS PERIOD_SCM_YYYYWW
+		        , DA.MFG_CODE
+		        , DA.ITEM_CODE
+		        , 'MONTH'           AS PERIOD_TYPE
+		        
+		        , SUM(CASE WHEN DA.PERIOD_YYYYMMDD = DC.MIN_PERIOD_YYYYMMDD THEN DA.BEGINNING_ONHAND_QTY ELSE 0 END) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1) 	AS BEGINNING_ONHAND_QTY
+		        , SUM(DA.RECEIPT_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                                  AS RECEIPT_QTY
+		        , SUM(DA.ISSUE_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                                    AS ISSUE_QTY
+		        , SUM(DA.YIELD_ISSUE_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                              AS YIELD_ISSUE_QTY
+		        , SUM(DA.SUM_ISSUE_QTY) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)                                                                                AS SUM_ISSUE_QTY
+                , (CASE WHEN SUM(DA.SUM_ISSUE_QTY) = 0 THEN 0
+                        ELSE SUM(DA.YIELD_ISSUE_QTY) / SUM(DA.SUM_ISSUE_QTY)
+                        END) AS YIELD_ISSUE_RATE
+		        , SUM(CASE WHEN DA.PERIOD_YYYYMMDD = DC.MAX_PERIOD_YYYYMMDD THEN DA.ENDING_ONHAND_QTY ELSE 0 END) / GREATEST(NVL(#{unit, jdbcType=VARCHAR}, 1), 1)      AS ENDING_ONHAND_QTY
+		    FROM STOCK_TBL DA
+		
+		    LEFT JOIN
+		    (
+		        SELECT
+		              DB.PERIOD_YYYYMM, DB.MFG_CODE, DB.ITEM_CODE
+		            , MIN(DB.PERIOD_YYYYMMDD) AS MIN_PERIOD_YYYYMMDD
+		            , MAX(DB.PERIOD_YYYYMMDD) AS MAX_PERIOD_YYYYMMDD
+		        FROM STOCK_TBL DB
+		        GROUP BY DB.PERIOD_YYYYMM, DB.MFG_CODE, DB.ITEM_CODE
+		    ) DC ON DC.PERIOD_YYYYMM = DA.PERIOD_YYYYMM
+		        AND DC.MFG_CODE      = DA.MFG_CODE
+		        AND DC.ITEM_CODE     = DA.ITEM_CODE
+		    GROUP BY DA.PERIOD_YYYYMM, DA.MFG_CODE, DA.ITEM_CODE
+		) E
+		
+		INNER JOIN EDW.W_CM_TB_ITEM_M F ON F.ITEM_CODE = E.ITEM_CODE
+		
+		INNER JOIN EDW.W_CM_TB_MFG_M G ON G.MFG_CODE = E.MFG_CODE
+		
+		WHERE 1 = 1
+		    AND F.ITEM_TYPE = 'SA' -- 반제품
+			AND
+			(
+				E.ITEM_CODE LIKE #{itemCode, jdbcType=VARCHAR} || '%'
+	            OR
+	            F.DESCRIPTION LIKE #{itemCode, jdbcType=VARCHAR} || '%'
+	        )
+		GROUP BY E.MFG_CODE, E.ITEM_CODE
+		ORDER BY E.MFG_CODE, MAX(F.SEGMENT3), E.ITEM_CODE
+	</select>
+</mapper>

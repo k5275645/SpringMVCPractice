@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 제품 과다/부족 기준 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08080DaoMapper">
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08080DaoMapper.search */
+		      A.PERIOD_YYYYMM				  AS PERIOD_YYYYMM
+		    , A.LIQUOR_CODE					  AS LIQUOR_CODE
+		    , MAX(A.LIQUOR_DESC)			  AS LIQUOR_DESC
+		    , A.ITEM_IGRD_TYPE_CODE			  AS ITEM_IGRD_TYPE_CODE
+		    , MAX(A.ITEM_IGRD_TYPE_NAME)	  AS ITEM_IGRD_TYPE_NAME
+		    , A.STOCK_STATS_CODE			  AS STOCK_STATS_CODE
+		    , A.SEQ							  AS SEQ
+		    
+		    , MAX(A.FR_STOCK_STATS_VAL_TP)    AS FR_STOCK_STATS_VAL_TP
+		    , MAX(A.FR_STOCK_STATS_RNG_SN)    AS FR_STOCK_STATS_RNG_SN
+		    , MAX(A.FR_STOCK_STATS_VAL)       AS FR_STOCK_STATS_VAL
+		    , MAX('기준값')                   AS REFERENCE_VAL
+		    , MAX(A.TO_STOCK_STATS_VAL_TP)    AS TO_STOCK_STATS_VAL_TP
+		    , MAX(A.TO_STOCK_STATS_RNG_SN)    AS TO_STOCK_STATS_RNG_SN
+		    , MAX(A.TO_STOCK_STATS_VAL)       AS TO_STOCK_STATS_VAL
+		    , MAX(A.RMKS)                     AS RMKS
+		FROM
+		(
+			SELECT
+			      #{yyyymm, jdbcType=VARCHAR}     AS PERIOD_YYYYMM
+			    , T2.LIQUOR_CODE   				  AS LIQUOR_CODE
+			    , T2.LIQUOR_DESC				  AS LIQUOR_DESC
+			    , T1.CODE   					  AS ITEM_IGRD_TYPE_CODE
+			    , T1.NAME   					  AS ITEM_IGRD_TYPE_NAME
+			    , T1.SEQ						  AS ITEM_IGRD_TYPE_SEQ
+			    , T3.CODE   					  AS STOCK_STATS_CODE
+			    , T3.SEQ						  AS STOCK_STATS_SEQ
+			    , 1         					  AS SEQ
+			                                      
+			    , NULL      					  AS FR_STOCK_STATS_VAL_TP
+			    , NULL      					  AS FR_STOCK_STATS_RNG_SN
+			    , NULL      					  AS FR_STOCK_STATS_VAL
+			                                      
+			    , NULL      					  AS TO_STOCK_STATS_VAL_TP
+			    , NULL      					  AS TO_STOCK_STATS_RNG_SN
+			    , NULL      					  AS TO_STOCK_STATS_VAL
+			    , NULL      					  AS RMKS
+			FROM SCMU.W_SOP_TB_COM_CODE_M T1
+			
+			LEFT JOIN EDW.W_CM_TB_LIQUOR_M T2 ON T2.LIQUOR_CODE = DECODE(#{liquorCd, jdbcType=VARCHAR}, '00', T2.LIQUOR_CODE, #{liquorCd, jdbcType=VARCHAR})
+			                                        
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T3  ON T3.GROUP_CODE  = 'STOCK_STATS'
+			                                      AND T3.USE_YN      = 'Y'
+			                                      AND 1 = 1
+			WHERE 1 = 1
+			    AND T1.GROUP_CODE  = 'ITEM_IGRD_TYPE_LIST'
+			    AND T1.USE_YN      = 'Y'
+			    AND T1.CODE       != 'NA'
+			    AND T2.LIQUOR_CODE IN ('10', '20')
+			
+			UNION ALL
+			SELECT 
+			      T1.PERIOD_YYYYMM				AS PERIOD_YYYYMM
+			    , T1.LIQUOR_CODE				AS LIQUOR_CODE
+			    , T2.LIQUOR_DESC				AS LIQUOR_DESC
+			    , T1.ITEM_IGRD_TYPE_CODE		AS ITEM_IGRD_TYPE_CODE
+			    , NVL(T3.NAME, T9.DESCRIPTION)  AS ITEM_IGRD_TYPE_NAME
+			    , T3.SEQ    					AS ITEM_IGRD_TYPE_SEQ
+			    , T1.STOCK_STATS_CODE			AS STOCK_STATS_CODE
+			    , T4.SEQ    					AS STOCK_STATS_SEQ
+			    , T1.SEQ    					AS SEQ
+			        
+			    -- FR
+			    , T1.FR_STOCK_STATS_VAL_TP		AS FR_STOCK_STATS_VAL_TP
+			    , T1.FR_STOCK_STATS_RNG_SN		AS FR_STOCK_STATS_RNG_SN
+			    , T1.FR_STOCK_STATS_VAL			AS FR_STOCK_STATS_VAL
+			    
+			    -- TO
+			    , T1.TO_STOCK_STATS_VAL_TP		AS TO_STOCK_STATS_VAL_TP
+			    , T1.TO_STOCK_STATS_RNG_SN		AS TO_STOCK_STATS_RNG_SN
+			    , T1.TO_STOCK_STATS_VAL			AS TO_STOCK_STATS_VAL
+			    , T1.RMKS						AS RMKS
+			FROM SCMU.W_SOP_TB_STOCK_STATS_MNG_M T1
+			
+			LEFT JOIN EDW.W_CM_TB_LIQUOR_M T2 ON T2.LIQUOR_CODE = T1.LIQUOR_CODE
+			
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T3  ON T3.GROUP_CODE  = 'ITEM_IGRD_TYPE_LIST'
+			                                      AND T3.USE_YN      = 'Y'
+			                                      AND T3.CODE        = T1.ITEM_IGRD_TYPE_CODE
+			                                        
+			LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T4  ON T4.GROUP_CODE  = 'STOCK_STATS'
+			                                      AND T4.USE_YN      = 'Y'
+			                                      AND T4.CODE        = T1.STOCK_STATS_CODE
+			
+			LEFT JOIN EDW.W_CM_TB_FG_ITEM_M T9 ON T9.ITEM_CODE = T1.ITEM_IGRD_TYPE_CODE
+			
+			WHERE 1 = 1
+			    AND T1.PERIOD_YYYYMM = #{yyyymm, jdbcType=VARCHAR}
+			    AND T1.LIQUOR_CODE   = DECODE(#{liquorCd, jdbcType=VARCHAR}, '00', T1.LIQUOR_CODE, #{liquorCd, jdbcType=VARCHAR})
+		) A
+		GROUP BY A.PERIOD_YYYYMM, A.LIQUOR_CODE, A.ITEM_IGRD_TYPE_CODE, A.STOCK_STATS_CODE, A.SEQ
+		ORDER BY A.PERIOD_YYYYMM, A.LIQUOR_CODE, MAX(A.ITEM_IGRD_TYPE_SEQ), A.ITEM_IGRD_TYPE_CODE, MAX(A.STOCK_STATS_SEQ), A.SEQ
+    </select>
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 삭제 -->
+    <delete id="delete" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08080DaoMapper.delete */
+        FROM SCMU.W_SOP_TB_STOCK_STATS_MNG_M T
+		WHERE 1 = 1
+			AND T.PERIOD_YYYYMM 	  = #{PERIOD_YYYYMM, jdbcType=VARCHAR}
+			AND T.LIQUOR_CODE		  = #{LIQUOR_CODE, jdbcType=VARCHAR}
+			AND T.ITEM_IGRD_TYPE_CODE = #{ITEM_IGRD_TYPE_CODE, jdbcType=VARCHAR}
+			AND T.STOCK_STATS_CODE 	  = #{STOCK_STATS_CODE, jdbcType=VARCHAR}
+			AND T.SEQ 				  = #{SEQ, jdbcType=VARCHAR}
+    </delete>
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_STOCK_STATS_MNG_M T /* com.hitejinro.snop.work.dao.M08080DaoMapper.update */
+    	USING
+    	(
+    		SELECT
+    			  T1.PERIOD_YYYYMM								AS PERIOD_YYYYMM
+    			, T1.LIQUOR_CODE								AS LIQUOR_CODE
+    			, T1.ITEM_IGRD_TYPE_CODE						AS ITEM_IGRD_TYPE_CODE
+    			, T1.STOCK_STATS_CODE							AS STOCK_STATS_CODE
+    			, NVL(MAX(T1.SEQ), NVL(MAX(T2.SEQ), 0) + 1)		AS SEQ
+    			, MAX(T1.FR_STOCK_STATS_VAL_TP)					AS FR_STOCK_STATS_VAL_TP
+    			, MAX(T1.FR_STOCK_STATS_RNG_SN)					AS FR_STOCK_STATS_RNG_SN
+    			, MAX(T1.FR_STOCK_STATS_VAL)					AS FR_STOCK_STATS_VAL
+            	, MAX(T1.TO_STOCK_STATS_VAL_TP)					AS TO_STOCK_STATS_VAL_TP
+            	, MAX(T1.TO_STOCK_STATS_RNG_SN)					AS TO_STOCK_STATS_RNG_SN
+            	, MAX(T1.TO_STOCK_STATS_VAL)					AS TO_STOCK_STATS_VAL
+            	, MAX(T1.RMKS)									AS RMKS
+    		FROM
+    		(
+				SELECT
+					  #{PERIOD_YYYYMM, jdbcType=VARCHAR}			AS PERIOD_YYYYMM
+					, #{LIQUOR_CODE, jdbcType=VARCHAR}				AS LIQUOR_CODE
+					, #{ITEM_IGRD_TYPE_CODE, jdbcType=VARCHAR}		AS ITEM_IGRD_TYPE_CODE
+					, #{STOCK_STATS_CODE, jdbcType=VARCHAR}			AS STOCK_STATS_CODE
+					, #{SEQ, jdbcType=VARCHAR}						AS SEQ
+					, #{FR_STOCK_STATS_VAL_TP, jdbcType=VARCHAR}	AS FR_STOCK_STATS_VAL_TP
+					, #{FR_STOCK_STATS_RNG_SN, jdbcType=VARCHAR}	AS FR_STOCK_STATS_RNG_SN
+					, #{FR_STOCK_STATS_VAL, jdbcType=VARCHAR}		AS FR_STOCK_STATS_VAL
+					, #{TO_STOCK_STATS_VAL_TP, jdbcType=VARCHAR}	AS TO_STOCK_STATS_VAL_TP
+					, #{TO_STOCK_STATS_RNG_SN, jdbcType=VARCHAR}	AS TO_STOCK_STATS_RNG_SN
+					, #{TO_STOCK_STATS_VAL, jdbcType=VARCHAR}		AS TO_STOCK_STATS_VAL
+					, #{RMKS, jdbcType=VARCHAR}						AS RMKS
+				FROM DUAL
+			) T1
+			
+			LEFT JOIN SCMU.W_SOP_TB_STOCK_STATS_MNG_M T2 ON T2.PERIOD_YYYYMM   	   = T1.PERIOD_YYYYMM
+                                                   	    AND T2.LIQUOR_CODE   	   = T1.LIQUOR_CODE 
+                                                        AND T2.ITEM_IGRD_TYPE_CODE = T1.ITEM_IGRD_TYPE_CODE
+                                                        AND T2.STOCK_STATS_CODE    = T1.STOCK_STATS_CODE
+                                                        
+			GROUP BY T1.PERIOD_YYYYMM, T1.LIQUOR_CODE, T1.ITEM_IGRD_TYPE_CODE, T1.STOCK_STATS_CODE
+    	) S ON  (
+    				  	T.PERIOD_YYYYMM 	  = S.PERIOD_YYYYMM
+    				AND T.LIQUOR_CODE		  = S.LIQUOR_CODE
+    				AND T.ITEM_IGRD_TYPE_CODE = S.ITEM_IGRD_TYPE_CODE
+    				AND T.STOCK_STATS_CODE	  = S.STOCK_STATS_CODE
+    				AND T.SEQ				  = S.SEQ
+    			)
+    	WHEN MATCHED THEN
+    		UPDATE SET
+    			  T.FR_STOCK_STATS_VAL_TP		= S.FR_STOCK_STATS_VAL_TP
+    			, T.FR_STOCK_STATS_RNG_SN		= S.FR_STOCK_STATS_RNG_SN
+    			, T.FR_STOCK_STATS_VAL			= S.FR_STOCK_STATS_VAL
+    			, T.TO_STOCK_STATS_VAL_TP		= S.TO_STOCK_STATS_VAL_TP
+    			, T.TO_STOCK_STATS_RNG_SN		= S.TO_STOCK_STATS_RNG_SN
+    			, T.TO_STOCK_STATS_VAL			= S.TO_STOCK_STATS_VAL
+    			, T.RMKS						= S.RMKS
+    			, T.LAST_UPDATED_BY				= #{userId, jdbcType=VARCHAR}
+    			, T.LAST_UPDATE_DATE			= SYSDATE
+    	WHEN NOT MATCHED THEN
+    	INSERT
+    	(
+    		  T.PERIOD_YYYYMM, T.LIQUOR_CODE, T.ITEM_IGRD_TYPE_CODE, T.STOCK_STATS_CODE, T.SEQ
+    		, T.FR_STOCK_STATS_VAL_TP, T.FR_STOCK_STATS_RNG_SN, T.FR_STOCK_STATS_VAL
+    		, T.TO_STOCK_STATS_VAL_TP, T.TO_STOCK_STATS_RNG_SN, T.TO_STOCK_STATS_VAL, T.RMKS
+    		, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+    	)
+    	VALUES
+    	(
+    		  S.PERIOD_YYYYMM, S.LIQUOR_CODE, S.ITEM_IGRD_TYPE_CODE, S.STOCK_STATS_CODE, S.SEQ
+    		, S.FR_STOCK_STATS_VAL_TP, S.FR_STOCK_STATS_RNG_SN, S.FR_STOCK_STATS_VAL
+            , S.TO_STOCK_STATS_VAL_TP, S.TO_STOCK_STATS_RNG_SN, S.TO_STOCK_STATS_VAL, S.RMKS
+            , #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+    	)
+    </update>
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 버전콤보조회 -->
+    <select id="getVerList" parameterType="map" resultType="map">
+    	SELECT 
+    		  T.PERIOD_YYYYMM																 AS CODE
+    		, SUBSTR(T.PERIOD_YYYYMM, 1, 4) || '년' || SUBSTR(T.PERIOD_YYYYMM, 5, 6) || '월' AS NAME 
+		FROM W_SOP_TB_STOCK_STATS_MNG_M T
+		GROUP BY T.PERIOD_YYYYMM
+    </select>
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 해당 월 데이터 삭제 -->
+    <delete id="deleteNowVer" parameterType="map">
+    	DELETE /* com.hitejinro.snop.work.dao.M08080DaoMapper.deleteNowVer */
+    	FROM SCMU.W_SOP_TB_STOCK_STATS_MNG_M T
+    	WHERE 1 = 1
+    		AND T.PERIOD_YYYYMM = #{yyyymm, jdbcType=VARCHAR}
+    </delete>
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 최근 월 데이터 복사 -->
+    <update id="copyLastVer" parameterType="map">
+    	INSERT INTO /* com.hitejinro.snop.work.dao.M08080DaoMapper.copyLastVer */ 
+    	SCMU.W_SOP_TB_STOCK_STATS_MNG_M T
+    	(
+    		  T.PERIOD_YYYYMM, T.LIQUOR_CODE, T.ITEM_IGRD_TYPE_CODE, T.STOCK_STATS_CODE, T.SEQ
+    		, T.FR_STOCK_STATS_VAL_TP, T.FR_STOCK_STATS_RNG_SN, T.FR_STOCK_STATS_VAL, T.TO_STOCK_STATS_VAL_TP, T.TO_STOCK_STATS_RNG_SN, T.TO_STOCK_STATS_VAL, T.RMKS
+    		, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+    	)
+    	(
+    	SELECT
+    		  #{yyyymm, jdbcType=VARCHAR}, S.LIQUOR_CODE, S.ITEM_IGRD_TYPE_CODE, S.STOCK_STATS_CODE, S.SEQ
+    		, S.FR_STOCK_STATS_VAL_TP, S.FR_STOCK_STATS_RNG_SN, S.FR_STOCK_STATS_VAL, S.TO_STOCK_STATS_VAL_TP, S.TO_STOCK_STATS_RNG_SN, S.TO_STOCK_STATS_VAL, S.RMKS
+    		, S.CREATED_BY, S.CREATION_DATE, S.LAST_UPDATED_BY, S.LAST_UPDATE_DATE
+    	FROM SCMU.W_SOP_TB_STOCK_STATS_MNG_M S
+    	WHERE 1 = 1
+    		AND S.PERIOD_YYYYMM = #{fromVer, jdbcType=VARCHAR}
+    	)
+    </update>
+    
+    <!-- 기준정보 > 제품 과다/부족 기준 > 팝업 데이터 조회 -->
+    <select id="searchPop" parameterType="map" resultType="map">
+   		SELECT /* com.hitejinro.snop.work.dao.M08080DaoMapper.searchPop */
+              T.ITEM_CODE
+            , T.DESCRIPTION
+        FROM EDW.W_CM_TB_FG_ITEM_M T
+        LEFT JOIN 
+	        (
+	        	SELECT DISTINCT TO_ITEM_CODE
+	        	FROM SCMU.W_SOP_TB_ITEM_MAP_M
+	        	WHERE 1 = 1
+	        ) S ON S.TO_ITEM_CODE = T.ITEM_CODE
+        WHERE 1 = 1
+            AND T.LIQUOR_CODE = DECODE(#{liquorCd, jdbcType=VARCHAR}, '00', T.LIQUOR_CODE, #{liquorCd, jdbcType=VARCHAR})
+            AND T.ITEM_TYPE   = 'FG'
+            AND T.ITEM_STATUS = 'Active'
+            AND 
+            (        
+            		T.ITEM_CODE   LIKE ('%' || #{searchWord, jdbcType=VARCHAR} || '%')
+                 OR T.DESCRIPTION LIKE ('%' || #{searchWord, jdbcType=VARCHAR} || '%')
+            )
+        ORDER BY (CASE WHEN S.TO_ITEM_CODE IS NULL THEN 1 ELSE -1 END), T.BRAND_SORT_ORDER, T.BRAND_NAME, T.DESCRIPTION, T.ITEM_CODE
+    </select>
+    
+</mapper>

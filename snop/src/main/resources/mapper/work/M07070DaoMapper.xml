@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- KPI > 용기 회수율 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M07070DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="searchHeader" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M07070DaoMapper.searchHeader */
+        	   COM_CODE.CODE
+             , COM_CODE.NAME 
+             , COM_CODE.SEQ
+          FROM W_SOP_TB_COM_CODE_M      COM_CODE
+             , W_SOP_TB_KPI_TARGET_M    KPI_TARGET
+         WHERE 1 = 1
+           AND COM_CODE.CODE = KPI_TARGET.KPI_CODE
+           AND COM_CODE.GROUP_CODE  = 'VESSEL_RTRV_KPI_GB'
+           AND COM_CODE.USE_YN = 'Y'
+           AND KPI_TARGET.PERIOD_YYYY = #{frYear, jdbcType=VARCHAR}
+         ORDER BY SEQ
+    
+    </select>
+
+    <select id="searchParam" parameterType="map" resultType="map">
+         SELECT /* com.hitejinro.snop.work.dao.M07070DaoMapper.searchParam */
+         		DISTINCT YYYYMM AS COL_KEY
+              , 'M' || SUBSTR(YYYYMM, -2) AS COL_ID 
+              , YYYY || '-' || SUBSTR(YYYYMM, -2) AS COL_ALIAS 
+           FROM SCMU.W_SOP_VW_CALENDAR_M
+          WHERE YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+          ORDER BY YYYYMM
+    </select>
+
+    <select id="searchBody" parameterType="map" resultType="map">
+	WITH KPI_TBL AS (
+            SELECT COM_CODE.CODE
+                 , COM_CODE.NAME
+                 , COM_CODE.SEQ
+                 , KPI_TARGET.*
+              FROM W_SOP_TB_COM_CODE_M      COM_CODE
+                 , W_SOP_TB_KPI_TARGET_M    KPI_TARGET
+             WHERE 1 = 1
+               AND COM_CODE.CODE = KPI_TARGET.KPI_CODE
+               AND COM_CODE.GROUP_CODE  = 'VESSEL_RTRV_KPI_GB'
+               AND COM_CODE.USE_YN = 'Y'
+               AND KPI_TARGET.PERIOD_YYYY = #{frYear, jdbcType=VARCHAR}
+	) 
+	, MAIN_TBL AS (
+	        SELECT DECODE(GROUPING(MONTH), 1,'누계 회수율', MONTH) AS MONTH_COL
+	        <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+	        	 , AVG(${item.CODE}) / 100 AS ${item.CODE}
+	        </foreach>
+	          FROM (
+		        SELECT *
+		          FROM KPI_TBL A
+		       UNPIVOT INCLUDE NULLS ( RATE FOR MONTH IN (
+		       		<foreach open="" collection="TREEGRID_PARAM" index="index" item="item" separator="," close="">
+		       			${item.COL_ID} AS '${item.COL_ALIAS}'
+		       		</foreach>
+		       			)
+		       		)
+	             )
+	         PIVOT ( MAX(RATE) FOR CODE IN (
+	         		<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="," close="">
+	         			'${item.CODE}' AS ${item.CODE}  
+	         		</foreach>
+	         			)
+	         	   )
+	         GROUP BY ROLLUP(MONTH)
+	         UNION ALL
+	        SELECT DECODE(GROUPING(MONTH), 1, '목표 회수율', MONTH) AS MONTH
+			<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+         		 , AVG(${item.CODE}) / 100 AS ${item.CODE}
+        	</foreach>
+	          FROM KPI_TBL
+	         PIVOT ( MAX(TARGET_START) FOR CODE IN (
+	         			  '목표회수율' AS MONTH
+					<foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+		         		, '${item.CODE}'   AS ${item.CODE}  
+		        	</foreach>
+	         		)
+	         	 )
+	         GROUP BY ROLLUP(MONTH)
+	        HAVING GROUPING(MONTH) = 1
+	)
+    SELECT * 
+      FROM (
+		    SELECT A.*
+		    	 , DECODE(A.MONTH_COL, '누계 회수율', 'SUBSUM', '목표 회수율', 'TARGET', 'NORMAL') AS "Def"
+		      FROM MAIN_TBL A        
+		     UNION 
+		    SELECT '달성률' AS MONTH_COL
+		    <foreach open="" collection="TREEGRID_HEADER" index="index" item="item" separator="" close="">
+		    	 , (SELECT ${item.CODE} FROM MAIN_TBL WHERE MONTH_COL = '누계 회수율')/(SELECT ${item.CODE} FROM MAIN_TBL WHERE MONTH_COL = '목표 회수율')
+		    </foreach>
+		    	 , 'TOTAL' AS "Def"
+		      FROM DUAL
+		 )
+     ORDER BY DECODE(MONTH_COL, '누계 회수율', 'X', '목표 회수율', 'Y', '달성률', 'Z', MONTH_COL)
+    </select>
+    
+    <select id="searchBodyComplexVersion" parameterType="map" resultType="map">
+WITH TBL AS (
+        SELECT DECODE(GROUPING(MONTH),1,'누계 회수율', MONTH) AS MONTH_COL
+             , AVG(KPI004) KPI004
+             , AVG(KPI005) KPI005
+             , AVG(KPI006) KPI006
+             , AVG(KPI007) KPI007
+          FROM (
+        SELECT *
+          FROM (
+                SELECT COM_CODE.CODE
+                     , COM_CODE.NAME
+                     , COM_CODE.SEQ
+                     , KPI_TARGET.*
+                  FROM W_SOP_TB_COM_CODE_M      COM_CODE
+                     , W_SOP_TB_KPI_TARGET_M    KPI_TARGET
+                 WHERE 1 = 1
+                   AND COM_CODE.CODE = KPI_TARGET.KPI_CODE
+                   AND COM_CODE.GROUP_CODE  = 'VESSEL_RTRV_KPI_GB'
+                   AND COM_CODE.USE_YN = 'Y'
+                   AND KPI_TARGET.PERIOD_YYYY = '2021'
+             ) A
+       UNPIVOT INCLUDE NULLS ( RATE FOR MONTH IN (M01 AS '2021-01', M02, M03, M04, M05, M06, M07, M08, M09, M10, M11, M12))
+             )
+         PIVOT ( MAX(RATE) FOR CODE IN ('KPI004' AS KPI004, 'KPI005' AS KPI005, 'KPI006' AS KPI006, 'KPI007' AS KPI007))
+         GROUP BY ROLLUP(MONTH)
+         UNION 
+        SELECT DECODE(GROUPING(MONTH), 1, '목표 회수율', MONTH) AS MONTH
+             , AVG(KPI004) KPI004
+             , AVG(KPI005) KPI005
+             , AVG(KPI006) KPI006
+             , AVG(KPI007) KPI007
+          FROM ( 
+        SELECT /* com.hitejinro.snop.work.dao.M07070DaoMapper.searchHeader */
+               COM_CODE.CODE
+             , COM_CODE.NAME 
+             , COM_CODE.SEQ
+             , KPI_TARGET.TARGET_START AS TARGET
+          FROM W_SOP_TB_COM_CODE_M      COM_CODE
+             , W_SOP_TB_KPI_TARGET_M    KPI_TARGET
+         WHERE 1 = 1
+           AND COM_CODE.CODE = KPI_TARGET.KPI_CODE
+           AND COM_CODE.GROUP_CODE  = 'VESSEL_RTRV_KPI_GB'
+           AND COM_CODE.USE_YN = 'Y'
+           AND KPI_TARGET.PERIOD_YYYY = '2021'
+             )
+         PIVOT ( MAX(TARGET) FOR CODE IN ('목표회수율' AS MONTH, 'KPI004' AS KPI004, 'KPI005' AS KPI005, 'KPI006' AS KPI006, 'KPI007' AS KPI007))
+         GROUP BY ROLLUP(MONTH)
+        HAVING GROUPING(MONTH) = 1
+)
+    SELECT * FROM (
+    SELECT A.*
+      FROM TBL A        
+     UNION 
+    SELECT '달성률' AS MONTH_COL
+         , (SELECT KPI004 FROM TBL WHERE MONTH_COL = '누계 회수율')/(SELECT KPI004 FROM TBL WHERE MONTH_COL = '목표 회수율') 
+         , (SELECT KPI005 FROM TBL WHERE MONTH_COL = '누계 회수율')/(SELECT KPI005 FROM TBL WHERE MONTH_COL = '목표 회수율')
+         , (SELECT KPI006 FROM TBL WHERE MONTH_COL = '누계 회수율')/(SELECT KPI006 FROM TBL WHERE MONTH_COL = '목표 회수율')
+         , (SELECT KPI007 FROM TBL WHERE MONTH_COL = '누계 회수율')/(SELECT KPI007 FROM TBL WHERE MONTH_COL = '목표 회수율')
+      FROM DUAL)
+     ORDER BY DECODE(MONTH_COL, '누계 회수율', 'X', '목표 회수율', 'Y', '달성률', 'Z', MONTH_COL)
+    </select>
+    
+    <select id="getMagamYmd" resultType="String">
+		SELECT MAGAM_YMD
+		  FROM EDW.GEIS_MAGAM
+		 WHERE SCRN_ID = 'GEISM0500R'
+		   AND CO_CODE = 'HJ0'
+    </select>
+</mapper>

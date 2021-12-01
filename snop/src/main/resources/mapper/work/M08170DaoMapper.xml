@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 제품적재규모(공장, 물류센터) 관리 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08170DaoMapper">
+
+	<!-- 버전 리스트 조회 -->
+    <select id="getVersion" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08170DaoMapper.getVersion */
+		      T1.ORG_CAPA_VER_CD 								AS ORG_CAPA_VER_CD 		
+		    , T1.ORG_CAPA_VER_NM 								AS ORG_CAPA_VER_NM
+		    , TO_CHAR(T1.CREATION_DATE, 'YYYY-MM-DD HH24:MI') 	AS CREATION_DATE
+		FROM SCMU.W_SOP_TB_ORG_CAPA_M T1
+		WHERE 1 = 1
+		    AND T1.ORG_CAPA_VER_CD = DECODE(#{verCd, jdbcType=VARCHAR}, '!ALL', T1.ORG_CAPA_VER_CD, #{verCd, jdbcType=VARCHAR})
+		ORDER BY T1.CREATION_DATE DESC
+    </select>
+    
+    <!-- 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M08170DaoMapper.search */
+    		  (CASE WHEN A.LVL = 0 THEN A.ORG_CODE
+                    WHEN A.LVL = 1 THEN DECODE(A.ORG_TYPE, 'LOGISTICS', '물류센터 계', '공장 계')
+                    WHEN A.LVL = 3 THEN '전사 계'
+               		END) 						  AS ORG_CODE
+            , DECODE(A.LVL, 0, A.ORG_NAME, NULL)  AS ORG_NAME 
+            , DECODE(A.LVL, 1, 'LVL1', 3, 'LVL3') AS "Def"
+            
+    		, A.ORG_WH_OPT_CAPA
+    		, A.ORG_WH_OPT_PT_CAPA
+    		, A.ORG_OPNSTOR_OPT_CAPA
+    		, A.ORG_OPNSTOR_OPT_PT_CAPA
+    		, A.ORG_OPT_CAPA
+    		, A.ORG_OPT_PT_CAPA
+    		
+            , A.ORG_WH_MAX_CAPA
+            , A.ORG_WH_MAX_PT_CAPA
+            , A.ORG_OPNSTOR_MAX_CAPA
+            , A.ORG_OPNSTOR_MAX_PT_CAPA
+            , A.ORG_MAX_CAPA
+            , A.ORG_MAX_PT_CAPA
+    	FROM
+    	(
+    		SELECT
+    			  GROUPING_ID(T1.ORG_TYPE, T1.ORG_CODE) AS LVL
+    			, T1.ORG_CODE							AS ORG_CODE
+    			, MAX(T1.ORG_NAME)						AS ORG_NAME
+    			, T1.ORG_TYPE							AS ORG_TYPE
+    			
+    			, SUM(T2.ORG_WH_OPT_CAPA)               AS ORG_WH_OPT_CAPA
+                , SUM(T2.ORG_WH_OPT_PT_CAPA)            AS ORG_WH_OPT_PT_CAPA
+                , SUM(T2.ORG_OPNSTOR_OPT_CAPA)          AS ORG_OPNSTOR_OPT_CAPA
+                , SUM(T2.ORG_OPNSTOR_OPT_PT_CAPA)       AS ORG_OPNSTOR_OPT_PT_CAPA
+                , SUM(T2.ORG_OPT_CAPA)                  AS ORG_OPT_CAPA
+                , SUM(T2.ORG_OPT_PT_CAPA)               AS ORG_OPT_PT_CAPA
+                
+                , SUM(T2.ORG_WH_MAX_CAPA)               AS ORG_WH_MAX_CAPA
+                , SUM(T2.ORG_WH_MAX_PT_CAPA)            AS ORG_WH_MAX_PT_CAPA
+                , SUM(T2.ORG_OPNSTOR_MAX_CAPA)          AS ORG_OPNSTOR_MAX_CAPA
+                , SUM(T2.ORG_OPNSTOR_MAX_PT_CAPA)       AS ORG_OPNSTOR_MAX_PT_CAPA
+                , SUM(T2.ORG_MAX_CAPA)                  AS ORG_MAX_CAPA
+                , SUM(T2.ORG_MAX_PT_CAPA)               AS ORG_MAX_PT_CAPA
+    		
+    		FROM EDW.W_CM_TB_ORGANIZATION_M T1
+    		
+    		LEFT JOIN SCMU.W_SOP_TB_ORG_CAPA_DTL_F T2 ON T2.ORG_CAPA_VER_CD = #{verCd, jdbcType=VARCHAR}
+    												 AND T2.ORG_CODE = T1.ORG_CODE
+    		WHERE 1 = 1
+    			AND T1.ORG_CODE NOT IN ('S01', 'MH2')   -- 진로소주공장, 마산공장(구) 제외
+    			AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS') -- 공장, 물류센터
+    		GROUP BY GROUPING SETS((T1.ORG_TYPE, T1.ORG_CODE), (T1.ORG_TYPE), ()) 
+    	) A
+    	WHERE 1 = 1
+    		AND (
+    				( #{useYn, jdbcType=VARCHAR} = '!ALL' AND 1 = 1 )
+    				OR
+    				( #{useYn, jdbcType=VARCHAR} = 'Y' AND ( NVL(A.ORG_OPT_CAPA, 0) != 0 OR NVL(A.ORG_OPT_PT_CAPA, 0) != 0 OR NVL(A.ORG_MAX_CAPA, 0) != 0 OR NVL(A.ORG_MAX_PT_CAPA, 0) != 0 ) )
+    		    )
+    	ORDER BY DECODE(ORG_TYPE, NULL, 0, 'MFG', 1, 'LOGISTICTS', 2), LVL DESC, A.ORG_CODE
+    </select>
+    
+    <!-- 저장 유효성 검증 -->
+    <select id="validateUpdate" parameterType="map" resultType="map">
+    	WITH UPDATE_TBL AS /* com.hitejinro.snop.work.dao.M08170DaoMapper.updateValidate */
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{verCd, jdbcType=VARCHAR}							AS ORG_CAPA_VER_CD
+    				, #{list.ORG_CODE, jdbcType=VARCHAR}					AS ORG_CODE
+    				
+    				, #{list.ORG_WH_OPT_CAPA, jdbcType=VARCHAR}				AS ORG_WH_OPT_CAPA
+    				, #{list.ORG_WH_OPT_PT_CAPA, jdbcType=VARCHAR}			AS ORG_WH_OPT_PT_CAPA
+    				, #{list.ORG_OPNSTOR_OPT_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_OPT_CAPA
+    				, #{list.ORG_OPNSTOR_OPT_PT_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_OPT_PT_CAPA
+    				, #{list.ORG_OPT_CAPA, jdbcType=VARCHAR}				AS ORG_OPT_CAPA
+    				, #{list.ORG_OPT_PT_CAPA, jdbcType=VARCHAR}				AS ORG_OPT_PT_CAPA
+    				
+    				, #{list.ORG_WH_MAX_CAPA, jdbcType=VARCHAR}				AS ORG_WH_MAX_CAPA
+   					, #{list.ORG_WH_MAX_PT_CAPA, jdbcType=VARCHAR}			AS ORG_WH_MAX_PT_CAPA
+    				, #{list.ORG_OPNSTOR_MAX_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_MAX_CAPA
+    				, #{list.ORG_OPNSTOR_MAX_PT_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_MAX_PT_CAPA
+    				, #{list.ORG_MAX_CAPA, jdbcType=VARCHAR}				AS ORG_MAX_CAPA
+    				, #{list.ORG_MAX_PT_CAPA, jdbcType=VARCHAR}				AS ORG_MAX_PT_CAPA
+    			FROM DUAL
+    		</foreach>
+    	)
+    	SELECT
+    		  A.ORG_CAPA_VER_CD
+    		, A.ORG_CODE
+    		, A.IDX || '번째 행에 오류 : ' || SUBSTR(A.ORG_CAPA_VER_CD_ERR || A.ORG_CODE_ERR|| ORG_CAPA_NEGATIVE_ERR, 3) AS ERR_MSG
+    	FROM
+    	(
+    		SELECT
+    			  ROWNUM AS IDX
+    			, T1.ORG_CAPA_VER_CD
+    			, T1.ORG_CODE
+    			
+    			, (CASE WHEN T1.ORG_CAPA_VER_CD IS NULL THEN ', 버전코드는 필수값'
+    					WHEN T2.ORG_CAPA_VER_CD IS NULL THEN ', 유효하지 않은 그룹코드'
+    					ELSE ''
+    			   END) AS ORG_CAPA_VER_CD_ERR
+    			   
+    			, (CASE WHEN T1.ORG_CODE IS NULL THEN ', 조직코드는 필수값'
+    					WHEN T3.ORG_CODE IS NULL THEN ', 유효하지않은 조직코드'
+    					ELSE ''
+    			   END) AS ORG_CODE_ERR
+    			   
+    			, (CASE WHEN T1.ORG_WH_OPT_CAPA <![CDATA[ < ]]> 0 			THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_WH_OPT_PT_CAPA <![CDATA[ < ]]> 0 		THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_OPNSTOR_OPT_CAPA <![CDATA[ < ]]> 0 		THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_OPNSTOR_OPT_PT_CAPA <![CDATA[ < ]]> 0 	THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_OPT_CAPA <![CDATA[ < ]]> 0 				THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_OPT_PT_CAPA <![CDATA[ < ]]> 0 			THEN ', 재고는 음수 불가'
+    					
+    					WHEN T1.ORG_WH_MAX_CAPA <![CDATA[ < ]]> 0 			THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_WH_MAX_PT_CAPA <![CDATA[ < ]]> 0 		THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_OPNSTOR_MAX_CAPA <![CDATA[ < ]]> 0 		THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_OPNSTOR_MAX_PT_CAPA <![CDATA[ < ]]> 0 	THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_MAX_CAPA <![CDATA[ < ]]> 0 				THEN ', 재고는 음수 불가'
+    					WHEN T1.ORG_MAX_PT_CAPA <![CDATA[ < ]]> 0 			THEN ', 재고는 음수 불가'
+    					ELSE ''
+    			   END) AS ORG_CAPA_NEGATIVE_ERR
+    			
+    		FROM UPDATE_TBL T1
+    		
+    		LEFT JOIN SCMU.W_SOP_TB_ORG_CAPA_M T2 ON T2.ORG_CAPA_VER_CD = T1.ORG_CAPA_VER_CD
+    		
+    		LEFT JOIN EDW.W_CM_TB_ORGANIZATION_M T3 ON T3.ORG_CODE = T1.ORG_CODE
+    		
+    	) A
+    	WHERE 1 = 1
+    		AND SUBSTR(A.ORG_CAPA_VER_CD_ERR || A.ORG_CODE_ERR || ORG_CAPA_NEGATIVE_ERR, 3) IS NOT NULL
+    	ORDER BY A.IDX
+    </select>
+    
+    <!-- 저장 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_ORG_CAPA_DTL_F T /* com.hitejinro.snop.work.dao.M08170DaoMapper.update */
+    	USING
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{verCd, jdbcType=VARCHAR}							AS ORG_CAPA_VER_CD
+    				, #{list.ORG_CODE, jdbcType=VARCHAR}					AS ORG_CODE
+    				
+    				, #{list.ORG_WH_OPT_CAPA, jdbcType=VARCHAR}				AS ORG_WH_OPT_CAPA
+					, #{list.ORG_WH_OPT_PT_CAPA, jdbcType=VARCHAR}			AS ORG_WH_OPT_PT_CAPA
+					, #{list.ORG_OPNSTOR_OPT_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_OPT_CAPA
+					, #{list.ORG_OPNSTOR_OPT_PT_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_OPT_PT_CAPA
+					, #{list.ORG_OPT_CAPA, jdbcType=VARCHAR}				AS ORG_OPT_CAPA
+					, #{list.ORG_OPT_PT_CAPA, jdbcType=VARCHAR}				AS ORG_OPT_PT_CAPA
+					
+					, #{list.ORG_WH_MAX_CAPA, jdbcType=VARCHAR}				AS ORG_WH_MAX_CAPA
+					, #{list.ORG_WH_MAX_PT_CAPA, jdbcType=VARCHAR}			AS ORG_WH_MAX_PT_CAPA
+					, #{list.ORG_OPNSTOR_MAX_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_MAX_CAPA
+					, #{list.ORG_OPNSTOR_MAX_PT_CAPA, jdbcType=VARCHAR}		AS ORG_OPNSTOR_MAX_PT_CAPA
+					, #{list.ORG_MAX_CAPA, jdbcType=VARCHAR}				AS ORG_MAX_CAPA
+					, #{list.ORG_MAX_PT_CAPA, jdbcType=VARCHAR}				AS ORG_MAX_PT_CAPA
+    			FROM DUAL
+    		</foreach>
+    	) S ON (
+    				  T.ORG_CAPA_VER_CD = S.ORG_CAPA_VER_CD
+    			  AND T.ORG_CODE		= S.ORG_CODE
+    			)
+    	WHEN MATCHED THEN
+    		UPDATE SET
+    			  T.ORG_WH_OPT_CAPA				= S.ORG_WH_OPT_CAPA
+				, T.ORG_WH_OPT_PT_CAPA			= S.ORG_WH_OPT_PT_CAPA
+				, T.ORG_OPNSTOR_OPT_CAPA		= S.ORG_OPNSTOR_OPT_CAPA
+				, T.ORG_OPNSTOR_OPT_PT_CAPA		= S.ORG_OPNSTOR_OPT_PT_CAPA
+				, T.ORG_OPT_CAPA				= S.ORG_OPT_CAPA
+				, T.ORG_OPT_PT_CAPA				= S.ORG_OPT_PT_CAPA
+				
+				, T.ORG_WH_MAX_CAPA				= S.ORG_WH_MAX_CAPA
+				, T.ORG_WH_MAX_PT_CAPA			= S.ORG_WH_MAX_PT_CAPA
+				, T.ORG_OPNSTOR_MAX_CAPA		= S.ORG_OPNSTOR_MAX_CAPA
+				, T.ORG_OPNSTOR_MAX_PT_CAPA		= S.ORG_OPNSTOR_MAX_PT_CAPA
+				, T.ORG_MAX_CAPA				= S.ORG_MAX_CAPA
+				, T.ORG_MAX_PT_CAPA				= S.ORG_MAX_PT_CAPA
+				
+				, T.LAST_UPDATED_BY				= #{userId, jdbcType=VARCHAR}
+				, T.LAST_UPDATE_DATE			= SYSDATE
+		WHEN NOT MATCHED THEN
+		INSERT
+		(
+			  T.ORG_CAPA_VER_CD, T.ORG_CODE
+			, T.ORG_WH_OPT_CAPA, T.ORG_WH_OPT_PT_CAPA, T.ORG_OPNSTOR_OPT_CAPA, T.ORG_OPNSTOR_OPT_PT_CAPA, T.ORG_OPT_CAPA, T.ORG_OPT_PT_CAPA
+			, T.ORG_WH_MAX_CAPA, T.ORG_WH_MAX_PT_CAPA, T.ORG_OPNSTOR_MAX_CAPA, T.ORG_OPNSTOR_MAX_PT_CAPA, T.ORG_MAX_CAPA, T.ORG_MAX_PT_CAPA
+			, T.CREATED_BY, T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		VALUES
+		(
+			  S.ORG_CAPA_VER_CD, S.ORG_CODE
+			, S.ORG_WH_OPT_CAPA, S.ORG_WH_OPT_PT_CAPA, S.ORG_OPNSTOR_OPT_CAPA, S.ORG_OPNSTOR_OPT_PT_CAPA, S.ORG_OPT_CAPA, S.ORG_OPT_PT_CAPA
+			, S.ORG_WH_MAX_CAPA, S.ORG_WH_MAX_PT_CAPA, S.ORG_OPNSTOR_MAX_CAPA, S.ORG_OPNSTOR_MAX_PT_CAPA, S.ORG_MAX_CAPA, S.ORG_MAX_PT_CAPA
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE 
+		)
+    </update>
+    
+    <!-- 최신 버전 코드 조회 -->
+    <select id="getNewVersion" parameterType="map" resultType="map">
+    	SELECT /* com.hitejinro.snop.work.dao.M08170DaoMapper.getNewVersion */
+		      MAX(ORG_CAPA_VER_CD) 													AS LAST_VER_CD
+		    , (CASE WHEN MAX(ORG_CAPA_VER_CD) IS NULL 
+		    		  OR SUBSTR(MAX(ORG_CAPA_VER_CD), 1, 6) != #{YYYYMM, jdbcType=VARCHAR} THEN #{YYYYMM, jdbcType=VARCHAR} || '001'
+                    WHEN SUBSTR(MAX(ORG_CAPA_VER_CD), 1, 6)  = #{YYYYMM, jdbcType=VARCHAR} THEN TO_CHAR(MAX(ORG_CAPA_VER_CD) + 1)
+                    END) AS NEW_VER_CD
+		FROM SCMU.W_SOP_TB_ORG_CAPA_M
+    </select>
+    
+    <!-- 버전추가 유효성 검증 -->
+    <select id="validateNewVersion" parameterType="map" resultType="map">
+    	    SELECT /* com.hitejinro.snop.work.dao.M08170DaoMapper.validateNewVersion */
+		        '중복된 버전코드(' || #{newVerCd, jdbcType=VARCHAR} || ')' AS ERR_MSG
+		    FROM SCMU.W_SOP_TB_ORG_CAPA_M T1
+		    WHERE 1 = 1
+		        AND T1.ORG_CAPA_VER_CD = #{newVerCd, jdbcType=VARCHAR}
+    </select>
+    
+    <!-- 버전추가 -->
+    <update id="insertNewVersion" parameterType="map">
+    	INSERT INTO /* com.hitejinro.snop.work.dao.M08170DaoMapper.insertNewVersion */
+    	SCMU.W_SOP_TB_ORG_CAPA_M
+   		(
+   			  ORG_CAPA_VER_CD, ORG_CAPA_VER_NM, ORG_CAPA_VER_DESC
+			, CREATED_BY, CREATION_DATE, LAST_UPDATED_BY, LAST_UPDATE_DATE
+   		)
+    	VALUES
+    	(	
+    		  #{newVerCd, jdbcType=VARCHAR}, #{verNm, jdbcType=VARCHAR}, #{verNm, jdbcType=VARCHAR}
+    		, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+    	)
+    </update>
+    
+    <!-- 버전상세추가 -->
+    <update id="insertNewVersionDetail" parameterType="map">
+    	INSERT INTO /* com.hitejinro.snop.work.dao.M08170DaoMapper.insertNewVersionDetail */
+    	SCMU.W_SOP_TB_ORG_CAPA_DTL_F T
+    	(	  
+    		  T.ORG_CAPA_VER_CD, T.ORG_CODE
+			, T.ORG_WH_OPT_CAPA, T.ORG_WH_OPT_PT_CAPA, T.ORG_OPNSTOR_OPT_CAPA, T.ORG_OPNSTOR_OPT_PT_CAPA, T.ORG_OPT_CAPA, T.ORG_OPT_PT_CAPA
+			, T.ORG_WH_MAX_CAPA, T.ORG_WH_MAX_PT_CAPA, T.ORG_OPNSTOR_MAX_CAPA, T.ORG_OPNSTOR_MAX_PT_CAPA, T.ORG_MAX_CAPA, T.ORG_MAX_PT_CAPA
+			, T.CREATED_BY , T.CREATION_DATE, T.LAST_UPDATED_BY, T.LAST_UPDATE_DATE
+		)
+		WITH OPNSTOR_TBL AS 
+		(
+		    SELECT YMD                  AS PERIOD_YYYYMMDD      -- 기준일자
+		         , ORGANIZATION_CODE    AS ORG_CODE             -- 조직코드 : 물류센터코드
+		         , ITEM_CODE            AS ITEM_CODE            -- 제품 코드
+		         , NVL(QTY, 0)          AS OPNSTOR_STOCK_QTY    -- 야적 재고수량(단순c/s)
+		      FROM XXWSH.XXWSH_CAPA_ITEM_RATE@DL_VIEWER_TO_PROD
+		     WHERE 1 = 1 
+		       AND ORGANIZATION_CODE NOT IN ('S01', 'MH2')
+		       AND QTY != 0
+		)
+		SELECT
+			  S1.ORG_CAPA_VER_CD, S1.ORG_CODE
+			, S1.ORG_WH_OPT_CAPA, S1.ORG_WH_OPT_PT_CAPA, S1.ORG_OPNSTOR_OPT_CAPA, S1.ORG_OPNSTOR_OPT_PT_CAPA, S1.ORG_OPT_CAPA, S1.ORG_OPT_PT_CAPA
+			, S2.ORG_WH_MAX_CAPA, S2.ORG_WH_MAX_PT_CAPA, S2.ORG_OPNSTOR_MAX_CAPA, S2.ORG_OPNSTOR_MAX_PT_CAPA, S2.ORG_MAX_CAPA, S2.ORG_MAX_PT_CAPA
+			, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+		FROM
+		(
+			SELECT
+				  #{newVerCd, jdbcType=VARCHAR} AS ORG_CAPA_VER_CD, B.ORG_CODE
+				, B.ORG_WH_OPT_CAPA, B.ORG_WH_OPT_PT_CAPA, B.ORG_OPNSTOR_OPT_CAPA, B.ORG_OPNSTOR_OPT_PT_CAPA, B.ORG_OPT_CAPA, B.ORG_OPT_PT_CAPA
+			FROM EDW.W_CM_TB_ORGANIZATION_M        A
+			LEFT JOIN SCMU.W_SOP_TB_ORG_CAPA_DTL_F B ON B.ORG_CODE = A.ORG_CODE
+			WHERE 1 = 1
+			    AND A.ORG_TYPE IN ('MFG', 'LOGISTICS')
+			    AND B.ORG_CAPA_VER_CD = #{lastVerCd, jdbcType=VARCHAR}
+		) S1
+		LEFT JOIN
+		(
+			SELECT 
+			      A.PERIOD_YYYYMMDD, A.ORG_CODE        	
+			    , A.ORG_WH_MAX_CAPA, A.ORG_WH_MAX_PT_CAPA, A.ORG_OPNSTOR_MAX_CAPA, A.ORG_OPNSTOR_MAX_PT_CAPA, A.ORG_MAX_CAPA, A.ORG_MAX_PT_CAPA
+			    , A.RNK
+			FROM 
+			(
+				SELECT 
+					  AA.PERIOD_YYYYMMDD
+				    , AA.ORG_CODE
+				          
+					, SUM( (CASE WHEN AA.ORG_TYPE = 'LOGISTICS' THEN AA.STOCK_QTY - NVL(AB.OPNSTOR_STOCK_QTY, 0)
+				                 ELSE AA.STOCK_QTY - AA.STOCK_STAGE_QTY - NVL(AB.OPNSTOR_STOCK_QTY, 0)
+				                 END ) * AA.UOM_CONVERSION_VALUE ) AS ORG_WH_MAX_CAPA 						-- 창고 최대 Capa(환산c/s)
+				                 
+				    , SUM( NVL(AB.OPNSTOR_STOCK_QTY, 0) * AA.UOM_CONVERSION_VALUE ) AS ORG_OPNSTOR_MAX_CAPA -- 야적 최대 Capa(환산c/s)
+				    
+				    , SUM( (CASE WHEN AA.ORG_TYPE = 'LOGISTICS' THEN AA.STOCK_QTY
+				                 ELSE AA.STOCK_QTY - AA.STOCK_STAGE_QTY
+				                 END ) * AA.UOM_CONVERSION_VALUE ) AS ORG_MAX_CAPA 							-- 합계 최대 Capa(환산c/s)
+								
+					, SUM( CASE WHEN NVL(TO_NUMBER(AC.QTY_PER_PALLET), 0) = 0 THEN 0
+								WHEN AA.ORG_TYPE = 'LOGISTICS' THEN ( AA.STOCK_QTY - NVL(AB.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(AC.QTY_PER_PALLET)
+								ELSE ( AA.STOCK_QTY - AA.STOCK_STAGE_QTY - NVL(AB.OPNSTOR_STOCK_QTY, 0) ) / TO_NUMBER(AC.QTY_PER_PALLET)
+								END ) AS ORG_WH_MAX_PT_CAPA 												-- 창고 최대 Capa(P/T)
+				      
+					, SUM( CASE WHEN NVL(TO_NUMBER(AC.QTY_PER_PALLET), 0) = 0 THEN 0
+								ELSE NVL(AB.OPNSTOR_STOCK_QTY, 0) / TO_NUMBER(AC.QTY_PER_PALLET)
+								END ) AS ORG_OPNSTOR_MAX_PT_CAPA 											-- 야적 최대 Capa(P/T)
+								
+					, SUM( CASE WHEN NVL(TO_NUMBER(AC.QTY_PER_PALLET), 0) = 0 THEN 0
+								WHEN AA.ORG_TYPE = 'LOGISTICS' THEN AA.STOCK_QTY / TO_NUMBER(AC.QTY_PER_PALLET)
+								ELSE (AA.STOCK_QTY - AA.STOCK_STAGE_QTY) / TO_NUMBER(AC.QTY_PER_PALLET)
+								END ) AS ORG_MAX_PT_CAPA 													-- 합계 최대 Capa(P/T)
+				                                  
+				    , ROW_NUMBER() OVER (PARTITION BY AA.ORG_CODE ORDER BY SUM( (CASE WHEN AA.ORG_TYPE = 'LOGISTICS' THEN AA.STOCK_QTY
+				                                              						 ELSE AA.STOCK_QTY - AA.STOCK_STAGE_QTY
+				                                              						 END) * AA.UOM_CONVERSION_VALUE ) DESC, AA.PERIOD_YYYYMMDD) AS RNK
+				                                          
+				FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F AA
+				LEFT JOIN OPNSTOR_TBL                AB ON AB.PERIOD_YYYYMMDD = AA.PERIOD_YYYYMMDD
+				                                       AND AB.ORG_CODE 		  = AA.ORG_CODE
+				                                       AND AB.ITEM_CODE 	  = AA.ITEM_CODE
+				LEFT JOIN EDW.W_CM_TB_FG_ITEM_M      AC ON AC.ITEM_CODE       = AA.ITEM_CODE
+				
+				 WHERE 1 = 1
+				 	AND AA.ITEM_TYPE = 'FG'
+				    AND AA.LIQUOR_CODE IN ('10', '20')
+				    AND AA.ORG_CODE NOT IN ('S01', 'MH2')
+				 GROUP BY AA.PERIOD_YYYYMMDD, AA.ORG_CODE
+			) A
+			WHERE 1 = 1
+			 AND A.RNK = 1
+		) S2 ON S2.ORG_CODE = S1.ORG_CODE
+    	
+    </update>
+    
+</mapper>

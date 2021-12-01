@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M07030 : 본부 판매예측 준수율
+ * 작성일자 :: 2021.09.14
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M07030DaoMapper">
+	
+    <!-- dateGrid 조회 -->
+    <select id="searchDateGrid" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M07030DaoMapper.searchDateGrid */
+		       PERIOD_SCM_YYYYWW
+		     , 'WW' || SUBSTR(PERIOD_SCM_YYYYWW, 5, 2) AS COL_ID
+		     , SUBSTR(PERIOD_SCM_YYYYWW, 1, 4) || '년 ' ||
+		       CASE WHEN SUBSTR(PERIOD_SCM_YYYYWW, 5, 1) = '0' THEN SUBSTR(PERIOD_SCM_YYYYWW, 6, 1)
+		                                                       ELSE SUBSTR(PERIOD_SCM_YYYYWW, 5, 2)
+		       END || '주' AS COL_TXT
+		  FROM SCMU.M_SOP_TB_ITEM_SALE_F T1
+		 WHERE SUBSTR(PERIOD_YYYYMMDD, 1, 6) BETWEEN #{year, jdbcType=VARCHAR}||#{fromMonth, jdbcType=VARCHAR} AND #{year, jdbcType=VARCHAR}||#{toMonth, jdbcType=VARCHAR}
+		   AND MARKET_TYPE = 'D'
+		   AND ITEM_TYPE IN ('FG', 'PH')
+		   AND NVL(ACTUAL_SALE_QTY,0) != 0
+		 GROUP BY PERIOD_SCM_YYYYWW
+		 ORDER BY PERIOD_SCM_YYYYWW
+    </select>
+    
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH TBL_ITEM_SALE_SOURCE AS ( /* com.hitejinro.snop.work.dao.M07030DaoMapper.search */
+		SELECT T1.PERIOD_SCM_YYYYWW
+		     , CASE WHEN T2.TO_ITEM_CODE IS NULL THEN T1.ITEM_CODE
+		            ELSE T2.TO_ITEM_CODE
+		       END AS ITEM_CODE
+		     , T1.LIQUOR_CODE
+		     , (T1.ESPN_SALE_QTY / (CASE WHEN #{acctCd, jdbcType=VARCHAR} = 'ACCT_UOM_CS_QTY' THEN 1 ELSE T1.UOM_CONVERSION_VALUE END)) / ${unitCd} AS ESPN_SALE_QTY
+		     , (T1.ACTUAL_SALE_QTY * (CASE WHEN #{acctCd, jdbcType=VARCHAR} = 'ACCT_UOM_CS_QTY' THEN T1.UOM_CONVERSION_VALUE ELSE 1 END)) / ${unitCd} AS ACTUAL_SALE_QTY
+		     , ((T1.ESPN_SALE_QTY / (CASE WHEN #{acctCd, jdbcType=VARCHAR} = 'ACCT_UOM_CS_QTY' THEN 1 ELSE T1.UOM_CONVERSION_VALUE END)) - (T1.ACTUAL_SALE_QTY * (CASE WHEN #{acctCd, jdbcType=VARCHAR} = 'ACCT_UOM_CS_QTY' THEN T1.UOM_CONVERSION_VALUE ELSE 1 END))) / ${unitCd} AS DIF_SALE_QTY
+		  FROM SCMU.M_SOP_TB_ITEM_SALE_F T1 LEFT JOIN
+		       SCMU.W_SOP_TB_ITEM_MAP_M T2 ON T1.ITEM_CODE = T2.FR_ITEM_CODE
+		 WHERE SUBSTR(T1.PERIOD_YYYYMMDD, 1, 6) BETWEEN #{year, jdbcType=VARCHAR}||#{fromMonth, jdbcType=VARCHAR} AND #{year, jdbcType=VARCHAR}||#{toMonth, jdbcType=VARCHAR}
+		   AND T1.LIQUOR_CODE IN ('10', '20')
+		   AND T1.MARKET_TYPE = 'D'
+		   AND T1.ITEM_TYPE IN ('FG', 'PH')
+		)
+		, TBL_ITEM_SALE_F_W AS (
+		SELECT T1.PERIOD_SCM_YYYYWW
+		     , T1.ITEM_CODE
+		     , T1.LIQUOR_CODE
+		     , T2.BRAND_CODE
+		     , T2.USAGE_CODE
+		     , T2.VESSEL_CODE
+		     , T2.VOLUME_VALUE
+		     , T1.ESPN_SALE_QTY
+		     , T1.ACTUAL_SALE_QTY
+		     , T1.DIF_SALE_QTY
+		     , 0 AS KPI_RATE
+		  FROM TBL_ITEM_SALE_SOURCE T1 INNER JOIN
+		       EDW.W_CM_TB_FG_ITEM_M T2 ON T1.ITEM_CODE = T2.ITEM_CODE
+		 WHERE T2.ITEM_STATUS = 'Active'
+		)
+		SELECT T1.LIQUOR_CODE
+		     , DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', '') AS LIQUOR_DESC
+		     , T1.GUBUN1_TXT
+		     , T1.GUBUN2_TXT
+		     , T1.GUBUN3_TXT
+		     , T1.GUBUN4_TXT
+		     , T1.SEQ
+		     , SUM(ESPN_SALE_QTY)                                                               AS ESPN_SALE_QTY
+		     , SUM(ACTUAL_SALE_QTY)                                                             AS ACTUAL_SALE_QTY
+		     , SUM(DIF_SALE_QTY)                                                                AS DIF_SALE_QTY
+		     , CASE WHEN SUM(T2.ESPN_SALE_QTY) = 0 OR SUM(T2.ACTUAL_SALE_QTY) = 0 THEN 0
+		            WHEN (ABS(SUM(T2.ESPN_SALE_QTY) - SUM(T2.ACTUAL_SALE_QTY))) / SUM(T2.ESPN_SALE_QTY) > 1 THEN 0
+		            WHEN (SUM(T2.ACTUAL_SALE_QTY) BETWEEN SUM(T2.ESPN_SALE_QTY) AND SUM(T2.ESPN_SALE_QTY) * 1.1) THEN 1
+		            ELSE (1 - (ABS(SUM(T2.ESPN_SALE_QTY) - SUM(T2.ACTUAL_SALE_QTY))) / SUM(T2.ESPN_SALE_QTY))
+		        END                                                                             AS ITEM_RATE
+		     , SUM(KPI_RATE)                                                                    AS KPI_RATE
+		     ${dynamicQueryTimeStr}
+		  FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		          FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		         WHERE MENU_CD = 'M01020') T1 INNER JOIN
+		       TBL_ITEM_SALE_F_W T2 ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		                           AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		                           AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		                           AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		                           AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+		 GROUP BY T1.LIQUOR_CODE
+		        , T1.GUBUN1_TXT
+		        , T1.GUBUN2_TXT
+		        , T1.GUBUN3_TXT
+		        , T1.GUBUN4_TXT
+		        , T1.SEQ
+		 UNION ALL
+		SELECT T1.LIQUOR_CODE
+		     , DECODE(T1.LIQUOR_CODE, '10', '맥주', '20', '소주', '') AS LIQUOR_DESC
+		     , T1.GUBUN1_TXT
+		     , T1.GUBUN2_TXT
+		     , T1.GUBUN3_TXT
+		     , T1.GUBUN4_TXT
+		     , T1.SEQ
+		     , SUM(ESPN_SALE_QTY)                                                               AS ESPN_SALE_QTY
+		     , SUM(ACTUAL_SALE_QTY)                                                             AS ACTUAL_SALE_QTY
+		     , SUM(DIF_SALE_QTY)                                                                AS DIF_SALE_QTY
+		     , CASE WHEN SUM(T2.ESPN_SALE_QTY) = 0 OR SUM(T2.ACTUAL_SALE_QTY) = 0 THEN 0
+		            WHEN (ABS(SUM(T2.ESPN_SALE_QTY) - SUM(T2.ACTUAL_SALE_QTY))) / SUM(T2.ESPN_SALE_QTY) > 1 THEN 0
+		            WHEN (SUM(T2.ACTUAL_SALE_QTY) BETWEEN SUM(T2.ESPN_SALE_QTY) AND SUM(T2.ESPN_SALE_QTY) * 1.1) THEN 1
+		            ELSE (1 - (ABS(SUM(T2.ESPN_SALE_QTY) - SUM(T2.ACTUAL_SALE_QTY))) / SUM(T2.ESPN_SALE_QTY))
+		        END                                                                             AS ITEM_RATE
+		     , SUM(KPI_RATE)                                                                    AS KPI_RATE
+		     ${dynamicQueryTimeStr}
+		  FROM (SELECT LIQUOR_CODE, ABBR_ITEM_NAME GUBUN1_TXT, ABBR_ITEM_NAME GUBUN2_TXT, ABBR_ITEM_NAME GUBUN3_TXT, ABBR_ITEM_NAME GUBUN4_TXT, TO_NUMBER('99999999'||A.ORDER_SEQ) AS SEQ
+		             , A.ITEM_CODE
+		          FROM SCMU.W_SOP_TB_INTEREST_ITEM_M A INNER JOIN
+		               EDW.W_CM_TB_FG_ITEM_M B ON A.ITEM_CODE = B.ITEM_CODE
+		         WHERE A.PERIOD_YYYYMM = SUBSTR(REPLACE(#{year, jdbcType=VARCHAR}||#{toMonth, jdbcType=VARCHAR}, '-',''),1,6)
+		           AND A.INP_DGR = (SELECT MAX(INP_DGR) FROM SCMU.W_SOP_TB_INTEREST_ITEM_M WHERE PERIOD_YYYYMM = SUBSTR(REPLACE(#{year, jdbcType=VARCHAR}||#{toMonth, jdbcType=VARCHAR}, '-',''),1,6))) T1 INNER JOIN
+		       TBL_ITEM_SALE_F_W T2 ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		                           AND T1.ITEM_CODE = T2.ITEM_CODE
+		 GROUP BY T1.LIQUOR_CODE
+		        , T1.GUBUN1_TXT
+		        , T1.GUBUN2_TXT
+		        , T1.GUBUN3_TXT
+		        , T1.GUBUN4_TXT
+		        , T1.SEQ
+		 ORDER BY LIQUOR_CODE, SEQ
+	</select>
+	
+</mapper>

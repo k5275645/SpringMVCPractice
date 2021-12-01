@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 권한 관리 -->
+<mapper namespace="com.hitejinro.snop.system.dao.M08150DaoMapper">
+    
+    <!-- 권한 조회 -->
+    <select id="search" parameterType="map" resultType="map">
+    	SELECT /*com.hitejinro.snop.system.dao.M08150DaoMapper.search */
+    		  T.AUTH_CD, T.AUTH_NM
+    		, T.AUTH_DESC, T.USE_YN
+    	FROM SCMU.W_SOP_TB_AUTH_M T
+    	WHERE 1 = 1
+    		AND T.USE_YN = DECODE(#{useYN, jdbcType=VARCHAR}, '!ALL', T.USE_YN, #{useYN, jdbcType=VARCHAR}) 
+    	ORDER BY T.AUTH_CD
+    </select>
+    
+    <!-- 권한 유효성 검증 -->
+    <select id="validate" parameterType="map" resultType="map">
+    	WITH UPDATE_TBL AS /*com.hitejinro.snop.system.dao.M08150DaoMapper.validate */
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.action, jdbcType=VARCHAR}			AS ACTION
+    				, #{list.AUTH_CD, jdbcType=VARCHAR}			AS AUTH_CD
+    				, #{list.AUTH_NM, jdbcType=VARCHAR}			AS AUTH_NM
+    				, #{list.AUTH_DESC, jdbcType=VARCHAR}		AS AUTH_DESC
+    				, #{list.USE_YN, jdbcType=VARCHAR}			AS USE_YN
+    			FROM DUAL
+    		</foreach>
+    	)
+    	SELECT
+    		  A.AUTH_CD
+    		, A.IDX || '번째 행에 오류 : ' || SUBSTR(A.AUTH_CD_ERR || A.AUTH_NM_ERR, 3) AS ERR_MSG
+    	FROM
+    	(
+    		SELECT
+    			  ROWNUM AS IDX
+    			, T1.AUTH_CD
+    			, (CASE WHEN T1.AUTH_CD IS NULL 								THEN ', 권한코드는 필수값'
+    					WHEN T1.ACTION = 'insert' AND T2.AUTH_CD IS NOT NULL 	THEN ', 중복된 권한코드'
+    					WHEN COUNT(1) OVER (PARTITION BY T1.AUTH_CD) > 1	 	THEN ', 중복입력된 권한코드'
+    					ELSE ''
+    			   END) AS AUTH_CD_ERR
+    			   
+    			, (CASE WHEN T1.AUTH_NM IS NULL THEN ', 권한명은 필수값'
+    					ELSE ''
+    			   END) AS AUTH_NM_ERR
+    			   
+    		FROM UPDATE_TBL T1
+    		
+    		LEFT JOIN SCMU.W_SOP_TB_AUTH_M T2 ON T2.AUTH_CD = T1.AUTH_CD
+    		
+    	) A
+    	WHERE 1 = 1
+    		AND SUBSTR(A.AUTH_CD_ERR || A.AUTH_NM_ERR, 3) IS NOT NULL
+    	ORDER BY A.IDX
+    </select>
+    
+    <!-- 권한 추가/수정 -->
+    <update id="update" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_AUTH_M T1 /*com.hitejinro.snop.system.dao.M08150DaoMapper.update */
+    	USING
+    	(
+    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+    			SELECT
+    				  #{list.AUTH_CD, jdbcType=VARCHAR}			AS AUTH_CD
+    				, #{list.AUTH_NM, jdbcType=VARCHAR}			AS AUTH_NM
+    				, #{list.AUTH_DESC, jdbcType=VARCHAR}		AS AUTH_DESC
+    				, #{list.USE_YN, jdbcType=VARCHAR}			AS USE_YN
+    			FROM DUAL
+    		</foreach>
+    	) S ON (
+    				T1.AUTH_CD = S.AUTH_CD
+    			)
+    	WHEN MATCHED THEN
+    		UPDATE SET
+    			  T1.AUTH_NM			= S.AUTH_NM
+    			, T1.AUTH_DESC			= S.AUTH_DESC
+    			, T1.USE_YN				= S.USE_YN
+    			, T1.LAST_UPDATED_BY	= #{userId, jdbcType=VARCHAR}
+    			, T1.LAST_UPDATE_DATE	= SYSDATE
+    	WHEN NOT MATCHED THEN
+    	INSERT
+    	(
+    		  T1.AUTH_CD, T1.AUTH_NM, T1.AUTH_DESC, T1.USE_YN
+    		, T1.CREATED_BY, T1.CREATION_DATE, T1.LAST_UPDATED_BY, T1.LAST_UPDATE_DATE
+    	)
+    	VALUES
+    	(
+    		  S.AUTH_CD, S.AUTH_NM, S.AUTH_DESC, S.USE_YN
+    		, #{userId, jdbcType=VARCHAR}, SYSDATE, #{userId, jdbcType=VARCHAR}, SYSDATE
+    	)
+    </update>
+    
+    <!-- 권한콤보 조회 -->
+    <select id="getAuth" parameterType="map" resultType="map">
+        SELECT /*com.hitejinro.snop.system.dao.M08150DaoMapper.getAuth */
+              T1.AUTH_CD AS CODE
+            , T1.AUTH_NM AS NAME
+        FROM SCMU.W_SOP_TB_AUTH_M T1
+        WHERE 1 = 1
+            AND T1.AUTH_CD = DECODE(#{authCd, jdbcType=VARCHAR}, '!ALL', T1.AUTH_CD, #{authCd, jdbcType=VARCHAR})
+            AND T1.AUTH_NM LIKE '%' || DECODE(#{authNm, jdbcType=VARCHAR}, '!ALL', T1.AUTH_NM, #{authNm, jdbcType=VARCHAR}) || '%' 
+            AND T1.USE_YN  = 'Y'
+        ORDER BY T1.AUTH_CD
+    </select>
+    
+    <!-- 권한/메뉴 조회 -->
+    <select id="searchDetail" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.system.dao.M08150DaoMapper.searchDetail */
+				  T1.MENU_CD
+	            , T1.MENU_NM
+	            , T1.MENU_DESC
+	            , T1.HRNK_MENU_CD
+	            , DECODE(T2.AUTH_CD, NULL, '0', '1')			AS USE_YN
+	            , DECODE(T2.ALOW_YN_BTN_SELECT, 'Y', '1', '0') 	AS ALOW_YN_BTN_SELECT
+			    , DECODE(T2.ALOW_YN_BTN_SAVE, 'Y', '1', '0') 	AS ALOW_YN_BTN_SAVE
+			    , DECODE(T2.ALOW_YN_BTN_EXEC, 'Y', '1', '0') 	AS ALOW_YN_BTN_EXEC
+			    , DECODE(LEVEL, 1, 'HRNK', 'MENU') 				AS "Def"
+			    
+        FROM SCMU.W_SOP_TB_MENU_M T1
+        
+        LEFT JOIN SCMU.W_SOP_TB_AUTH_MENU_M T2 ON T2.AUTH_CD = #{authCd, jdbcType=VARCHAR}
+        									  AND T2.MENU_CD = T1.MENU_CD
+		WHERE 1 = 1
+            AND T1.USE_YN = 'Y'
+		        									  
+        START WITH T1.HRNK_MENU_CD IS NULL 
+        CONNECT BY NOCYCLE PRIOR T1.MENU_CD = T1.HRNK_MENU_CD
+        ORDER SIBLINGS BY T1.SEQ, T1.MENU_CD
+    </select>
+    
+    <!-- 권한/사용자 mapping 삭제 -->
+    <delete id="deleteAuthUser" parameterType="map">
+    	DELETE /* com.hitejinro.snop.system.dao.M08150DaoMapper.deleteAuthUser */
+    	FROM SCMU.W_SOP_TB_AUTH_USER_M T
+    	WHERE 1 = 1
+    		AND EXISTS
+    		(
+    			SELECT S.AUTH_CD
+    			FROM
+    			(
+					<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+		    			SELECT
+		    				  #{list.AUTH_CD, jdbcType=VARCHAR}	AS AUTH_CD
+		    				, #{list.USE_YN, jdbcType=VARCHAR}	AS USE_YN
+		    			FROM DUAL
+		    		</foreach>
+    			) S
+    			WHERE 1 = 1 
+    				AND S.USE_YN = 'N'
+    				AND T.AUTH_CD = S.AUTH_CD
+    		)
+    </delete>
+    
+    <!-- 권한/메뉴 mapping 삭제 -->
+    <delete id="deleteAuthMenu" parameterType="map">
+    	DELETE /* com.hitejinro.snop.system.dao.M08150DaoMapper.deleteAuthUser */
+    	FROM SCMU.W_SOP_TB_AUTH_MENU_M T
+    	WHERE 1 = 1
+    		AND EXISTS
+    		(
+    			SELECT S.AUTH_CD
+    			FROM
+    			(
+					<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+		    			SELECT
+		    				  #{list.AUTH_CD, jdbcType=VARCHAR}	AS AUTH_CD
+		    				, #{list.USE_YN, jdbcType=VARCHAR}	AS USE_YN
+		    			FROM DUAL
+		    		</foreach>
+    			) S
+    			WHERE 1 = 1 
+    				AND S.USE_YN = 'N'
+    				AND T.AUTH_CD = S.AUTH_CD
+    		)
+    </delete>
+    
+    <!-- 권한/메뉴 삭제 -->
+    <delete id="deleteDetail" parameterType="map">
+    		DELETE /* com.hitejinro.snop.system.dao.M08150DaoMapper.deleteDetail */
+    		FROM SCMU.W_SOP_TB_AUTH_MENU_M T
+    		WHERE 1 = 1
+    			AND EXISTS
+    			(
+    				SELECT S.AUTH_CD, S.MENU_CD
+    				FROM
+    				(
+	    				SELECT S1.AUTH_CD, S1.MENU_CD
+	    				FROM
+	    				(
+	    					<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				    			SELECT
+				    				  #{authCd, jdbcType=VARCHAR}  		 AS AUTH_CD
+	    							, #{list.MENU_CD, jdbcType=VARCHAR}	 AS MENU_CD
+	    							, #{list.USE_YN, jdbcType=VARCHAR}	 AS USE_YN
+				    			FROM DUAL
+				    		</foreach>
+	    				) S1
+	    				WHERE 1 = 1
+	    					AND S1.USE_YN  = '0'
+	    				
+	    				--상위메뉴코드 삭제시 하위도 같이 삭제	
+	    				UNION ALL
+	    				SELECT S1.AUTH_CD, S2.MENU_CD
+						FROM
+	    				(
+	    					<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+				    			SELECT
+				    				  #{authCd, jdbcType=VARCHAR}  		 AS AUTH_CD
+	    							, #{list.MENU_CD, jdbcType=VARCHAR}	 AS MENU_CD
+	    							, #{list.USE_YN, jdbcType=VARCHAR}	 AS USE_YN
+				    			FROM DUAL
+				    		</foreach>
+	    				) S1
+	    				INNER JOIN SCMU.W_SOP_TB_MENU_M S2 ON S2.HRNK_MENU_CD = S1.MENU_CD
+	    				WHERE 1 = 1
+	    					AND S1.USE_YN  = '0'
+    				) S
+    				WHERE 1 = 1
+    					AND T.AUTH_CD = S.AUTH_CD
+    					AND T.MENU_CD = S.MENU_CD
+    			)
+    </delete>
+    
+    <!-- 권한/메뉴 추가/수정 -->
+    <update id="updateDetail" parameterType="map">
+    	MERGE INTO SCMU.W_SOP_TB_AUTH_MENU_M T1 /* com.hitejinro.snop.system.dao.M08150DaoMapper.updateDetail */
+    	USING
+    	(
+    		SELECT
+    			  S1.AUTH_CD, S1.MENU_CD
+    			, S1.ALOW_YN_BTN_SELECT, S1.ALOW_YN_BTN_SAVE, S1.ALOW_YN_BTN_EXEC
+    		FROM
+    		(
+	    		<foreach collection="updateList" item="list" separator="UNION ALL" index="i">
+	    			SELECT
+	    				  #{authCd, jdbcType=VARCHAR}											AS AUTH_CD
+	    				, #{list.MENU_CD, jdbcType=VARCHAR}										AS MENU_CD
+	    				, #{list.USE_YN, jdbcType=VARCHAR}										AS USE_YN
+	    				, DECODE(#{list.ALOW_YN_BTN_SELECT, jdbcType=VARCHAR}, '1', 'Y', 'N') 	AS ALOW_YN_BTN_SELECT
+						, DECODE(#{list.ALOW_YN_BTN_SAVE, jdbcType=VARCHAR}, '1', 'Y', 'N') 	AS ALOW_YN_BTN_SAVE
+						, DECODE(#{list.ALOW_YN_BTN_EXEC, jdbcType=VARCHAR}, '1', 'Y', 'N') 	AS ALOW_YN_BTN_EXEC
+						
+	    			FROM DUAL
+	    		</foreach>
+    		) S1
+    		WHERE 1 = 1
+    			AND S1.USE_YN = '1'
+    	) S ON (
+    					T1.AUTH_CD = S.AUTH_CD
+    				AND T1.MENU_CD = S.MENU_CD
+    			)
+    	WHEN MATCHED THEN
+    		UPDATE SET
+    			  T1.ALOW_YN_BTN_SELECT		= S.ALOW_YN_BTN_SELECT
+    			, T1.ALOW_YN_BTN_SAVE		= S.ALOW_YN_BTN_SAVE
+    			, T1.ALOW_YN_BTN_EXEC		= S.ALOW_YN_BTN_EXEC
+    	WHEN NOT MATCHED THEN
+    	INSERT
+    	(
+    		  T1.AUTH_CD, T1.MENU_CD
+    		, T1.ALOW_YN_BTN_SELECT, T1.ALOW_YN_BTN_SAVE, T1.ALOW_YN_BTN_EXEC
+    		, T1.CREATED_BY, T1.CREATION_DATE
+    	)
+    	VALUES
+    	(
+    		  S.AUTH_CD, S.MENU_CD
+    		, S.ALOW_YN_BTN_SELECT, S.ALOW_YN_BTN_SAVE, S.ALOW_YN_BTN_EXEC
+    		, #{userId, jdbcType=VARCHAR}, SYSDATE
+    	)
+    </update>
+    
+</mapper>

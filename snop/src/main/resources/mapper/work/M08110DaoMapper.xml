@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M08110 : 영업예상판매량
+ * 작성일자 :: 2021.05.24
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M08110DaoMapper">
+	
+	<!-- 상단 sum 그리드 조회 -->
+	<select id="searchSum" parameterType="map" resultType="map">
+		WITH TBL_ITEM_M AS ( /* com.hitejinro.snop.work.dao.M08110DaoMapper.searchSum */
+		    SELECT ITEM_CODE
+		         , LIQUOR_CODE
+		         , SEGMENT2
+		      FROM EDW.W_CM_TB_FG_ITEM_M T1
+		     WHERE T1.LIQUOR_CODE IN ('10','20')
+			<if test="liquorCode != null and liquorCode != '!ALL'">
+		       AND T1.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+			</if>
+			<if test="itemCode != null and itemCode != ''">
+		       AND ( T1.ITEM_CODE LIKE #{itemCode, jdbcType=VARCHAR}
+		          OR T1.DESCRIPTION LIKE #{itemCode, jdbcType=VARCHAR} )
+			</if>
+		       AND T1.ITEM_TYPE = 'FG'
+		       AND T1.ITEM_STATUS = 'Active'
+			<if test="usageCode != null and usageCode != ''">
+				<foreach open="AND T1.USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+					#{item, jdbcType=VARCHAR}
+				</foreach>
+			</if>
+			<if test="vesselCode != null and vesselCode != ''">
+				<foreach open="AND T1.VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+					#{item, jdbcType=VARCHAR}
+				</foreach>
+			</if>
+			<if test="volumeCode != null and volumeCode != ''">
+				<foreach open="AND T1.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+					#{item, jdbcType=VARCHAR}
+				</foreach>
+			</if>
+		)
+		SELECT CASE WHEN LIQUOR_CODE = '10' THEN '맥주'
+		            WHEN LIQUOR_CODE = '20' THEN '소주'
+		       END AS GUBUN_NM
+		     , SUM(ROUND(ESPL_SALE_QTY_W0,0)) AS ESPL_SALE_QTY_W0
+		     , SUM(ROUND(ESPL_SALE_QTY_W1,0)) AS ESPL_SALE_QTY_W1
+		     , SUM(ROUND(ESPL_SALE_QTY_W2,0)) AS ESPL_SALE_QTY_W2
+		     , SUM(ROUND(ESPL_SALE_QTY_W3,0)) AS ESPL_SALE_QTY_W3
+		     , SUM(ROUND(ESPL_SALE_QTY_W4,0)) AS ESPL_SALE_QTY_W4
+		     , SUM(ROUND(ESPL_SALE_QTY_W5,0)) AS ESPL_SALE_QTY_W5
+		  FROM (SELECT ITEM_CODE
+		             , SUM(CASE WHEN PERIOD_MMWW = '00' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W0
+		             , SUM(CASE WHEN PERIOD_MMWW = '01' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W1
+		             , SUM(CASE WHEN PERIOD_MMWW = '02' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W2
+		             , SUM(CASE WHEN PERIOD_MMWW = '03' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W3
+		             , SUM(CASE WHEN PERIOD_MMWW = '04' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W4
+		             , SUM(CASE WHEN PERIOD_MMWW = '05' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W5
+		          FROM SCMU.W_SOP_TB_ESPN_SALE_F
+		         WHERE PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		           AND INP_DGR = #{version, jdbcType=INTEGER}
+		         GROUP BY ITEM_CODE) T1
+		     , (SELECT ITEM_CODE
+		             , LIQUOR_CODE
+		          FROM TBL_ITEM_M
+		         WHERE 1=1) T2
+		 WHERE 1=1
+		   AND T1.ITEM_CODE = T2.ITEM_CODE
+		 GROUP BY LIQUOR_CODE
+		 UNION ALL
+		SELECT '소주류' AS GUBUN_NM
+		     , SUM(ROUND(ESPL_SALE_QTY_W0,0)) AS ESPL_SALE_QTY_W0
+		     , SUM(ROUND(ESPL_SALE_QTY_W1,0)) AS ESPL_SALE_QTY_W1
+		     , SUM(ROUND(ESPL_SALE_QTY_W2,0)) AS ESPL_SALE_QTY_W2
+		     , SUM(ROUND(ESPL_SALE_QTY_W3,0)) AS ESPL_SALE_QTY_W3
+		     , SUM(ROUND(ESPL_SALE_QTY_W4,0)) AS ESPL_SALE_QTY_W4
+		     , SUM(ROUND(ESPL_SALE_QTY_W5,0)) AS ESPL_SALE_QTY_W5
+		  FROM (SELECT ITEM_CODE
+		             , SUM(CASE WHEN PERIOD_MMWW = '00' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W0
+		             , SUM(CASE WHEN PERIOD_MMWW = '01' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W1
+		             , SUM(CASE WHEN PERIOD_MMWW = '02' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W2
+		             , SUM(CASE WHEN PERIOD_MMWW = '03' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W3
+		             , SUM(CASE WHEN PERIOD_MMWW = '04' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W4
+		             , SUM(CASE WHEN PERIOD_MMWW = '05' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W5
+		          FROM SCMU.W_SOP_TB_ESPN_SALE_F
+		         WHERE PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		           AND INP_DGR = #{version, jdbcType=INTEGER}
+		         GROUP BY ITEM_CODE) T1
+		     , (SELECT ITEM_CODE
+		             , LIQUOR_CODE
+		          FROM TBL_ITEM_M
+		         WHERE 1=1
+		           AND SEGMENT2 = '소주류') T2
+		 WHERE 1=1
+		   AND T1.ITEM_CODE = T2.ITEM_CODE
+		 GROUP BY LIQUOR_CODE
+	</select>
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH TBL_ITEM_M AS ( /* com.hitejinro.snop.work.dao.M08110DaoMapper.search */
+		    SELECT WT1.ITEM_CODE
+		         , WT1.DESCRIPTION AS ITEM_NAME
+		         , WT1.LIQUOR_CODE
+		         , CASE WHEN WT1.LIQUOR_CODE = '10' THEN '맥주'
+		                WHEN WT1.LIQUOR_CODE = '20' THEN '소주'
+		           END AS LIQUOR_DESC
+		         , WT1.BRAND_CODE
+		         , WT1.BRAND_NAME
+		         , WT1.BRAND_SORT_ORDER
+		         , WT1.USAGE_CODE
+		         , WT1.USAGE_NAME
+		         , WT1.USAGE_SORT_ORDER
+		         , WT1.VESSEL_CODE
+		         , WT1.VESSEL_SORT AS VESSEL_NAME
+		         , WT1.VESSEL_SORT_ORDER
+		         , WT1.VOLUME_VALUE
+		      FROM EDW.W_CM_TB_FG_ITEM_M WT1
+		     WHERE WT1.LIQUOR_CODE IN ('10','20')
+			<if test="liquorCode != null and liquorCode != '!ALL'">
+		       AND WT1.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+			</if>
+			<if test="itemCode != null and itemCode != ''">
+		       AND ( WT1.ITEM_CODE LIKE #{itemCode, jdbcType=VARCHAR}
+		          OR WT1.DESCRIPTION LIKE #{itemCode, jdbcType=VARCHAR} )
+			</if>
+		       AND WT1.ITEM_TYPE = 'FG'
+		       AND WT1.ITEM_STATUS = 'Active'
+			<if test="usageCode != null and usageCode != ''">
+				<foreach open="AND WT1.USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+					#{item, jdbcType=VARCHAR}
+				</foreach>
+			</if>
+			<if test="vesselCode != null and vesselCode != ''">
+				<foreach open="AND WT1.VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+					#{item, jdbcType=VARCHAR}
+				</foreach>
+			</if>
+			<if test="volumeCode != null and volumeCode != ''">
+				<foreach open="AND WT1.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+					#{item, jdbcType=VARCHAR}
+				</foreach>
+			</if>
+		)
+		SELECT T2.LIQUOR_DESC
+		     , T2.BRAND_NAME
+		     , T2.USAGE_NAME
+		     , T2.VESSEL_NAME
+		     , T2.VOLUME_VALUE
+		     , T2.ITEM_CODE
+		     , T2.ITEM_NAME
+		     , T1.ESPL_SALE_QTY_W0
+		     , T1.ESPL_SALE_QTY_W1
+		     , T1.ESPL_SALE_QTY_W2
+		     , T1.ESPL_SALE_QTY_W3
+		     , T1.ESPL_SALE_QTY_W4
+		     , T1.ESPL_SALE_QTY_W5
+		  FROM (SELECT ITEM_CODE
+		             , SUM(CASE WHEN PERIOD_MMWW = '00' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W0
+		             , SUM(CASE WHEN PERIOD_MMWW = '01' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W1
+		             , SUM(CASE WHEN PERIOD_MMWW = '02' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W2
+		             , SUM(CASE WHEN PERIOD_MMWW = '03' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W3
+		             , SUM(CASE WHEN PERIOD_MMWW = '04' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W4
+		             , SUM(CASE WHEN PERIOD_MMWW = '05' THEN ESPN_SALE_QTY ELSE 0 END) AS ESPL_SALE_QTY_W5
+		          FROM SCMU.W_SOP_TB_ESPN_SALE_F
+		         WHERE PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		           AND INP_DGR = #{version, jdbcType=INTEGER}
+		         GROUP BY ITEM_CODE) T1
+		     , (SELECT *
+		          FROM TBL_ITEM_M
+		         WHERE 1=1) T2
+		 WHERE 1=1
+		   AND T1.ITEM_CODE = T2.ITEM_CODE
+		 ORDER BY LIQUOR_CODE, BRAND_SORT_ORDER, USAGE_SORT_ORDER, VESSEL_SORT_ORDER, VOLUME_VALUE
+	</select>
+	
+	<!-- version Combo List 조회 -->
+	<select id="versionCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08110DaoMapper.versionCombo */
+			   DISTINCT INP_DGR AS CODE
+			 , TO_CHAR(TO_DATE(PERIOD_YYYYMM||'01'),'YYYY-MM') || '-' || INP_DGR AS NAME
+		  FROM SCMU.W_SOP_TB_ESPN_SALE_F
+		 WHERE PERIOD_YYYYMM = #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 엑셀데이터 유효성 검증 -->
+	<select id="checkExcelList" parameterType="map" resultType="map">
+		WITH TBL_EXCEL_UPLOAD AS ( /* com.hitejinro.snop.work.dao.M08110DaoMapper.checkExcelList */
+		<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+			SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} AS ITEM_CODE
+			     , #{item.sUploadGb, jdbcType=VARCHAR} AS UPLOAD_GUBUN
+			     , #{item.ESPN_SALE_QTY_W0, jdbcType=INTEGER} AS ESPN_SALE_QTY_MONTH
+			     , #{item.ESPN_SALE_QTY_W1, jdbcType=INTEGER} AS ESPN_SALE_QTY_W1
+			     , #{item.ESPN_SALE_QTY_W2, jdbcType=INTEGER} AS ESPN_SALE_QTY_W2
+			     , #{item.ESPN_SALE_QTY_W3, jdbcType=INTEGER} AS ESPN_SALE_QTY_W3
+			     , #{item.ESPN_SALE_QTY_W4, jdbcType=INTEGER} AS ESPN_SALE_QTY_W4
+			     , #{item.ESPN_SALE_QTY_W5, jdbcType=INTEGER} AS ESPN_SALE_QTY_W5
+			  FROM DUAL
+		</foreach>
+		)
+		SELECT ERROR_MESSAGE AS  MESSAGE
+		  FROM (SELECT NULLIF(SUBSTR(ITEM_CODE_ERROR||MONTH_UP_ERROR,3), '') AS ERROR_MESSAGE
+		          FROM (SELECT CASE WHEN NULLIF(T2.DESCRIPTION,'') IS NULL
+					                THEN ', ' || T1.ITEM_CODE || '(존재하지 않는 아이템코드)'
+					                ELSE NULL
+					           END AS ITEM_CODE_ERROR
+					         , CASE WHEN UPLOAD_GUBUN = 'month' AND NVL(ESPN_SALE_QTY_MONTH, 0) = 0 THEN ', ' || T1.ITEM_CODE || '월별 업로드시 월계값은 0일 수 없습니다.'
+					                ELSE NULL
+					           END AS MONTH_UP_ERROR
+						  FROM TBL_EXCEL_UPLOAD T1
+						     , (SELECT *
+						          FROM EDW.W_CM_TB_FG_ITEM_M
+						         WHERE ITEM_TYPE = 'FG'
+						           AND ITEM_STATUS = 'Active') T2 
+						 WHERE T1.ITEM_CODE = T2.ITEM_CODE(+)))
+		 WHERE ERROR_MESSAGE IS NOT NULL
+	</select>
+	
+	<!-- 해당버전 데이터 삭제 -->
+	<delete id="deleteVersionData" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M08110DaoMapper.deleteVersionData */
+		  FROM SCMU.W_SOP_TB_ESPN_SALE_F T1
+		 WHERE 1 = 1
+		   AND T1.PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		   AND T1.INP_DGR = #{version, jdbcType=INTEGER}
+	</delete>
+
+	<!-- 메뉴 조회 -->
+	<select id="getInpDgrSeq" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M08110DaoMapper.getInpDgrSeq */
+			   TO_CHAR(NVL(MAX(INP_DGR),0)+1) AS MAX_INP_DGR
+		  FROM SCMU.W_SOP_TB_ESPN_SALE_F
+		 WHERE PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 해당버전(월별) 데이터 upload -->
+	<update id="uploadMonthVersionData" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_ESPN_SALE_F /* com.hitejinro.snop.work.dao.M08110DaoMapper.uploadMonthVersionData */
+		VALUE
+		(
+		<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+		SELECT #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR} AS PERIOD_YYYYMM
+		     , #{version, jdbcType=INTEGER} AS INP_DGR
+		     , #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+		     , '00' AS PERIOD_MMWW
+		     , #{year, jdbcType=VARCHAR}||'00' AS PERIOD_YYYYWW
+		     , #{item.ESPN_SALE_QTY_W0, jdbcType=INTEGER} AS ESPN_SALE_QTY
+		     , #{userId, jdbcType=INTEGER} AS CREATE_BY
+		     , SYSDATE AS CREATION_DATE
+		     , #{userId, jdbcType=INTEGER} AS LAST_UPDATED_BY
+		     , SYSDATE AS LAST_UPDATE_DATE
+		  FROM DUAL
+		</foreach>
+		)
+	</update>
+	
+	<!-- 해당버전(월별 데이터 주차별 배부) 데이터 upload -->
+	<update id="uploadMonthAllocWeekVersionData" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_ESPN_SALE_F /* com.hitejinro.snop.work.dao.M08110DaoMapper.uploadMonthVersionData */
+		VALUE
+		(
+		SELECT MT1.PERIOD_YYYYMM
+		     , MT1.INP_DGR
+		     , MT1.ITEM_CODE
+		     , MT2.PERIOD_YYYYMMWW_CODE AS PERIOD_MMWW
+		     , MT2.PERIOD_YYYYWW_CODE AS PERIOD_YYYYWW
+		     , ROUND((MT1.ESPN_SALE_QTY / MT2.TOTAL_DAY_CNT) * BUSINESS_DAY_CNT, 3) AS ESPN_SALE_QTY
+		     , #{userId, jdbcType=INTEGER} AS CREATE_BY
+		     , SYSDATE AS CREATION_DATE
+		     , #{userId, jdbcType=INTEGER} AS LAST_UPDATED_BY
+		     , SYSDATE AS LAST_UPDATE_DATE
+		  FROM (SELECT *
+		          FROM SCMU.W_SOP_TB_ESPN_SALE_F
+		         WHERE PERIOD_YYYYMM = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		           AND INP_DGR = #{version, jdbcType=INTEGER}
+		           AND PERIOD_MMWW = '00') MT1
+		     , (SELECT T1.PERIOD_YYYYWW_CODE
+		             , LPAD(RANK() OVER (ORDER BY T1.PERIOD_YYYYWW_CODE),2,'0') AS PERIOD_YYYYMMWW_CODE
+		             , SUM(DECODE(T1.BUSINESS_DAY_FLAG, 'Y', 1, 0)) BUSINESS_DAY_CNT
+		             , (SELECT SUM(DECODE(T1.BUSINESS_DAY_FLAG, 'Y', 1, 0)) FROM SCMU.W_CM_VW_PERIOD_DD_SCM_M T1 WHERE T1.PERIOD_YYYYMM_CODE = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}) AS TOTAL_DAY_CNT
+		          FROM SCMU.W_CM_VW_PERIOD_DD_SCM_M T1
+		         WHERE T1.PERIOD_YYYYMM_CODE = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+		           AND T1.PERIOD_YYYYMMDD_CODE||TO_CHAR(TO_DATE(T1.PERIOD_YYYYMM_CODE||'01', 'YYYYMMDD'), 'D') != T1.PERIOD_YYYYMM_CODE||'01'||'7'
+		           AND T1.PERIOD_YYYYMMDD_CODE||TO_CHAR(LAST_DAY(TO_DATE(T1.PERIOD_YYYYMM_CODE, 'YYYYMM')), 'D') != TO_CHAR(LAST_DAY(TO_DATE(T1.PERIOD_YYYYMM_CODE, 'YYYYMM')),'YYYYMMDD')||'1'
+		         GROUP BY T1.PERIOD_YYYYWW_CODE) MT2
+		 WHERE 1=1
+		)
+	</update>
+	
+	<!-- 해당버전(주차별) 데이터 upload -->
+	<update id="uploadWeekVersionData" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_ESPN_SALE_F /* com.hitejinro.snop.work.dao.M08110DaoMapper.uploadWeekVersionData */
+		VALUE
+		(
+		SELECT #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR} AS PERIOD_YYYYMM
+		     , #{version, jdbcType=INTEGER} AS INP_DGR
+		     , T1.ITEM_CODE
+		     , T1.PERIOD_MMWW
+		     , NVL(T2.PERIOD_YYYYWW_CODE, #{year, jdbcType=VARCHAR}||'00') AS PERIOD_YYYYWW
+		     , T1.ESPN_SALE_QTY
+		     , #{userId, jdbcType=INTEGER} AS CREATE_BY
+		     , SYSDATE AS CREATION_DATE
+		     , #{userId, jdbcType=INTEGER} AS LAST_UPDATED_BY
+		     , SYSDATE AS LAST_UPDATE_DATE
+		  FROM (
+				<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+				SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+				     , '00' AS PERIOD_MMWW
+				     , NVL(#{item.ESPN_SALE_QTY_W1, jdbcType=INTEGER},0) 
+				      + NVL(#{item.ESPN_SALE_QTY_W2, jdbcType=INTEGER},0)
+				      + NVL(#{item.ESPN_SALE_QTY_W3, jdbcType=INTEGER},0)
+				      + NVL(#{item.ESPN_SALE_QTY_W4, jdbcType=INTEGER},0)
+				      + NVL(#{item.ESPN_SALE_QTY_W5, jdbcType=INTEGER},0) AS ESPN_SALE_QTY
+				  FROM DUAL
+				 UNION ALL
+				SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+				     , '01' AS PERIOD_MMWW
+				     , NVL(#{item.ESPN_SALE_QTY_W1, jdbcType=INTEGER},0) AS ESPN_SALE_QTY
+				  FROM DUAL
+				 UNION ALL
+				SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+				     , '02' AS PERIOD_MMWW
+				     , NVL(#{item.ESPN_SALE_QTY_W2, jdbcType=INTEGER},0) AS ESPN_SALE_QTY
+				  FROM DUAL
+				 UNION ALL
+				SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+				     , '03' AS PERIOD_MMWW
+				     , NVL(#{item.ESPN_SALE_QTY_W3, jdbcType=INTEGER},0) AS ESPN_SALE_QTY
+				  FROM DUAL
+				 UNION ALL
+				SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+				     , '04' AS PERIOD_MMWW
+				     , NVL(#{item.ESPN_SALE_QTY_W4, jdbcType=INTEGER},0) AS ESPN_SALE_QTY
+				  FROM DUAL
+				 UNION ALL
+				SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} ITEM_CODE
+				     , '05' AS PERIOD_MMWW
+				     , NVL(#{item.ESPN_SALE_QTY_W5, jdbcType=INTEGER},0) AS ESPN_SALE_QTY
+				  FROM DUAL
+				</foreach>
+		        ) T1
+		     , (SELECT T1.PERIOD_YYYYWW_CODE
+				     , LPAD(RANK() OVER (ORDER BY T1.PERIOD_YYYYWW_CODE),2,'0') AS PERIOD_YYYYMMWW_CODE
+				  FROM SCMU.W_CM_VW_PERIOD_DD_SCM_M T1
+				 WHERE T1.PERIOD_YYYYMM_CODE = #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}
+				   AND T1.PERIOD_YYYYMMDD_CODE||TO_CHAR(TO_DATE(T1.PERIOD_YYYYMM_CODE||'01', 'YYYYMMDD'), 'D') != T1.PERIOD_YYYYMM_CODE||'01'||'7'
+				   AND T1.PERIOD_YYYYMMDD_CODE||TO_CHAR(LAST_DAY(TO_DATE(T1.PERIOD_YYYYMM_CODE, 'YYYYMM')), 'D') != TO_CHAR(LAST_DAY(TO_DATE(T1.PERIOD_YYYYMM_CODE, 'YYYYMM')),'YYYYMMDD')||'1'
+				 GROUP BY T1.PERIOD_YYYYWW_CODE) T2
+		 WHERE 1=1
+		   AND T1.PERIOD_MMWW = T2.PERIOD_YYYYMMWW_CODE(+)
+		)
+	</update>
+	
+</mapper>

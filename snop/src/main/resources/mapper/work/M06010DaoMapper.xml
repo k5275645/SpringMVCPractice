@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 기준정보 > 단종검토 대상 품목 조회 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M06010DaoMapper">
+    
+    <select id="search" parameterType="map" resultType="map">
+    
+    WITH TBL AS (
+            SELECT DESCRIPTION
+                 , ITEM_CODE
+                 , MAIN_FLAG
+                 , UOM_CONVERSION_VALUE
+              FROM EDW.W_CM_TB_FG_ITEM_M A
+             WHERE ITEM_STATUS = 'Active'
+               AND LIQUOR_CODE IN ('10', '20', '33')
+		   	   AND (
+	                ('!ALL' = #{liquorCode, jdbcType=VARCHAR} AND 1 = 1)
+	                OR
+	                (A.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR})
+                   )
+		<if test="itemCode != null and itemCode != ''">
+	    	  AND ( A.ITEM_CODE LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%' OR A.DESCRIPTION LIKE '%' || #{itemCode, jdbcType=VARCHAR} || '%')
+		</if>
+		<if test="brandCode != null and brandCode != ''">
+            <foreach open="AND A.BRAND_CODE IN (" collection="brandCode" index="index" item="brandCode" separator=", " close=")">
+				#{brandCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+        <if test="usageCode != null and usageCode != ''">
+            <foreach open="AND A.USAGE_CODE IN (" collection="usageCode" index="index" item="usageCode" separator=", " close=")">
+				#{usageCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+		<if test="vesselCode != null and vesselCode != ''">
+            <foreach open="AND A.VESSEL_CODE IN (" collection="vesselCode" index="index" item="vesselCode" separator=", " close=")">
+				#{vesselCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+        <if test="volumeCode != null and volumeCode != ''">
+            <foreach open="AND A.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="volumeCode" separator=", " close=")">
+				#{volumeCode, jdbcType=VARCHAR}
+            </foreach>
+        </if>
+           ) 
+    SELECT ITEM_TBL.DESCRIPTION                         -- 품목명
+         , ITEM_TBL.ITEM_CODE                           -- 품목코드
+         , ITEM_TBL.MAIN_FLAG                           -- 주력여부
+         , CURR_STOCK_TBL.STOCK_QTY AS CURR_STOCK_QTY   -- 현재고
+         , DISCONT_TBL.PROFIT_FLAG                      -- 수익 
+         , DISCONT_TBL.SALES_FLAG                       -- 판매
+         , DISCONT_TBL.PRDT_FLAG                        -- 생산
+         , DISCONT_TBL.STOCK_FLAG                       -- 재고
+         , DISCONT_TBL.QLT_FLAG                         -- 품질
+         , DECODE(DISCONT_TBL.PROFIT_FLAG, '1', '●', '') 	AS PROFIT	-- 수익 
+         , DECODE(DISCONT_TBL.SALES_FLAG, '1', '●', '')  	AS SALES	-- 판매
+         , DECODE(DISCONT_TBL.PRDT_FLAG, '1', '●', '')		AS PRDT		-- 생산
+         , DECODE(DISCONT_TBL.STOCK_FLAG, '1', '●', '')		AS STOCK	-- 재고
+         , DECODE(DISCONT_TBL.QLT_FLAG, '1', '●', '')		AS QLT		-- 품질
+         , DISCONT_TBL.SALES_ANSB_FLAG                  -- 판매증감
+         , DISCONT_TBL.MS_ANSB_FLAG                     -- ms증감
+         , DISCONT_TBL.COST_ANSB_FLAG                   -- 원가초과
+         , DISCONT_TBL.SALES_ANSB_VALUE                 -- 판매증감
+         , DISCONT_TBL.MS_ANSB_VALUE                    -- ms증감
+         , DISCONT_TBL.COST_ANSB_VALUE                  -- 원가초과
+         , DECODE(DISCONT_TBL.PROFIT_FLAG + DISCONT_TBL.SALES_FLAG + DISCONT_TBL.PRDT_FLAG + DISCONT_TBL.STOCK_FLAG + DISCONT_TBL.QLT_FLAG
+         		, '0', '', '단종검토대상') AS CONSIDER_YN  -- 검토구분 
+         , PROFIT_TBL.ACT4010000       					-- 매출액
+         , PROFIT_TBL.ACT4020000       					-- 매출원가
+         , PROFIT_TBL.ACT4110000       					-- 판관비
+         , PROFIT_TBL.ACT4139999       					-- 영업이익
+         , PROFIT_TBL.ACT4139999 / DECODE(PROFIT_TBL.ACT4010000, 0, NULL, PROFIT_TBL.ACT4010000) AS PROFIT_RATE    					-- 영업이익률
+         , PROFIT_TBL.ACT4139999 / ABS(DECODE(SALE_TBL.ACTUAL_SALE_QTY, 0, NULL, SALE_TBL.ACTUAL_SALE_QTY)) AS PROFIT_PER_CS 		-- CS당 영업이익
+         
+         -- 환산
+         , SALE_TBL.ACTUAL_SALE_QTY                         																		-- 총 판매량
+         , DISCONT_TBL.SALES_VALUE																									-- 월 평균 판매량
+         , AVG_SALE_TBL.ACTUAL_SALE_QTY AS AVG_SALE_QTY                    															-- 최근 3개월 평균판매량
+         
+         -- 단순
+         , STOCK_TBL.PRDT_ACTUAL_QTY / 12 AS AVG_PRDT_QTY 																			--  월 평균 생산량
+         <!--   월 평균 생산량
+         , STOCK_TBL.PRDT_ACTUAL_QTY /
+           (MONTHS_BETWEEN(TO_DATE(#{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}, 'YYYYMM')
+           				, TO_DATE(#{startYear, jdbcType=VARCHAR} || #{startMonth, jdbcType=VARCHAR}, 'YYYYMM')) + 1) AS AVG_PRDT_QTY  	
+          -->
+         , LOW_PRDT_DAY_TBL.LOW_PRDT_DAY        																						-- 1일 500CS 이하 생산일수
+         
+         -- 환산
+         <!-- 
+         , STOCK_TBL.STOCK_QTY/ DECODE(SALE_TBL.ACTUAL_SALE_QTY, 0, NULL, SALE_TBL.ACTUAL_SALE_QTY)  AS AVG_STOCK_DAY					-/- 일평균 재고일수
+          -->
+         , DISCONT_TBL.STOCK_VALUE  AS AVG_STOCK_DAY																					-- 일평균 재고일수
+         
+         , SAFT_STOCK_TBL.SAFT_STOCK_DCNT																								-- 안전재고일수
+         , DISCONT_TBL.QLT_VALUE AS DISUSE_QTY																							-- 환입량
+         , DISCONT_TBL.QLT_RATE AS DISUSE_RATE																							-- 환입률
+      FROM TBL ITEM_TBL
+         , (-- 판매량
+            SELECT ITEM_CODE
+                 , SUM(A.ACTUAL_SALE_QTY * A.UOM_CONVERSION_VALUE) ACTUAL_SALE_QTY
+              FROM M_SOP_TB_ITEM_SALE_F A
+<!--  
+             WHERE PERIOD_YYYYMMDD BETWEEN #{startYear, jdbcType=VARCHAR} || #{startMonth, jdbcType=VARCHAR} || '00'
+             						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} || '99'
+-->
+             WHERE PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}, 'YYYYMM'), -11), 'YYYYMMDD') 
+             						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} || '99'
+             GROUP BY ITEM_CODE
+           ) SALE_TBL
+         , (-- 최근 3개월 판매량
+            SELECT ITEM_CODE
+                 , (SUM(ACTUAL_SALE_QTY) / 3) AS ACTUAL_SALE_QTY
+              FROM M_SOP_TB_ITEM_SALE_F A
+             WHERE A.PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{magamYmd, jdbcType=VARCHAR} || '01', 'YYYYMMDD'), -2), 'YYYYMM') || '00' 
+             							 AND #{magamYmd, jdbcType=VARCHAR} || '99'
+             GROUP BY ITEM_CODE
+           ) AVG_SALE_TBL
+         , (  -- 재고량
+            SELECT ITEM_CODE
+                 , SUM(STOCK_QTY * UOM_CONVERSION_VALUE) STOCK_QTY                 -- 재고
+                 , SUM(PRDT_ACTUAL_QTY) PRDT_ACTUAL_QTY     -- 생산
+              FROM M_SOP_TB_ITEM_STOCK_PRDT_F A
+<!--                
+             WHERE PERIOD_YYYYMMDD BETWEEN #{startYear, jdbcType=VARCHAR} || #{startMonth, jdbcType=VARCHAR} || '00' 
+             						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} || '99'
+-->
+             WHERE PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}, 'YYYYMM'), -11), 'YYYYMMDD') 
+             						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} || '99'
+             GROUP BY ITEM_CODE
+           ) STOCK_TBL
+         , (  -- 현 재고량
+            SELECT ITEM_CODE
+                 , SUM(STOCK_QTY * UOM_CONVERSION_VALUE) AS STOCK_QTY
+              FROM M_SOP_TB_ITEM_STOCK_PRDT_F 
+             WHERE 1 = 1
+               AND PERIOD_YYYYMMDD = TO_CHAR(SYSDATE - 1, 'YYYYMMDD')
+              GROUP BY ITEM_CODE
+           ) CURR_STOCK_TBL
+         , (  -- 1일 500CS 이하 생산일수
+            SELECT ITEM_CODE
+                 , COUNT(1) AS LOW_PRDT_DAY
+              FROM (
+                    SELECT PERIOD_YYYYMMDD
+                         , ITEM_CODE
+                      FROM M_SOP_TB_ITEM_STOCK_PRDT_F      
+                    WHERE 1 = 1
+<!--                      
+                       AND PERIOD_YYYYMMDD BETWEEN #{startYear, jdbcType=VARCHAR} || #{startMonth, jdbcType=VARCHAR} || '00' 
+                       						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} || '99'
+-->
+                       AND PERIOD_YYYYMMDD BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}, 'YYYYMM'), -11), 'YYYYMMDD') 
+                       						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} || '99'
+                       AND PRDT_ACTUAL_QTY   <![CDATA[ < ]]>   500
+                       AND NVL(PRDT_ACTUAL_QTY, 0) != 0
+                   )
+             WHERE 1 = 1
+             GROUP BY ITEM_CODE
+           ) LOW_PRDT_DAY_TBL 
+         , ( -- 수익성
+            SELECT ITEM_CODE
+                 , SUM(ACT4010000) AS ACT4010000   -- 매출액
+                 , SUM(ACT4020000) AS ACT4020000   -- 매출원가
+                 , SUM(ACT4110000) AS ACT4110000   -- 판관비
+                 , SUM(ACT4139999) AS ACT4139999   -- 영업이익
+              FROM M_SOP_TB_PROFIT_F A
+<!--                
+             WHERE PERIOD_YYYYMM BETWEEN #{startYear, jdbcType=VARCHAR} || #{startMonth, jdbcType=VARCHAR} AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}
+-->
+             WHERE PERIOD_YYYYMM BETWEEN TO_CHAR(ADD_MONTHS(TO_DATE(#{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}, 'YYYYMM'), -11), 'YYYYMM') 
+               						   AND #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}
+             GROUP BY ITEM_CODE
+         ) PROFIT_TBL
+         , (SELECT ITEM_CODE
+         		 , SAFT_STOCK_DCNT
+         	  FROM W_SOP_TB_ITEM_SAFT_STOCK_F
+         	 WHERE PERIOD_YYYYMM = #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}
+         ) SAFT_STOCK_TBL
+         , (SELECT *
+<!--
+  			  FROM TABLE (SCMU.FN_SOP_DISCONT_FLAG(#{startYear, jdbcType=VARCHAR} || #{startMonth, jdbcType=VARCHAR}, #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR}))
+-->
+  			  FROM W_SOP_TB_DISCONT_RSLT
+  			 WHERE 1 = 1
+  			   AND PERIOD_YYYYMM = #{endYear, jdbcType=VARCHAR} || #{endMonth, jdbcType=VARCHAR} 
+  			<if test="checkParamCnt == 0"> 
+  			   AND ( PROFIT_FLAG = '1' OR SALES_FLAG = '1' OR PRDT_FLAG = '1' OR STOCK_FLAG = '1' OR QLT_FLAG = '1' OR SALES_ANSB_FLAG = '1' OR MS_ANSB_FLAG = '1' OR COST_ANSB_FLAG = '1')
+  			</if>
+  			<if test="checkParamCnt > 0"> 
+  			   AND PROFIT_FLAG = #{chk_DC2010, jdbcType=VARCHAR}
+  			   AND SALES_FLAG = #{chk_DC2020, jdbcType=VARCHAR}
+  			   AND PRDT_FLAG = #{chk_DC2030, jdbcType=VARCHAR}
+  			   AND STOCK_FLAG = #{chk_DC2040, jdbcType=VARCHAR}
+  			   AND QLT_FLAG = #{chk_DC2050, jdbcType=VARCHAR}
+  			   AND SALES_ANSB_FLAG = #{chk_salesChange, jdbcType=VARCHAR}
+  			   AND MS_ANSB_FLAG = #{chk_msChange, jdbcType=VARCHAR}
+  			   AND COST_ANSB_FLAG = #{chk_exceedCost, jdbcType=VARCHAR}
+  			</if>
+  			
+			<if test="ipt_DC2010 != null and ipt_DC2010 != ''">
+			   AND PROFIT_VALUE <![CDATA[ <= ]]> #{ipt_DC2010, jdbcType=VARCHAR}
+			</if>
+			<if test="ipt_DC2020 != null and ipt_DC2020 != ''">
+			   AND SALES_VALUE <![CDATA[ <= ]]> #{ipt_DC2020, jdbcType=VARCHAR}
+			</if>
+			<if test="ipt_DC2030 != null and ipt_DC2030 != ''">
+			   AND PRDT_VALUE <![CDATA[ <= ]]> #{ipt_DC2030, jdbcType=VARCHAR}
+			</if>
+			<if test="ipt_DC2040 != null and ipt_DC2040 != ''">
+			   AND OR STOCK_VALUE <![CDATA[ <= ]]> #{ipt_DC2040, jdbcType=VARCHAR}
+			</if>
+			<if test="ipt_DC2050 != null and ipt_DC2050 != ''">
+			   AND OR QLT_VALUE <![CDATA[ <= ]]> #{ipt_DC2050, jdbcType=VARCHAR}
+			</if>
+			<if test="ipt_salesChange != null and ipt_salesChange != ''">
+			   AND SALES_ANSB_VALUE <![CDATA[ <= ]]> #{ipt_salesChange, jdbcType=VARCHAR} / 100
+			</if>
+			<if test="ipt_msChange != null and ipt_msChange != ''">
+			   AND MS_ANSB_VALUE <![CDATA[ <= ]]> #{ipt_msChange, jdbcType=VARCHAR} / 100
+			</if>
+			<if test="ipt_exceedCost != null and ipt_exceedCost != ''">
+			   AND COST_ANSB_VALUE <![CDATA[ >= ]]> #{ipt_exceedCost, jdbcType=VARCHAR} / 100
+			</if>
+  		 ) DISCONT_TBL
+     WHERE 1 = 1
+       AND ITEM_TBL.ITEM_CODE = SALE_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = CURR_STOCK_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = STOCK_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = PROFIT_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = AVG_SALE_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = LOW_PRDT_DAY_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = SAFT_STOCK_TBL.ITEM_CODE(+)
+       AND ITEM_TBL.ITEM_CODE = DISCONT_TBL.ITEM_CODE
+
+    </select>
+    
+    <select id="getMagamYmd" resultType="String">
+		SELECT MAGAM_YMD
+		  FROM EDW.GEIS_MAGAM
+		 WHERE SCRN_ID = 'GEISM0500R'
+		   AND CO_CODE = 'HJ0'
+    </select>
+    
+	<!-- 엑셀데이터 유효성 검증 -->
+	<select id="checkDisuseExcelList" parameterType="map" resultType="map">
+		WITH TBL_EXCEL_UPLOAD AS ( /* com.hitejinro.snop.work.dao.M06010DaoMapper.checkDisuseExcelList */
+		<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+			SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} AS ITEM_CODE
+			     , #{item.DISUSE_QTY, jdbcType=INTEGER} AS DISUSE_QTY
+			  FROM DUAL
+		</foreach>
+		)
+		SELECT ERROR_MESSAGE AS  MESSAGE
+		  FROM (SELECT NULLIF(SUBSTR(ITEM_CODE_ERROR,3), '') AS ERROR_MESSAGE
+		          FROM (SELECT CASE WHEN NULLIF(T2.DESCRIPTION,'') IS NULL
+					                THEN ', ' || T1.ITEM_CODE || '(존재하지 않는 아이템코드)'
+					            ELSE NULL
+					       END AS ITEM_CODE_ERROR
+						  FROM TBL_EXCEL_UPLOAD T1
+						     , (SELECT *
+						          FROM EDW.W_CM_TB_FG_ITEM_M
+						         WHERE LIQUOR_CODE = '33'
+						        ) T2 
+						 WHERE T1.ITEM_CODE = T2.ITEM_CODE(+)))
+		 WHERE ERROR_MESSAGE IS NOT NULL
+	</select>
+	
+	<!-- 해당버전 데이터 삭제 -->
+	<delete id="deleteDisuseData" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M06010DaoMapper.deleteDisuseData */
+		  FROM SCMU.W_SOP_TB_DISUSE_F
+		 WHERE 1 = 1
+		   AND PERIOD_YYYYMMDD LIKE #{year, jdbcType=VARCHAR} || #{month, jdbcType=VARCHAR} || '%'
+		   AND GUBUN_CODE = 'D'
+	</delete>
+	
+	<insert id="uploadDisuseData" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_DISUSE_F /* com.hitejinro.snop.work.dao.M06010DaoMapper.uploadDisuseData */
+		 VALUE
+		(
+		<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+		SELECT 'D'												     		AS GUBUN_CODE
+			 , #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR}||'01' 	AS PERIOD_YYYYMMDD
+		     , #{item.ITEM_CODE, jdbcType=VARCHAR} 					 		AS ITEM_CODE
+		     , #{item.DISUSE_QTY, jdbcType=NUMERIC} 			 	 		AS DISUSE_QTY
+		     , #{userId, jdbcType=INTEGER} 									AS CREATE_BY
+		     , SYSDATE 														AS CREATION_DATE
+		     , #{userId, jdbcType=INTEGER} 									AS LAST_UPDATED_BY
+		     , SYSDATE 														AS LAST_UPDATE_DATE
+		  FROM DUAL
+		</foreach>
+		)
+	</insert>
+	
+	<!-- 엑셀데이터 유효성 검증 -->
+	<select id="checkMsExcelList" parameterType="map" resultType="map">
+		WITH TBL_EXCEL_UPLOAD AS ( /* com.hitejinro.snop.work.dao.M06010DaoMapper.checkMsExcelList */
+		<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+			SELECT #{item.ITEM_CODE, jdbcType=VARCHAR} AS ITEM_CODE
+			     , #{item.MARKET_SHARE_VALUE, jdbcType=INTEGER} AS MARKET_SHARE_VALUE
+			  FROM DUAL
+		</foreach>
+		)
+		SELECT ERROR_MESSAGE AS  MESSAGE
+		  FROM (SELECT NULLIF(SUBSTR(ITEM_CODE_ERROR,3), '') AS ERROR_MESSAGE
+		          FROM (SELECT CASE WHEN NULLIF(T2.DESCRIPTION,'') IS NULL
+					                THEN ', ' || T1.ITEM_CODE || '(존재하지 않는 아이템코드)'
+					            ELSE NULL
+					       END AS ITEM_CODE_ERROR
+						  FROM TBL_EXCEL_UPLOAD T1
+						     , (SELECT *
+						          FROM EDW.W_CM_TB_FG_ITEM_M
+						        ) T2 
+						 WHERE T1.ITEM_CODE = T2.ITEM_CODE(+)))
+		 WHERE ERROR_MESSAGE IS NOT NULL
+	</select>
+	
+	<!-- 해당버전 데이터 삭제 -->
+	<delete id="deleteMsData" parameterType="map">
+		DELETE /* com.hitejinro.snop.work.dao.M06010DaoMapper.deleteMsData */
+		  FROM SCMU.W_SOP_TB_MARKET_SHARE_F
+		 WHERE 1 = 1
+		   AND PERIOD_YYYYMM = #{year, jdbcType=VARCHAR} || #{month, jdbcType=VARCHAR} 
+	</delete>
+	
+	<insert id="uploadMsData" parameterType="map">
+		INSERT INTO SCMU.W_SOP_TB_MARKET_SHARE_F /* com.hitejinro.snop.work.dao.M06010DaoMapper.uploadMsData */
+		 VALUE
+		(
+		<foreach open="" collection="arrUploadData" index="index" item="item" separator=" UNION ALL " close="">
+		SELECT #{year, jdbcType=VARCHAR}||#{month, jdbcType=VARCHAR} 		AS PERIOD_YYYYMM
+		     , #{item.ITEM_CODE, jdbcType=VARCHAR} 					 		AS ITEM_CODE
+		     , #{item.MARKET_SHARE_VALUE, jdbcType=NUMERIC} 			 	AS MARKET_SHARE_VALUE
+		     , #{userId, jdbcType=INTEGER} 									AS CREATE_BY
+		     , SYSDATE 														AS CREATION_DATE
+		     , #{userId, jdbcType=INTEGER} 									AS LAST_UPDATED_BY
+		     , SYSDATE 														AS LAST_UPDATE_DATE
+		  FROM DUAL
+		</foreach>
+		)
+	</insert>
+    
+</mapper>

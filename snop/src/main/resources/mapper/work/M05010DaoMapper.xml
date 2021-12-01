@@ -1,0 +1,582 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M05010 : 체화재고 현황
+ * 작성일자 :: 2021.7.27
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M05010DaoMapper">
+	
+	<!-- 조회 -->
+	<select id="search" parameterType="map" resultType="map">
+		WITH TBL_CENTER_LIST AS (
+            SELECT ORG_CODE, ORG_DESC, DEPT_CODE, DEPT_DESC
+              FROM EDW.W_CM_TB_CENTER_M
+             WHERE OU_CODE = 'HJ0'
+               AND ORG_CODE IN (SELECT ORG_CODE
+                                  FROM SCMU.W_SOP_TB_ORG_CENTER_MAP_M
+								 WHERE 1=1
+								   <if test="deptCode != null and deptCode != '!ALL'">
+								   AND DEPT_CODE = #{deptCode, jdbcType=VARCHAR}
+								   </if>
+								   <if test="centerCode != null and centerCode != '!ALL'">
+								   AND ORG_CODE = #{centerCode, jdbcType=VARCHAR}
+								   </if>
+                                  )
+		) 
+		, TBL_BW_QUANTITY AS (
+			SELECT ORG_CODE
+			     , LIQUOR_CODE
+			     , ITEM_CODE
+			     , SUBSTR(ITEM_GRADE, 2) AS ITEM_GRADE
+			     , ROUND(SUM(QUANTITY),0) QUANTITY
+			  FROM (SELECT A.ORGANIZATION_CODE AS ORG_CODE
+			             , A.LIQUOR_CODE
+			             , A.ITEM_CODE
+			             <![CDATA[
+			             , MAX(CASE WHEN C.EVENT_DATE_FLAG = 'N' THEN
+                                           CASE WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) < START_DAY_CNT THEN '0정상'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN START_DAY_CNT AND AGRADE_FROM_DAY_CNT THEN '1체화우려'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT AND AGRADE_TO_DAY_CNT THEN '2A등급'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_FROM_DAY_CNT AND BGRADE_TO_DAY_CNT THEN '3B등급'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) >= CGRADE_FROM_DAY_CNT THEN '4C등급'
+                                           END     
+                                WHEN C.EVENT_DATE_FLAG = 'Y' THEN
+                                           CASE WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) > AGRADE_FROM_DAY_CNT THEN '0정상'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT AND AGRADE_TO_DAY_CNT THEN '1체화우려'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_TO_DAY_CNT AND AGRADE_FROM_DAY_CNT THEN '2A등급'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_TO_DAY_CNT AND BGRADE_FROM_DAY_CNT THEN '3B등급'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) <= CGRADE_FROM_DAY_CNT THEN '4C등급'
+                                           END            
+                               END) AS ITEM_GRADE
+			             ]]>
+			             <if test="unitGbCode == '단순'">
+			             , A.QUANTITY AS QUANTITY
+			             </if>
+			             <if test="unitGbCode == '환산'">
+			             , A.QUANTITY*B.UOM_CONVERSION_VALUE AS QUANTITY
+			             </if>
+			          FROM (SELECT ORGANIZATION_CODE
+			                     , ORGANIZATION_NAME
+			                     , LIQUOR_TYPE AS LIQUOR_CODE
+			                     , ITEM_CODE
+			                     , ITEM_NAME
+			                     , TO_CHAR(INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+			                     , STOCK_QUANTITY
+			                     , TO_CHAR(PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+			                     , QUANTITY
+			                     , TO_CHAR(IN_DATE, 'YYYYMMDD') AS IN_DATE
+			                     , PRODUCTION_MFG
+			                     , PRODUCTION_LOG
+			                     , TO_CHAR(EVENT_DATE, 'YYYYMMDD') AS EVENT_DATE
+			                  FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+			                 WHERE TO_CHAR(INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR(TO_DATE(YYYYMMDD,'YYYYMMDD') - 7,'YYYYMMDD')
+			                                                             FROM SCMU.W_SOP_VW_CALENDAR_M
+			                                                            WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR})) A
+			             , (SELECT *
+			                  FROM EDW.W_CM_TB_FG_ITEM_M WT1
+			                 WHERE 1=1
+			                   AND WT1.ITEM_TYPE = 'FG'
+			                   AND WT1.ITEM_STATUS = 'Active'
+			                   AND WT1.LIQUOR_CODE IN ('10','20')
+							<if test="liquorCode != null and liquorCode != '!ALL'">
+						       AND WT1.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+							</if>
+							<if test="brandCode != null and brandCode != ''">
+								<foreach open="AND WT1.BRAND_CODE IN (" collection="brandCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							<if test="usageCode != null and usageCode != ''">
+								<foreach open="AND WT1.USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							<if test="vesselCode != null and vesselCode != ''">
+								<foreach open="AND WT1.VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							<if test="volumeCode != null and volumeCode != ''">
+								<foreach open="AND WT1.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							) B
+			             , (SELECT *
+			                  FROM SCMU.W_SOP_TB_ACCUM_STOCK_M
+			                 WHERE END_FLAG = 'N') C
+			         WHERE A.ITEM_CODE = B.ITEM_CODE
+			           <!-- AND ( (C.EVENT_DATE_FLAG = 'Y' AND A.ITEM_CODE = C.ITEM_CODE) -->
+			           AND ( (A.ITEM_CODE = C.ITEM_CODE)
+			              OR (B.LIQUOR_CODE = C.LIQUOR_CODE
+			                  AND B.VESSEL_CODE = C.VESSEL_CODE
+			                  AND B.BRAND_CODE = C.BRAND_CODE))
+			           AND A.QUANTITY != 0
+			         GROUP BY A.ORGANIZATION_CODE
+			                , A.LIQUOR_CODE
+			                , A.ITEM_CODE
+			                , A.QUANTITY
+			                , B.UOM_CONVERSION_VALUE)
+			 GROUP BY ORG_CODE
+			        , LIQUOR_CODE
+			        , ITEM_CODE
+			        , ITEM_GRADE
+		) 
+		, TBL_QUANTITY AS (
+			SELECT ORG_CODE
+			     , ORG_DESC
+			     , LIQUOR_CODE
+			     , DECODE(LIQUOR_CODE, '10', '맥주', '소주') AS LIQUOR_DESC
+			     , ITEM_CODE
+			     , DESCRIPTION
+			     , EVENT_ITEM_FLAG
+			     , SUBSTR(ITEM_GRADE, 2) AS ITEM_GRADE
+			     , PRODUCTION_DATE
+			     , EVENT_DATE
+			     , ROUND(SUM(QUANTITY),0) QUANTITY
+			  FROM (SELECT A.ORGANIZATION_CODE AS ORG_CODE
+			             , D.ORG_DESC
+			             , A.LIQUOR_CODE
+			             , A.ITEM_CODE
+			             , B.DESCRIPTION
+			             , B.EVENT_ITEM_FLAG
+			             , A.PRODUCTION_DATE
+			             , A.EVENT_DATE
+			             <![CDATA[
+			             , MAX(CASE WHEN C.EVENT_DATE_FLAG = 'N' THEN
+                                           CASE WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) < START_DAY_CNT THEN '0정상'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN START_DAY_CNT AND AGRADE_FROM_DAY_CNT THEN '1체화우려'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT AND AGRADE_TO_DAY_CNT THEN '2A등급'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_FROM_DAY_CNT AND BGRADE_TO_DAY_CNT THEN '3B등급'
+                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) >= CGRADE_FROM_DAY_CNT THEN '4C등급'
+                                           END     
+                                WHEN C.EVENT_DATE_FLAG = 'Y' THEN
+                                           CASE WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) > AGRADE_FROM_DAY_CNT THEN '0정상'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT AND AGRADE_TO_DAY_CNT THEN '1체화우려'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_TO_DAY_CNT AND AGRADE_FROM_DAY_CNT THEN '2A등급'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_TO_DAY_CNT AND BGRADE_FROM_DAY_CNT THEN '3B등급'
+                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) <= CGRADE_FROM_DAY_CNT THEN '4C등급'
+                                           END            
+                               END) AS ITEM_GRADE
+			             ]]>
+			             <if test="unitGbCode == '단순'">
+			             , A.QUANTITY AS QUANTITY
+			             </if>
+			             <if test="unitGbCode == '환산'">
+			             , A.QUANTITY*B.UOM_CONVERSION_VALUE AS QUANTITY
+			             </if>
+			          FROM (SELECT ORGANIZATION_CODE
+			                     , ORGANIZATION_NAME
+			                     , LIQUOR_TYPE AS LIQUOR_CODE
+			                     , ITEM_CODE
+			                     , ITEM_NAME
+			                     , TO_CHAR(INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+			                     , STOCK_QUANTITY
+			                     , TO_CHAR(PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+			                     , QUANTITY
+			                     , TO_CHAR(IN_DATE, 'YYYYMMDD') AS IN_DATE
+			                     , PRODUCTION_MFG
+			                     , PRODUCTION_LOG
+			                     , TO_CHAR(EVENT_DATE, 'YYYYMMDD') AS EVENT_DATE
+			                  FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+			                 WHERE TO_CHAR(INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR(TO_DATE(YYYYMMDD,'YYYYMMDD'),'YYYYMMDD')
+			                                                             FROM SCMU.W_SOP_VW_CALENDAR_M
+			                                                            WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR})) A
+			             , (SELECT *
+			                  FROM EDW.W_CM_TB_FG_ITEM_M WT1
+			                 WHERE 1=1
+			                   AND WT1.ITEM_TYPE = 'FG'
+			                   AND WT1.ITEM_STATUS = 'Active'
+			                   AND WT1.LIQUOR_CODE IN ('10','20')
+							<if test="liquorCode != null and liquorCode != '!ALL'">
+						       AND WT1.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+							</if>
+							<if test="brandCode != null and brandCode != ''">
+								<foreach open="AND WT1.BRAND_CODE IN (" collection="brandCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							<if test="usageCode != null and usageCode != ''">
+								<foreach open="AND WT1.USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							<if test="vesselCode != null and vesselCode != ''">
+								<foreach open="AND WT1.VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							<if test="volumeCode != null and volumeCode != ''">
+								<foreach open="AND WT1.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+									#{item, jdbcType=VARCHAR}
+								</foreach>
+							</if>
+							) B
+			             , (SELECT *
+			                  FROM SCMU.W_SOP_TB_ACCUM_STOCK_M
+			                 WHERE END_FLAG = 'N') C
+			             , TBL_CENTER_LIST D
+			         WHERE A.ITEM_CODE = B.ITEM_CODE
+			           <!-- AND ( (C.EVENT_DATE_FLAG = 'Y' AND A.ITEM_CODE = C.ITEM_CODE) -->
+			           AND ( (A.ITEM_CODE = C.ITEM_CODE)
+			              OR (B.LIQUOR_CODE = C.LIQUOR_CODE
+			                  AND B.VESSEL_CODE = C.VESSEL_CODE
+			                  AND B.BRAND_CODE = C.BRAND_CODE))
+			           AND A.QUANTITY != 0
+			           AND A.ORGANIZATION_CODE = D.ORG_CODE
+			         GROUP BY A.ORGANIZATION_CODE
+			                , D.ORG_DESC
+			                , A.LIQUOR_CODE
+			                , A.ITEM_CODE
+			                , B.DESCRIPTION
+			                , B.EVENT_ITEM_FLAG
+			                , A.PRODUCTION_DATE
+			                , A.EVENT_DATE
+			                , A.QUANTITY
+			                , B.UOM_CONVERSION_VALUE)
+			 GROUP BY ORG_CODE
+			        , ORG_DESC
+			        , LIQUOR_CODE
+			        , ITEM_CODE
+			        , DESCRIPTION
+			        , EVENT_ITEM_FLAG
+			        , PRODUCTION_DATE
+			        , EVENT_DATE
+			        , ITEM_GRADE)
+		, ACTUAL_TBL AS (
+		    -- 판매실적 : 당일, 영업일 5/10/20/60일 계산의 속도 향상을 위해서 WITH절 사용
+		    SELECT /*+ INDEX(A W_OM_TB_RESULT_DETAIL_F_I09) */
+		           A.SALES_DATE AS PERIOD_YYYYMMDD, A.ORG_CODE, A.ITEM_CODE, A.MARKET_TYPE
+	             <if test="unitGbCode == '단순'">
+		         , SUM(NVL(A.ORDERED_QTY, 0)) AS ACTUAL_SALE_QTY
+	             </if>
+	             <if test="unitGbCode == '환산'">
+		         , SUM(NVL(A.CONV_SALES_QTY, 0)) AS ACTUAL_SALE_QTY
+	             </if>
+		      FROM EDW.W_OM_TB_RESULT_DETAIL_F A
+		      JOIN EDW.W_CM_TB_FG_ITEM_M       B
+		        ON B.ITEM_CODE = A.ITEM_CODE
+		     WHERE 1 = 1
+		       AND A.OU_CODE     = 'HJ0'
+		       AND A.REV_FLAG    = 'Y' -- 매출여부
+		       AND A.LIQUOR_CODE IN ('10', '20')
+		       AND NVL(A.ORDERED_QTY, 0) != 0
+		       AND A.SALES_DATE  BETWEEN TO_CHAR(SYSDATE-40, 'YYYYMMDD')
+		                             AND TO_CHAR(SYSDATE, 'YYYYMMDD') -- 영업일 60일 이전, 직전 3개월 평균 계산을 위해서 미리 범위 데이터 수집
+		       AND B.ITEM_TYPE   IN ('FG', 'MG', 'PH') -- FG(완제품), MG(상품), PH(팬텀 품목)
+		     GROUP BY A.SALES_DATE, A.ORG_CODE, A.ITEM_CODE, A.MARKET_TYPE
+		    HAVING SUM(NVL(A.ORDERED_QTY, 0)) != 0
+		     ORDER BY A.SALES_DATE, A.ITEM_CODE, A.MARKET_TYPE
+		)
+		SELECT 
+			   T1.ORG_DESC
+		     , T1.LIQUOR_DESC
+		     , T1.EVENT_ITEM_FLAG
+		     , T1.ITEM_CODE
+		     , T1.DESCRIPTION
+		     , TO_CHAR(TO_DATE(T1.MIN_PRODUCTION_DATE,'YYYYMMDD'), 'YYYY-MM-DD') AS MIN_PRODUCTION_DATE
+		     , TO_CHAR(TO_DATE(T1.MAX_PRODUCTION_DATE,'YYYYMMDD'), 'YYYY-MM-DD') AS MAX_PRODUCTION_DATE
+		     , TO_CHAR(TO_DATE(T1.MIN_EVENT_DATE,'YYYYMMDD'), 'YYYY-MM-DD') AS MIN_EVENT_DATE
+		     , TO_CHAR(TO_DATE(T1.MAX_EVENT_DATE,'YYYYMMDD'), 'YYYY-MM-DD') AS MAX_EVENT_DATE
+		     , T1.MAX_PRODUCTION_DATE
+		     , NVL(T3.QUANTITY,0) AS BF_WW_QUANTITY
+		     , T1.QUANTITY
+		     , T1.QUANTITY - NVL(T3.QUANTITY,0) AS DIFF_QUANTITY
+		     , DECODE(NVL(T3.QUANTITY,0), 0, 1, ROUND((T1.QUANTITY - T3.QUANTITY) / T3.QUANTITY, 2)) AS QUANTITY_RATE
+             , NVL(REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(T2.ACTUAL_20D_SALE_AVG_QTY)), '([0-9]{3})','\1,')), '^,',''), '-') ACTUAL_20D_SALE_AVG_QTY
+             , NVL(REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(REPLACE(TO_CHAR(DECODE(NVL(T2.ACTUAL_20D_SALE_AVG_QTY,0), 0, 0, ROUND(T1.QUANTITY / T2.ACTUAL_20D_SALE_AVG_QTY, 1)), '999990.9'),' ', '')), '([0-9]{3})','\1,')), '^,',''), '-') STOCK_DAY
+		     , T1.ITEM_GRADE
+		  FROM (SELECT 
+					<if test="viewGbCode != null and viewGbCode == 'orgDtl'">
+		  			   ORG_CODE
+		             , ORG_DESC
+					</if>
+					<if test="viewGbCode != null and viewGbCode == 'orgSum'">
+		  			   '!ALL' ORG_CODE
+		             , '전체' ORG_DESC
+					</if>
+		             , LIQUOR_CODE
+		             , LIQUOR_DESC
+		             , EVENT_ITEM_FLAG
+		             , ITEM_CODE
+		             , DESCRIPTION
+                     , MAX(PRODUCTION_DATE) AS MIN_PRODUCTION_DATE	--최소 생성일자는 가장 최근 생성일자를 말함(일자중 MAX)
+                     , MIN(PRODUCTION_DATE) AS MAX_PRODUCTION_DATE
+                     , MAX(EVENT_DATE) AS MIN_EVENT_DATE
+                     , MIN(EVENT_DATE) AS MAX_EVENT_DATE
+		             , SUM(QUANTITY) AS QUANTITY
+		             , ITEM_GRADE
+		          FROM TBL_QUANTITY A
+		         GROUP BY 
+					   <if test="viewGbCode != null and viewGbCode == 'orgDtl'">
+		                  ORG_CODE
+		                , ORG_DESC ,
+					    </if>
+		                  LIQUOR_CODE
+		                , LIQUOR_DESC
+		                , EVENT_ITEM_FLAG
+		                , ITEM_CODE
+		                , DESCRIPTION
+		                , ITEM_GRADE) T1
+		     , (SELECT 
+		               <if test="viewGbCode != null and viewGbCode == 'orgDtl'">
+		               A.ORG_CODE
+		               </if>
+		               <if test="viewGbCode != null and viewGbCode == 'orgSum'">
+		               '!ALL' AS ORG_CODE
+		               </if>
+		             , A.ITEM_CODE
+		             , ROUND(SUM(NVL(A.ACTUAL_SALE_QTY, 0)) / 20, 0) AS ACTUAL_20D_SALE_AVG_QTY
+		          FROM ACTUAL_TBL               A
+		          JOIN SCMU.W_SOP_VW_CALENDAR_M B
+		            ON B.YYYYMMDD > A.PERIOD_YYYYMMDD
+		           <![CDATA[
+		           AND B.BF_20D_YYYYMMDD <= A.PERIOD_YYYYMMDD
+		           ]]>
+		         WHERE 1 = 1
+		           AND B.YYYYMMDD = TO_CHAR(SYSDATE, 'YYYYMMDD')
+		         GROUP BY A.ITEM_CODE
+		         <if test="viewGbCode != null and viewGbCode == 'orgDtl'">
+		         	    , A.ORG_CODE
+		         </if>
+		         ) T2
+		     , (SELECT 
+		               <if test="viewGbCode != null and viewGbCode == 'orgDtl'">
+		               A.ORG_CODE
+		               </if>
+		               <if test="viewGbCode != null and viewGbCode == 'orgSum'">
+		               '!ALL' AS ORG_CODE
+		               </if>
+		             , A.ITEM_CODE
+		             , A.ITEM_GRADE
+		             , SUM(A.QUANTITY) AS QUANTITY
+		          FROM TBL_BW_QUANTITY A
+		         GROUP BY A.ITEM_CODE, ITEM_GRADE
+		         <if test="viewGbCode != null and viewGbCode == 'orgDtl'">
+		         	    , A.ORG_CODE
+		         </if>
+		         ) T3
+		 WHERE T1.ITEM_CODE = T2.ITEM_CODE(+)
+		   AND T1.ORG_CODE = T2.ORG_CODE(+)
+		   AND T1.ORG_CODE = T3.ORG_CODE(+)
+		   AND T1.ITEM_CODE = T3.ITEM_CODE(+)
+		   AND T1.ITEM_GRADE = T3.ITEM_GRADE(+)
+		   AND ( 1 = 2
+		   <if test="chkAgrade != null and chkAgrade != ''">
+   		     OR T1.ITEM_GRADE = #{chkAgrade, jdbcType=VARCHAR}
+		   </if>
+		   <if test="chkBgrade != null and chkBgrade != ''">
+   		     OR T1.ITEM_GRADE = #{chkBgrade, jdbcType=VARCHAR}
+		   </if>
+		   <if test="chkCgrade != null and chkCgrade != ''">
+   		     OR T1.ITEM_GRADE = #{chkCgrade, jdbcType=VARCHAR}
+		   </if>
+		   <if test="chkSgrade != null and chkSgrade != ''">
+   		     OR T1.ITEM_GRADE = #{chkSgrade, jdbcType=VARCHAR}
+		   </if>
+		   <if test="chkLgrade != null and chkLgrade != ''">
+   		     OR T1.ITEM_GRADE = #{chkLgrade, jdbcType=VARCHAR}
+		   </if>
+		   )
+		   AND ( 1 = 2
+	       <if test="chkEventA != null and chkEventA != ''">
+		     OR T1.EVENT_ITEM_FLAG = #{chkEventA, jdbcType=VARCHAR}
+	       </if>
+	       <if test="chkEventB != null and chkEventB != ''">
+  		     OR T1.EVENT_ITEM_FLAG = #{chkEventB, jdbcType=VARCHAR}
+	       </if>
+	       <if test="chkEventC != null and chkEventC != ''">
+  		     OR T1.EVENT_ITEM_FLAG = #{chkEventC, jdbcType=VARCHAR}
+	       </if>
+	       )
+		 ORDER BY T1.ORG_CODE, T1.LIQUOR_CODE, T1.ITEM_GRADE, T1.EVENT_ITEM_FLAG, T1.ITEM_CODE
+	</select>
+	
+	<!-- 상단 요약정보 조회 -->
+	<select id="summaryResult" parameterType="map" resultType="map">
+		WITH TBL_CENTER_LIST AS (
+			SELECT *
+			  FROM EDW.W_CM_TB_CENTER_M
+			 WHERE 1=1
+			   <if test="deptCode != null and deptCode != '!ALL'">
+			   AND DEPT_CODE = #{deptCode, jdbcType=VARCHAR}
+			   </if>
+			   <if test="centerCode != null and centerCode != '!ALL'">
+			   AND ORG_CODE = #{centerCode, jdbcType=VARCHAR}
+			   </if>
+		) 
+		SELECT SUBSTR(ITEM_GRADE, 2) AS ITEM_GRADE
+		     , COUNT(ITEM_CODE) AS ITEM_COUNT
+		     , REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(ROUND(SUM(QUANTITY),0))), '([0-9]{3})','\1,')), '^,','') AS QUANTITY
+		  FROM (
+		            SELECT ITEM_CODE
+		                 , ITEM_GRADE
+		                 , SUM(QUANTITY) QUANTITY
+		              FROM (SELECT A.ITEM_CODE
+		                         , B.DESCRIPTION
+		                         , B.EVENT_ITEM_FLAG
+		                         <![CDATA[
+		                         , MAX(CASE WHEN C.EVENT_DATE_FLAG = 'N' THEN
+		                                           CASE WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN START_DAY_CNT AND AGRADE_FROM_DAY_CNT THEN '1체화우려'
+		                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT AND AGRADE_TO_DAY_CNT THEN '2체화재고'
+		                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_FROM_DAY_CNT AND BGRADE_TO_DAY_CNT THEN '3체화재고'
+		                                                WHEN (TO_DATE(A.INPUT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) >= CGRADE_FROM_DAY_CNT THEN '4체화재고'
+		                                           END     
+		                                WHEN C.EVENT_DATE_FLAG = 'Y' THEN
+		                                           CASE WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_FROM_DAY_CNT AND START_DAY_CNT THEN '1체화우려'
+		                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN AGRADE_TO_DAY_CNT AND AGRADE_FROM_DAY_CNT THEN '2체화재고'
+		                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) BETWEEN BGRADE_TO_DAY_CNT AND BGRADE_FROM_DAY_CNT THEN '3체화재고'
+		                                                WHEN (TO_DATE(A.EVENT_DATE, 'YYYYMMDD') - TO_DATE(A.PRODUCTION_DATE, 'YYYYMMDD')) <= CGRADE_FROM_DAY_CNT THEN '4체화재고'
+		                                           END            
+		                               END) AS ITEM_GRADE
+		                         ]]>
+		                         , A.QUANTITY*B.UOM_CONVERSION_VALUE AS QUANTITY
+		                      FROM (SELECT ORGANIZATION_CODE
+		                                 , ORGANIZATION_NAME
+		                                 , LIQUOR_TYPE AS LIQUOR_CODE
+		                                 , ITEM_CODE
+		                                 , ITEM_NAME
+		                                 , TO_CHAR(INPUT_DATE, 'YYYYMMDD') AS INPUT_DATE
+		                                 , STOCK_QUANTITY
+		                                 , TO_CHAR(PRODUCTION_DATE, 'YYYYMMDD') AS PRODUCTION_DATE
+		                                 , QUANTITY
+		                                 , TO_CHAR(IN_DATE, 'YYYYMMDD') AS IN_DATE
+		                                 , PRODUCTION_MFG
+		                                 , PRODUCTION_LOG
+		                                 , TO_CHAR(EVENT_DATE, 'YYYYMMDD') AS EVENT_DATE
+		                              FROM APPS.XXWSH_DAILY_QUANTITY@DL_VIEWER_TO_PROD WDQ
+		                             WHERE TO_CHAR(INPUT_DATE, 'YYYYMMDD') IN (SELECT TO_CHAR(TO_DATE(YYYYMMDD,'YYYYMMDD'),'YYYYMMDD')
+		                                                                         FROM SCMU.W_SOP_VW_CALENDAR_M
+		                                                                        WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR})) A
+		                         , (SELECT *
+		                              FROM EDW.W_CM_TB_FG_ITEM_M WT1
+		                             WHERE 1=1
+		                               AND WT1.ITEM_TYPE = 'FG'
+		                               AND WT1.ITEM_STATUS = 'Active'
+		                               AND WT1.LIQUOR_CODE IN ('10','20')
+									<if test="liquorCode != null and liquorCode != '!ALL'">
+								       AND WT1.LIQUOR_CODE = #{liquorCode, jdbcType=VARCHAR}
+									</if>
+									<if test="brandCode != null and brandCode != ''">
+										<foreach open="AND WT1.BRAND_CODE IN (" collection="brandCode" index="index" item="item" separator=", " close=")">
+											#{item, jdbcType=VARCHAR}
+										</foreach>
+									</if>
+									<if test="usageCode != null and usageCode != ''">
+										<foreach open="AND WT1.USAGE_CODE IN (" collection="usageCode" index="index" item="item" separator=", " close=")">
+											#{item, jdbcType=VARCHAR}
+										</foreach>
+									</if>
+									<if test="vesselCode != null and vesselCode != ''">
+										<foreach open="AND WT1.VESSEL_CODE IN (" collection="vesselCode" index="index" item="item" separator=", " close=")">
+											#{item, jdbcType=VARCHAR}
+										</foreach>
+									</if>
+									<if test="volumeCode != null and volumeCode != ''">
+										<foreach open="AND WT1.VOLUME_VALUE IN (" collection="volumeCode" index="index" item="item" separator=", " close=")">
+											#{item, jdbcType=VARCHAR}
+										</foreach>
+									</if>
+		                             ) B
+		                         , (SELECT *
+		                              FROM SCMU.W_SOP_TB_ACCUM_STOCK_M
+		                             WHERE END_FLAG = 'N') C
+		                         , TBL_CENTER_LIST D
+		                     WHERE A.ITEM_CODE = B.ITEM_CODE
+		                       AND ( (C.EVENT_DATE_FLAG = 'Y' AND A.ITEM_CODE = C.ITEM_CODE)
+		                          OR (B.LIQUOR_CODE = C.LIQUOR_CODE
+		                              AND B.VESSEL_CODE = C.VESSEL_CODE
+		                              AND B.BRAND_CODE = C.BRAND_CODE))
+		                       AND A.QUANTITY != 0
+		                       AND A.ORGANIZATION_CODE = D.ORG_CODE
+		                     GROUP BY A.ORGANIZATION_CODE
+		                            , D.ORG_DESC
+		                            , A.LIQUOR_CODE
+		                            , A.ITEM_CODE
+		                            , B.DESCRIPTION
+		                            , B.EVENT_ITEM_FLAG
+		                            , A.PRODUCTION_DATE
+		                            , A.EVENT_DATE
+		                            , A.QUANTITY
+		                            , B.UOM_CONVERSION_VALUE)
+		             GROUP BY ITEM_CODE
+		                    , ITEM_GRADE)
+		 WHERE ITEM_GRADE IS NOT NULL
+		 GROUP BY SUBSTR(ITEM_GRADE, 2)
+		 ORDER BY ITEM_GRADE
+	</select>
+	
+	<!-- 차수 Combo List 조회 -->
+	<select id="yyyywwCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M05010DaoMapper.yyyywwCombo */
+			   DISTINCT SCM_YYYYWW AS CODE
+		     , CASE WHEN SUBSTR(YYYYWW,5,1) = '0' THEN SUBSTR(YYYYWW,6,1)
+                    ELSE SUBSTR(YYYYWW,5,2)
+               END ||'주차' AS NAME
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMM = #{yearStr, jdbcType=VARCHAR}||#{monthStr, jdbcType=VARCHAR}
+	</select>
+	
+	<!-- 지점 Combo List 조회 -->
+	<select id="deptCodeCombo" parameterType="map" resultType="map">
+        SELECT /* com.hitejinro.snop.work.dao.M05010DaoMapper.deptCodeCombo */
+               T1.DEPT_CODE AS CODE
+             , T1.DEPT_DESC AS NAME
+          FROM SCMU.W_SOP_TB_ORG_CENTER_MAP_M T1
+             , EDW.W_CM_TB_OM_DEPT_M T2
+         WHERE T1.DEPT_CODE = T2.DEPARTMENT_CODE
+         GROUP BY T1.DEPT_CODE, T1.DEPT_DESC, T2.DEPT_SORT_NUMBER
+         ORDER BY T2.DEPT_SORT_NUMBER
+	</select>
+	
+	<!-- 센터 Combo List 조회 -->
+	<select id="centerCodeCombo" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M05010DaoMapper.centerCodeCombo */
+			   DISTINCT ORG_CODE AS CODE
+		     , ORG_DESC AS NAME
+		  FROM SCMU.W_SOP_TB_ORG_CENTER_MAP_M
+		 WHERE 1=1
+		   <if test="deptCode != null and deptCode != '!ALL'">
+		   AND DEPT_CODE = #{deptCode, jdbcType=VARCHAR}
+		   </if>
+	</select>
+	
+	<!-- 년, 월, 주차 기본설정(최종입력주차) 조회 -->
+	<select id="defaultYearMonth" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M05010DaoMapper.defaultYearMonth */
+			   YYYY
+		     , SUBSTR(YYYYMM,5,2) MM
+		     , SCM_YYYYWW AS YYYYWW
+		  FROM SCMU.W_SOP_VW_CALENDAR_M
+		 WHERE YYYYMMDD = TO_CHAR(SYSDATE - 7, 'YYYYMMDD')
+	</select>
+	
+	<!-- 마감 기준일자 조회 -->
+	<select id="searchMagamStr" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M05010DaoMapper.searchMagamStr */
+			   MAGAM_STR
+		  FROM (SELECT YYYYMMDD
+		             , DAY_OF_WEEK
+		             , DAY_OF_WEEK_DESC
+		             , SUBSTR(SCM_YYYYWW, 5, 2)||'주 - ' 
+		               || CASE WHEN SUBSTR(YYYYMMDD, 5, 1) = '0' THEN SUBSTR(YYYYMMDD, 6, 1)
+		                       ELSE SUBSTR(YYYYMMDD, 5, 2)
+		                  END || '월 '
+		               || CASE WHEN SUBSTR(YYYYMMDD, 7, 1) = '0' THEN SUBSTR(YYYYMMDD, 8, 1)
+		                       ELSE SUBSTR(YYYYMMDD, 7, 2)
+		                  END || '일(' || DAY_OF_WEEK_DESC || ') 마감기준' AS MAGAM_STR
+		             , ROW_NUMBER() OVER (ORDER BY CASE WHEN DAY_OF_WEEK = 4 THEN 1
+		                                                WHEN DAY_OF_WEEK = 5 THEN 2
+		                                                WHEN DAY_OF_WEEK = 6 THEN 3
+		                                                WHEN DAY_OF_WEEK = 3 THEN 4
+		                                                WHEN DAY_OF_WEEK = 2 THEN 5
+		                                           END ) AS SORT_SEQ
+		          FROM SCMU.W_SOP_VW_CALENDAR_M 
+		         WHERE SCM_YYYYWW = #{yyyyww, jdbcType=VARCHAR}
+		           AND BUSINESS_DAY_FLAG = 'Y')
+		 WHERE SORT_SEQ = 1
+	</select>
+	
+</mapper>

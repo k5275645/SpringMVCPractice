@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- KPI > 신병 사용률 -->
+<mapper namespace="com.hitejinro.snop.work.dao.M07080DaoMapper">
+    
+    <!-- 데이터 조회 -->
+    <select id="searchHeader" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M07080DaoMapper.searchHeader */
+			   T1.ORG_CODE
+			 , T1.ORG_NAME
+			 , SUBSTR(T1.ORG_NAME, 0, 2) AS ORG_SHORT_NAME
+			 , '20' AS LIQUOR_CODE
+			 , '소주' AS LIQUOR_NAME
+			 , T1.ORG_CODE || '_' || '20' AS COL_ID  
+             , ROWNUM AS ROW_NUM
+             , COUNT(1) OVER (PARTITION BY SUBSTR(T1.ORG_CODE, 0, 2)) AS COL_SPAN
+		  FROM EDW.W_CM_TB_ORGANIZATION_M T1
+		 WHERE 1 = 1
+		   AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+		   AND T1.ORG_TYPE = DECODE('MFG', '!ALL', T1.ORG_TYPE, 'MFG')
+		   AND T1.ORG_CODE != 'S01'    -- 진로소주공장 제외
+		   AND T1.ORG_CODE LIKE 'MJ%'
+		 UNION ALL 
+		SELECT T1.ORG_CODE
+			 , T1.ORG_NAME
+			 , SUBSTR(T1.ORG_NAME, 0, 2) AS ORG_SHORT_NAME
+			 , '10' AS LIQUOR_CODE
+			 , '맥주' AS LIQUOR_NAME
+			 , T1.ORG_CODE || '_' || '10' AS COL_ID  
+             , ROWNUM AS ROW_NUM
+             , COUNT(1) OVER (PARTITION BY SUBSTR(T1.ORG_CODE, 0, 2)) AS COL_SPAN
+		  FROM EDW.W_CM_TB_ORGANIZATION_M T1
+		 WHERE 1 = 1
+		   AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+		   AND T1.ORG_TYPE = DECODE('MFG', '!ALL', T1.ORG_TYPE, 'MFG')
+		   AND T1.ORG_CODE != 'S01'    -- 진로소주공장 제외
+		   AND T1.ORG_CODE LIKE 'MH%'
+		 ORDER BY LIQUOR_CODE DESC, ORG_CODE
+    </select>
+
+    <select id="searchParam" parameterType="map" resultType="map">
+         SELECT /* com.hitejinro.snop.work.dao.M07080DaoMapper.searchParam */
+                DISTINCT YYYYMM AS ROW_KEY
+              , YYYY || '-' || SUBSTR(YYYYMM, -2) AS ROW_DATA 
+           FROM SCMU.W_SOP_VW_CALENDAR_M
+          WHERE YYYYMM BETWEEN #{fromYYYYMM, jdbcType=VARCHAR} AND #{toYYYYMM, jdbcType=VARCHAR}
+          ORDER BY YYYYMM
+    </select>
+
+
+    
+    <select id="searchBody" parameterType="map" resultType="map">
+	WITH TBL AS /* com.hitejinro.snop.work.dao.M07080DaoMapper.searchBody */
+         (  SELECT T1.PERIOD_YYYYMMDD AS PERIOD_YYYYMMDD
+                 , T1.LIQUOR_CODE
+                 , MAX (T3.LIQUOR_DESC) AS LIQUOR_DESC
+                 , T1.MFG_CODE
+                 , DECODE (GROUPING_ID (T1.MFG_CODE), 1, '전체', MAX (T5.MFG_NAME)) AS MFG_NAME     
+                                                 
+				<if test="chkFruitSoju.equals('TRUE')">
+                 -- 신병사용율    
+                 -- 신병사용량 / 생산량                                                                                               
+                 , (CASE WHEN SUM (T1.PRDT_QTY) > 0 THEN SUM (T1.NEW_BOTL_QTY) / SUM (T1.PRDT_QTY) ELSE 0 END) AS NEW_BOTL_RATE
+				</if>
+                <if test="chkFruitSoju.equals('FALSE')">
+                 -- 신병사용율(과일소주제외)
+				 -- (신병사용량 - 과일소주 생산량) / (생산량 - 과일소주 생산량)
+                 , (CASE                                                                                      
+                        WHEN T1.LIQUOR_CODE = '20' AND SUM (T1.PRDT_QTY - NVL (T2.LIQUEUR_PRDT_QTY, 0)) > 0 THEN
+                            SUM (T1.NEW_BOTL_QTY - NVL (T2.LIQUEUR_PRDT_QTY, 0)) / SUM (T1.PRDT_QTY - NVL (T2.LIQUEUR_PRDT_QTY, 0))
+                        WHEN T1.LIQUOR_CODE = '10' AND SUM (T1.PRDT_QTY) > 0 THEN
+                        	SUM (T1.NEW_BOTL_QTY) / SUM (T1.PRDT_QTY)
+                        ELSE
+                            0
+                    END) AS NEW_BOTL_RATE
+                </if>
+                       
+              FROM (  SELECT A.PERIOD_YYYYMMDD
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , A.BRAND_CODE
+                           , A.MFG_CODE  
+                                                                                                                               
+                           -- 고병 생산량
+                           , SUM (CASE WHEN A.BOTL_TYPE = 'OLD' AND A.TRANSACTION_TYPE_CODE = '출고_생산' THEN A.QTY ELSE 0 END) AS PRDT_QTY 
+                           
+                           -- 신병사용량(신병 출고_대체 - 신병 입고_대체)
+                           , SUM (
+                                 CASE
+                                     WHEN A.BOTL_TYPE = 'NEW' AND A.TRANSACTION_TYPE_CODE = '출고_대체' THEN A.QTY
+                                     WHEN A.BOTL_TYPE = 'NEW' AND A.TRANSACTION_TYPE_CODE = '입고_대체' THEN A.QTY * -1
+                                     ELSE 0
+                                 END
+                                 ) AS NEW_BOTL_QTY
+                                 
+                        FROM (                                                                                                                   -- 환산
+                              SELECT SUBSTR (B.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+                                   , B.ITEM_CODE
+                                   , A.LIQUOR_CODE
+                                   , A.VOLUME_VALUE
+                                   , A.BRAND_CODE
+                                   , A.BOTL_TYPE
+                                   , B.TRANSACTION_TYPE_CODE
+                                   , B.ORG_CODE AS MFG_CODE
+                                   , NVL (B.QTY, 0) / DECODE ('ACCT_BULK_QTY', 'ACCT_BULK_QTY', 1, GREATEST (NVL (A.PBOX_PACKING_UNIT, 1), 1)) AS QTY
+                                FROM SCMU.W_SOP_TB_VESSEL_M A
+                                     INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F B
+                                         ON B.PERIOD_YYYYMMDD BETWEEN #{fromYYYYMMDD, jdbcType=VARCHAR} AND #{toYYYYMMDD, jdbcType=VARCHAR} AND B.ITEM_CODE = A.ITEM_CODE
+                               WHERE 1 = 1
+                                 AND A.LIQUOR_CODE = '20'
+                                 AND A.COMPANY_TYPE = 'OWNER'
+                                 AND A.VESSEL_CODE = '1'
+                                 AND A.USE_YN = 'Y'
+                                 AND B.ORG_TYPE = 'MFG'
+                                 AND B.ORG_CODE IN (SELECT DISTINCT T1.ORG_CODE 
+													  FROM EDW.W_CM_TB_ORGANIZATION_M T1
+													 WHERE 1 = 1
+													   AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+													   AND T1.ORG_TYPE = DECODE('MFG', '!ALL', T1.ORG_TYPE, 'MFG')
+													   AND T1.ORG_CODE != 'S01'    -- 진로소주공장 제외
+													   AND T1.ORG_CODE LIKE 'MJ%')
+                                 AND A.VOLUME_VALUE IN (SELECT DISTINCT T1.VOLUME_VALUE
+														  FROM SCMU.W_SOP_TB_VESSEL_M T1
+														 WHERE 1 = 1
+														   AND T1.LIQUOR_CODE = '20'
+														   AND T1.BOTL_TYPE = 'NEW'
+														   AND T1.COMPANY_TYPE = 'OWNER'
+														   AND T1.VESSEL_CODE = '1'
+														   AND T1.VESSEL_CODE != '9'  -- 기타는 제외
+														   AND T1.USE_YN = 'Y')
+                                 AND A.BRAND_CODE IN (	SELECT DISTINCT T1.BRAND_CODE
+														  FROM SCMU.W_SOP_TB_VESSEL_M T1
+														       LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'BOTL_BRAND_LIST' AND T2.USE_YN = 'Y' AND T2.CODE = T1.BRAND_CODE
+														 WHERE 1 = 1
+														   AND T1.LIQUOR_CODE = '20'
+														   AND T1.BOTL_TYPE = DECODE ('!ALL', '!ALL', T1.BOTL_TYPE, '!ALL')
+														   AND T1.COMPANY_TYPE = 'OWNER'
+														   AND T1.VESSEL_CODE = '1'
+														   AND T1.VESSEL_CODE != '9'      -- 기타는 제외
+														   AND T1.USE_YN = 'Y')
+                                 AND B.TRANSACTION_TYPE_CODE IN ('출고_대체', '입고_대체', '출고_생산')
+                                 AND B.QTY != 0
+                              UNION ALL
+                              SELECT SUBSTR (B.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+                                   , B.ITEM_CODE
+                                   , A.LIQUOR_CODE
+                                   , A.VOLUME_VALUE
+                                   , A.BRAND_CODE
+                                   , A.BOTL_TYPE
+                                   , B.TRANSACTION_TYPE_CODE
+                                   , B.ORG_CODE AS MFG_CODE
+                                   , NVL (B.QTY, 0) / DECODE ('ACCT_BULK_QTY', 'ACCT_BULK_QTY', 1, GREATEST (NVL (A.PBOX_PACKING_UNIT, 1), 1)) AS QTY
+                                FROM SCMU.W_SOP_TB_VESSEL_M A
+                                     INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F B
+                                         ON B.PERIOD_YYYYMMDD BETWEEN #{fromYYYYMMDD, jdbcType=VARCHAR} AND #{toYYYYMMDD, jdbcType=VARCHAR} AND B.ITEM_CODE = A.ITEM_CODE
+                               WHERE 1 = 1
+                                 AND A.LIQUOR_CODE = '10'
+                                 AND A.COMPANY_TYPE = 'OWNER'
+                                 AND A.VESSEL_CODE = '1'
+                                 AND A.USE_YN = 'Y'
+                                 AND B.ORG_TYPE = 'MFG'
+                                 AND B.ORG_CODE IN (SELECT DISTINCT T1.ORG_CODE 
+													  FROM EDW.W_CM_TB_ORGANIZATION_M T1
+													 WHERE 1 = 1
+													   AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+													   AND T1.ORG_TYPE = DECODE('MFG', '!ALL', T1.ORG_TYPE, 'MFG')
+													   AND T1.ORG_CODE != 'S01'    -- 진로소주공장 제외
+													   AND T1.ORG_CODE LIKE 'MH%')
+                                 AND A.VOLUME_VALUE IN (SELECT DISTINCT T1.VOLUME_VALUE
+														  FROM SCMU.W_SOP_TB_VESSEL_M T1
+														 WHERE 1 = 1
+														   AND T1.LIQUOR_CODE = '10'
+														   AND T1.BOTL_TYPE = 'NEW'
+														   AND T1.COMPANY_TYPE = 'OWNER'
+														   AND T1.VESSEL_CODE = '1'
+														   AND T1.VESSEL_CODE != '9'  -- 기타는 제외
+														   AND T1.USE_YN = 'Y')
+                                 AND A.BRAND_CODE IN (	SELECT DISTINCT T1.BRAND_CODE
+														  FROM SCMU.W_SOP_TB_VESSEL_M T1
+														       LEFT JOIN SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'BOTL_BRAND_LIST' AND T2.USE_YN = 'Y' AND T2.CODE = T1.BRAND_CODE
+														 WHERE 1 = 1
+														   AND T1.LIQUOR_CODE = '10'
+														   AND T1.BOTL_TYPE = DECODE ('!ALL', '!ALL', T1.BOTL_TYPE, '!ALL')
+														   AND T1.COMPANY_TYPE = 'OWNER'
+														   AND T1.VESSEL_CODE = '1'
+														   AND T1.VESSEL_CODE != '9'      -- 기타는 제외
+														   AND T1.USE_YN = 'Y')
+                                 AND B.TRANSACTION_TYPE_CODE IN ('출고_대체', '입고_대체', '출고_생산')
+                                 AND B.QTY != 0) A
+                    GROUP BY A.PERIOD_YYYYMMDD
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , A.BRAND_CODE
+                           , A.MFG_CODE) T1
+                   LEFT JOIN
+                   (  -- 생산,재고 마트에서 과일소주 생산량 추출
+                      -- 브랜드 매핑
+                      SELECT SUBSTR (A.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , C.SEGMENT4 AS BRAND_CODE
+                           , A.ORG_CODE AS MFG_CODE
+                           , SUM (A.PRDT_ACTUAL_QTY * DECODE ('ACCT_BULK_QTY', 'ACCT_BULK_QTY', NVL (B.PACKING_UNIT, 0), 1)) AS LIQUEUR_PRDT_QTY
+                        FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F A
+                             INNER JOIN
+                             EDW.W_CM_TB_FG_ITEM_M B
+                                 ON B.SEGMENT3 = '리큐르'
+                                AND B.ITEM_TYPE = 'FG'
+                                AND B.ITEM_STATUS = 'Active'
+                                AND B.DOM_EXP_CODE IN ('1', '2')            -- 수출, 내수
+                                AND B.ITEM_CODE = A.ITEM_CODE
+                             INNER JOIN SCMU.W_SOP_TB_COM_CODE_M C ON C.GROUP_CODE = 'BOTL_BRAND_DTL_LIST' AND C.USE_YN = 'Y' AND C.CODE = A.BRAND_CODE
+                       WHERE 1 = 1
+                         AND A.PERIOD_YYYYMMDD BETWEEN #{fromYYYYMMDD, jdbcType=VARCHAR} AND #{toYYYYMMDD, jdbcType=VARCHAR}
+                         AND A.LIQUOR_CODE = '20'
+                         AND A.ORG_TYPE = 'MFG'
+                         AND A.ORG_CODE IN (SELECT DISTINCT T1.ORG_CODE 
+													  FROM EDW.W_CM_TB_ORGANIZATION_M T1
+													 WHERE 1 = 1
+													   AND T1.ORG_TYPE IN ('MFG', 'LOGISTICS')
+													   AND T1.ORG_TYPE = DECODE('MFG', '!ALL', T1.ORG_TYPE, 'MFG')
+													   AND T1.ORG_CODE != 'S01'    -- 진로소주공장 제외
+													   AND T1.ORG_CODE LIKE 'MJ%')
+                         AND A.VESSEL_CODE = '1'
+                         AND A.VOLUME_VALUE = '360'
+                    GROUP BY SUBSTR (A.PERIOD_YYYYMMDD, 0, 6)
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , C.SEGMENT4
+                           , A.ORG_CODE) T2
+                       ON T2.PERIOD_YYYYMMDD = T1.PERIOD_YYYYMMDD
+                      AND T2.LIQUOR_CODE = T1.LIQUOR_CODE
+                      AND T2.VOLUME_VALUE = T1.VOLUME_VALUE
+                      AND T2.BRAND_CODE = T1.BRAND_CODE
+                      AND T2.MFG_CODE = T1.MFG_CODE
+                   LEFT JOIN EDW.W_CM_TB_LIQUOR_M T3 ON T3.LIQUOR_CODE = T1.LIQUOR_CODE
+                   LEFT JOIN EDW.W_CM_TB_MFG_M T5 ON T5.MFG_CODE = T1.MFG_CODE
+          GROUP BY T1.PERIOD_YYYYMMDD, T1.LIQUOR_CODE, T1.MFG_CODE
+          ORDER BY T1.PERIOD_YYYYMMDD
+                 , T1.LIQUOR_CODE
+                 , GROUPING_ID (T1.MFG_CODE) DESC
+                 , T1.MFG_CODE
+	 	 )
+	 	 <foreach open="" collection="TREEGRID_PARAM" index="index" item="item" separator="UNION ALL" close="">
+			SELECT #{item.ROW_DATA} AS MONTH_COL
+				 , 'NORMAL' AS "Def"
+			<foreach open="," collection="TREEGRID_HEADER" index="index" item="item" separator="," close="">
+				   MAX (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN NEW_BOTL_RATE END) AS ${item.COL_ID}
+			</foreach>
+			  FROM TBL
+			 WHERE PERIOD_YYYYMMDD = #{item.ROW_KEY}
+		 </foreach>
+		 	 UNION ALL 
+		 	SELECT '누계 사용률' AS MONTH_COL
+		 		 , 'SUBSUM' AS "Def"
+			<foreach open="," collection="TREEGRID_HEADER" index="index" item="item" separator="," close="">
+				   SUM (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN NEW_BOTL_RATE ELSE 0 END)
+				 / DECODE(SUM (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN 1 ELSE 0 END), 0
+			 			, NULL
+			 			, SUM (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN 1 ELSE 0 END))	 AS ${item.COL_ID}
+			</foreach>
+			  FROM TBL
+			 UNION ALL
+		 	SELECT '목표 사용률' AS MONTH_COL
+		 		 , 'TARGET' AS "Def"
+			<foreach open="," collection="TREEGRID_HEADER" index="index" item="item" separator="," close="">
+				 <if test="item.LIQUOR_CODE.equals('10')">
+				 (SELECT TARGET_START / 100 FROM W_SOP_TB_KPI_TARGET_M WHERE KPI_CODE = 'KPI008')
+				 </if>
+				 <if test="item.LIQUOR_CODE.equals('20')">
+				 (SELECT TARGET_START / 100 FROM W_SOP_TB_KPI_TARGET_M WHERE KPI_CODE = 'KPI009')
+				 </if>
+				   	    AS ${item.COL_ID}
+			</foreach>
+			  FROM DUAL
+			 UNION ALL
+		 	SELECT '달성률' AS MONTH_COL
+		 		 , 'TOTAL' AS "Def"
+			<foreach open="," collection="TREEGRID_HEADER" index="index" item="item" separator="," close="">
+				   SUM (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN NEW_BOTL_RATE ELSE 0 END)
+				 / DECODE(SUM (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN 1 ELSE 0 END), 0
+				 		, NULL
+				 		, SUM (CASE WHEN LIQUOR_CODE = #{item.LIQUOR_CODE} AND MFG_CODE = #{item.ORG_CODE} THEN 1 ELSE 0 END))
+				 <if test="item.LIQUOR_CODE.equals('10')">
+				 / MAX((SELECT TARGET_START / 100 FROM W_SOP_TB_KPI_TARGET_M WHERE KPI_CODE = 'KPI008'))
+				 </if>
+				 <if test="item.LIQUOR_CODE.equals('20')">
+				 / MAX((SELECT TARGET_START / 100 FROM W_SOP_TB_KPI_TARGET_M WHERE KPI_CODE = 'KPI009'))
+				 </if>
+				 AS ${item.COL_ID}
+			</foreach>
+			  FROM TBL
+			
+
+    </select>
+    
+    <select id="searchBodyComplexVersion" parameterType="map" resultType="map">
+	WITH TBL AS
+         (  SELECT                                                                     
+                  DECODE (GROUPING_ID (T1.MFG_CODE), 1, 'TOTAL', '') AS "Def"
+                 , T1.PERIOD_YYYYMMDD AS PERIOD_YYYYMMDD
+                 , T1.LIQUOR_CODE
+                 , MAX (T3.LIQUOR_DESC) AS LIQUOR_DESC
+                 , T1.MFG_CODE
+                 , DECODE (GROUPING_ID (T1.MFG_CODE), 1, '전체', MAX (T5.MFG_NAME)) AS MFG_NAME                                     -- 신병사용율(과일소주제외)
+                 , (CASE                                                                                      -- (신병사용량 - 과일소주 생산량) / (생산량 - 과일소주 생산량)
+                        WHEN T1.LIQUOR_CODE = '20' AND SUM (T1.PRDT_QTY - NVL (T2.LIQUEUR_PRDT_QTY, 0)) > 0 THEN
+                            SUM (T1.NEW_BOTL_QTY - NVL (T2.LIQUEUR_PRDT_QTY, 0)) / SUM (T1.PRDT_QTY - NVL (T2.LIQUEUR_PRDT_QTY, 0))
+                        ELSE
+                            0
+                    END)
+                       AS ADJ_NEW_BOTL_RATE                                                                                                   -- 신병사용율
+                 , (CASE WHEN SUM (T1.PRDT_QTY) > 0 THEN SUM (T1.NEW_BOTL_QTY) / SUM (T1.PRDT_QTY) ELSE 0 END) AS NEW_BOTL_RATE         -- 신병사용량 / 생산량
+              FROM (  SELECT A.PERIOD_YYYYMMDD
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , A.BRAND_CODE
+                           , A.MFG_CODE                                                                                                      -- 고병 생산량
+                           , SUM (CASE WHEN A.BOTL_TYPE = 'OLD' AND A.TRANSACTION_TYPE_CODE = '출고_생산' THEN A.QTY ELSE 0 END) AS PRDT_QTY -- 신병사용량(신병 출고_대체 - 신병 입고_대체)
+                           , SUM (
+                                 CASE
+                                     WHEN A.BOTL_TYPE = 'NEW' AND A.TRANSACTION_TYPE_CODE = '출고_대체' THEN A.QTY
+                                     WHEN A.BOTL_TYPE = 'NEW' AND A.TRANSACTION_TYPE_CODE = '입고_대체' THEN A.QTY * -1
+                                     ELSE 0
+                                 END)
+                                 AS NEW_BOTL_QTY
+                        FROM (                                                                                                                   -- 환산
+                              SELECT SUBSTR (B.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+                                   , B.ITEM_CODE
+                                   , A.LIQUOR_CODE
+                                   , A.VOLUME_VALUE
+                                   , A.BRAND_CODE
+                                   , A.BOTL_TYPE
+                                   , B.TRANSACTION_TYPE_CODE
+                                   , B.ORG_CODE AS MFG_CODE
+                                   , NVL (B.QTY, 0) / DECODE ('ACCT_BULK_QTY', 'ACCT_BULK_QTY', 1, GREATEST (NVL (A.PBOX_PACKING_UNIT, 1), 1)) AS QTY
+                                FROM SCMU.W_SOP_TB_VESSEL_M A
+                                     INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F B
+                                         ON B.PERIOD_YYYYMMDD BETWEEN '20210101' AND '20211231' AND B.ITEM_CODE = A.ITEM_CODE
+                               WHERE 1 = 1
+                                 AND A.LIQUOR_CODE = '20'
+                                 AND A.COMPANY_TYPE = 'OWNER'
+                                 AND A.VESSEL_CODE = '1'
+                                 AND A.USE_YN = 'Y'
+                                 AND B.ORG_TYPE = 'MFG'
+                                 AND B.ORG_CODE IN ('MJ1', 'MJ2', 'MJ3', 'MJ4')
+                                 AND A.VOLUME_VALUE IN ('360')
+                                 AND A.BRAND_CODE IN ('B2010', 'B2020', 'B2030', 'B2040', 'B2050')
+                                 AND B.TRANSACTION_TYPE_CODE IN ('출고_대체', '입고_대체', '출고_생산')
+                                 AND B.QTY != 0
+                              UNION ALL
+                              SELECT SUBSTR (B.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+                                   , B.ITEM_CODE
+                                   , A.LIQUOR_CODE
+                                   , A.VOLUME_VALUE
+                                   , A.BRAND_CODE
+                                   , A.BOTL_TYPE
+                                   , B.TRANSACTION_TYPE_CODE
+                                   , B.ORG_CODE AS MFG_CODE
+                                   , NVL (B.QTY, 0) / DECODE ('ACCT_BULK_QTY', 'ACCT_BULK_QTY', 1, GREATEST (NVL (A.PBOX_PACKING_UNIT, 1), 1)) AS QTY
+                                FROM SCMU.W_SOP_TB_VESSEL_M A
+                                     INNER JOIN SCMU.M_SOP_TB_ITEM_VESSEL_F B
+                                         ON B.PERIOD_YYYYMMDD BETWEEN '20210101' AND '20211231' AND B.ITEM_CODE = A.ITEM_CODE
+                               WHERE 1 = 1
+                                 AND A.LIQUOR_CODE = '10'
+                                 AND A.COMPANY_TYPE = 'OWNER'
+                                 AND A.VESSEL_CODE = '1'
+                                 AND A.USE_YN = 'Y'
+                                 AND B.ORG_TYPE = 'MFG'
+                                 AND B.ORG_CODE IN ('MH1', 'MH2', 'MH3')
+                                 AND A.VOLUME_VALUE IN ('330', '500')
+                                 AND A.BRAND_CODE IN ('B1010', 'B1020', 'B1040', 'B1050', 'B1060')
+                                 AND B.TRANSACTION_TYPE_CODE IN ('출고_대체', '입고_대체', '출고_생산')
+                                 AND B.QTY != 0) A
+                    GROUP BY A.PERIOD_YYYYMMDD
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , A.BRAND_CODE
+                           , A.MFG_CODE) T1
+                   LEFT JOIN
+                   (                                                                                                         -- 생산,재고 마트에서 과일소주 생산량 추출
+                      -- 브랜드 매핑
+                      SELECT SUBSTR (A.PERIOD_YYYYMMDD, 0, 6) AS PERIOD_YYYYMMDD
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , C.SEGMENT4 AS BRAND_CODE
+                           , A.ORG_CODE AS MFG_CODE
+                           , SUM (A.PRDT_ACTUAL_QTY * DECODE ('ACCT_BULK_QTY', 'ACCT_BULK_QTY', NVL (B.PACKING_UNIT, 0), 1)) AS LIQUEUR_PRDT_QTY
+                        FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F A
+                             INNER JOIN
+                             EDW.W_CM_TB_FG_ITEM_M B
+                                 ON B.SEGMENT3 = '리큐르'
+                                AND B.ITEM_TYPE = 'FG'
+                                AND B.ITEM_STATUS = 'Active'
+                                AND B.DOM_EXP_CODE IN ('1', '2')                                                                             -- 수출, 내수
+                                AND B.ITEM_CODE = A.ITEM_CODE
+                             INNER JOIN SCMU.W_SOP_TB_COM_CODE_M C ON C.GROUP_CODE = 'BOTL_BRAND_DTL_LIST' AND C.USE_YN = 'Y' AND C.CODE = A.BRAND_CODE
+                       WHERE 1 = 1
+                         AND A.PERIOD_YYYYMMDD BETWEEN '20210101' AND '20211231'
+                         AND A.LIQUOR_CODE = '20'
+                         AND A.ORG_TYPE = 'MFG'
+                         AND A.ORG_CODE IN ('MJ1', 'MJ2', 'MJ3', 'MJ4')
+                         AND A.VESSEL_CODE = '1'
+                         AND A.VOLUME_VALUE = '360'
+                    GROUP BY SUBSTR (A.PERIOD_YYYYMMDD, 0, 6)
+                           , A.LIQUOR_CODE
+                           , A.VOLUME_VALUE
+                           , C.SEGMENT4
+                           , A.ORG_CODE) T2
+                       ON T2.PERIOD_YYYYMMDD = T1.PERIOD_YYYYMMDD
+                      AND T2.LIQUOR_CODE = T1.LIQUOR_CODE
+                      AND T2.VOLUME_VALUE = T1.VOLUME_VALUE
+                      AND T2.BRAND_CODE = T1.BRAND_CODE
+                      AND T2.MFG_CODE = T1.MFG_CODE
+                   LEFT JOIN EDW.W_CM_TB_LIQUOR_M T3 ON T3.LIQUOR_CODE = T1.LIQUOR_CODE
+                   LEFT JOIN EDW.W_CM_TB_MFG_M T5 ON T5.MFG_CODE = T1.MFG_CODE
+          GROUP BY GROUPING SETS ( (T1.PERIOD_YYYYMMDD, T1.LIQUOR_CODE, T1.MFG_CODE), (T1.PERIOD_YYYYMMDD, T1.LIQUOR_CODE))
+          ORDER BY T1.PERIOD_YYYYMMDD
+                 , T1.LIQUOR_CODE
+                 , GROUPING_ID (T1.MFG_CODE) DESC
+                 , T1.MFG_CODE)
+SELECT '2021-01' AS PERIOD_YYYYMM
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ1' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ1_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ2' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ2_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ3' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ3_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ4' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ4_20
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH1' THEN NEW_BOTL_RATE ELSE 0 END) AS MH1_10
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH3' THEN NEW_BOTL_RATE ELSE 0 END) AS MH3_10
+  FROM TBL
+ WHERE PERIOD_YYYYMMDD = '202101'
+UNION ALL
+SELECT '2021-02' AS PERIOD_YYYYMM
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ1' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ1_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ2' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ2_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ3' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ3_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ4' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ4_20
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH1' THEN NEW_BOTL_RATE ELSE 0 END) AS MH1_10
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH3' THEN NEW_BOTL_RATE ELSE 0 END) AS MH3_10
+  FROM TBL
+ WHERE PERIOD_YYYYMMDD = '202102'
+UNION ALL
+SELECT '2021-03' AS PERIOD_YYYYMM
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ1' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ1_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ2' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ2_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ3' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ3_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ4' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ4_20
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH1' THEN NEW_BOTL_RATE ELSE 0 END) AS MH1_10
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH3' THEN NEW_BOTL_RATE ELSE 0 END) AS MH3_10
+  FROM TBL
+ WHERE PERIOD_YYYYMMDD = '202103'
+UNION ALL
+SELECT '2021-04' AS PERIOD_YYYYMM
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ1' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ1_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ2' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ2_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ3' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ3_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ4' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ4_20
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH1' THEN NEW_BOTL_RATE ELSE 0 END) AS MH1_10
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH3' THEN NEW_BOTL_RATE ELSE 0 END) AS MH3_10
+  FROM TBL
+ WHERE PERIOD_YYYYMMDD = '202104'
+UNION ALL
+SELECT '2021-05' AS PERIOD_YYYYMM
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ1' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ1_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ2' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ2_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ3' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ3_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ4' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ4_20
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH1' THEN NEW_BOTL_RATE ELSE 0 END) AS MH1_10
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH3' THEN NEW_BOTL_RATE ELSE 0 END) AS MH3_10
+  FROM TBL
+ WHERE PERIOD_YYYYMMDD = '202105'
+UNION ALL
+SELECT '2021-06' AS PERIOD_YYYYMM
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ1' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ1_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ2' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ2_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ3' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ3_20
+     , MAX (CASE WHEN LIQUOR_CODE = '20' AND MFG_CODE = 'MJ4' THEN NEW_BOTL_RATE ELSE 0 END) AS MJ4_20
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH1' THEN NEW_BOTL_RATE ELSE 0 END) AS MH1_10
+     , MAX (CASE WHEN LIQUOR_CODE = '10' AND MFG_CODE = 'MH3' THEN NEW_BOTL_RATE ELSE 0 END) AS MH3_10
+  FROM TBL
+ WHERE PERIOD_YYYYMMDD = '202106'
+    </select>
+    
+    <select id="getMagamYmd" resultType="String">
+		SELECT MAGAM_YMD
+		  FROM EDW.GEIS_MAGAM
+		 WHERE SCRN_ID = 'GEISM0500R'
+		   AND CO_CODE = 'HJ0'
+    </select>
+</mapper>

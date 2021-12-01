@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+ * 프로그램 :: M00010 : 초기화면
+ * 작성일자 :: 2021.7.27
+ * 작 성 자 :: 김태환
+ -->
+<mapper namespace="com.hitejinro.snop.work.dao.M00010DaoMapper">
+	
+	<!-- 제품수급_판매(맥주/소주 공통) -->
+	<select id="searchSalesGrid" parameterType="map" resultType="map">
+		SELECT T1.LIQUOR_CODE /* com.hitejinro.snop.work.dao.M00010DaoMapper.searchSalesGrid */
+		     , REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(ROUND(TRG_SALE_QTY,0))), '([0-9]{3})','\1,')), '^,','') TRG_QTY
+		     , REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(ROUND(ESPN_SALE_QTY,0))), '([0-9]{3})','\1,')), '^,','') ESPN_QTY
+		     , REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(ROUND(ACTUAL_SALE_QTY,0))), '([0-9]{3})','\1,')), '^,','') ACTUAL_QTY
+		     , DECODE(NVL(TRG_SALE_QTY,0),0,0,ROUND((ACTUAL_SALE_QTY / TRG_SALE_QTY),2) * 100) AS TRG_RATE
+		     , DECODE(NVL(ESPN_SALE_QTY,0),0,0,ROUND((ACTUAL_SALE_QTY / ESPN_SALE_QTY),2) * 100) AS ESPN_RATE
+		  FROM (SELECT M1.LIQUOR_CODE
+		             , SUM(M1.ACTUAL_SALE_QTY * M1.UOM_CONVERSION_VALUE) AS ACTUAL_SALE_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_SALE_F M1
+		             , EDW.W_CM_TB_FG_ITEM_M M2
+		         WHERE M1.ITEM_CODE = M2.ITEM_CODE
+		           AND M1.LIQUOR_CODE IN ('10', '20')
+		           AND M1.MARKET_TYPE = 'D'
+		           AND M1.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(SYSDATE-1, 'YYYYMMDD'), 1, 6) AND TO_CHAR(SYSDATE-1, 'YYYYMMDD')
+		         GROUP BY M1.LIQUOR_CODE) T1
+<!-- 		           AND M1.PERIOD_YYYYMMDD BETWEEN TO_CHAR(SYSDATE-1, 'YYYYMMDD')||'01' AND (SELECT BF_YYYYMMDD
+		                                                                                  FROM SCMU.W_SOP_VW_CALENDAR_M
+		                                                                                 WHERE YYYYMMDD = TO_CHAR(SYSDATE-1, 'YYYYMMDD')) T1 -->
+		     , (SELECT M1.LIQUOR_CODE 
+		             , SUM(M1.YYYY_TRG_SALE_QTY * M1.UOM_CONVERSION_VALUE) AS TRG_SALE_QTY
+		             , SUM(M1.ESPN_SALE_QTY) AS ESPN_SALE_QTY
+		          FROM SCMU.M_SOP_TB_ITEM_SALE_F M1
+		             , EDW.W_CM_TB_FG_ITEM_M M2
+		         WHERE M1.ITEM_CODE = M2.ITEM_CODE
+		           AND M1.LIQUOR_CODE IN ('10', '20')
+		           AND M1.MARKET_TYPE = 'D'
+		           AND M1.PERIOD_YYYYMMDD LIKE SUBSTR(TO_CHAR(SYSDATE-1, 'YYYYMMDD'), 1, 6)||'%'
+		         GROUP BY M1.LIQUOR_CODE) T2
+		 WHERE 1=1
+		   AND T1.LIQUOR_CODE = T2.LIQUOR_CODE
+	</select>
+	
+	<!-- 제품수급_생산(맥주/소주 공통) -->
+	<select id="searchPrdtGrid" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M00010DaoMapper.searchPrdtGrid */
+		       LIQUOR_CODE
+		     , REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(ROUND(SUM(PRDT_ACTUAL_QTY*UOM_CONVERSION_VALUE),0))), '([0-9]{3})','\1,')), '^,','') PRDT_QTY
+		  FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F
+		 WHERE PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(SYSDATE-1, 'YYYYMMDD'), 1, 6) AND TO_CHAR(SYSDATE-1, 'YYYYMMDD')
+		   AND LIQUOR_CODE IN ('10', '20')
+		 GROUP BY LIQUOR_CODE
+	</select>
+	
+	<!-- 제품수급_재고(맥주/소주 공통) -->
+	<select id="searchStockGrid" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M00010DaoMapper.searchStockGrid */
+		       LIQUOR_CODE
+		     , REGEXP_REPLACE(REVERSE(REGEXP_REPLACE( REVERSE(TO_CHAR(ROUND(SUM(STOCK_QTY*UOM_CONVERSION_VALUE),0))), '([0-9]{3})','\1,')), '^,','') STOCK_QTY
+		  FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F
+		 WHERE PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-1, 'YYYYMMDD')
+		   AND LIQUOR_CODE IN ('10', '20')
+		 GROUP BY LIQUOR_CODE
+	</select>
+	
+	<!-- 판매구성비 파이차트(맥주/소주 공통사용) -->
+	<select id="searchSalePie" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M00010DaoMapper.searchSalePie */
+		       T1.GUBUN_TXT
+		     , T1.BEER_ACTUAL_5D_SALE_AVG_QTY AS BEER_5D
+		     , T1.BEER_ACTUAL_20D_SALE_AVG_QTY  AS BEER_20D
+		     , T1.SOJU_ACTUAL_5D_SALE_AVG_QTY   AS SOJU_5D
+		     , T1.SOJU_ACTUAL_20D_SALE_AVG_QTY  AS SOJU_20D
+             , DECODE(NVL(T2.BEER_ACTUAL_5D_SALE_AVG_QTY,0), 0, 0, ROUND(T1.BEER_ACTUAL_5D_SALE_AVG_QTY / T2.BEER_ACTUAL_5D_SALE_AVG_QTY * 100,2)) BEER_5D_RATE
+             , DECODE(NVL(T2.BEER_ACTUAL_5D_SALE_AVG_QTY,0), 0, 0, ROUND(T1.BEER_ACTUAL_20D_SALE_AVG_QTY / T2.BEER_ACTUAL_20D_SALE_AVG_QTY * 100,2)) BEER_20D_RATE
+             , DECODE(NVL(T2.BEER_ACTUAL_5D_SALE_AVG_QTY,0), 0, 0, ROUND(T1.SOJU_ACTUAL_5D_SALE_AVG_QTY / T2.SOJU_ACTUAL_5D_SALE_AVG_QTY * 100,2)) SOJU_5D_RATE
+             , DECODE(NVL(T2.BEER_ACTUAL_5D_SALE_AVG_QTY,0), 0, 0, ROUND(T1.SOJU_ACTUAL_20D_SALE_AVG_QTY / T2.SOJU_ACTUAL_20D_SALE_AVG_QTY * 100,2)) SOJU_20D_RATE
+		  FROM (SELECT GUBUN1_TXT GUBUN_TXT, SEQ
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '10', ACTUAL_5D_SALE_AVG_QTY, 0)),0) BEER_ACTUAL_5D_SALE_AVG_QTY
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '10', ACTUAL_20D_SALE_AVG_QTY, 0)),0) BEER_ACTUAL_20D_SALE_AVG_QTY
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '20', ACTUAL_5D_SALE_AVG_QTY, 0)),0) SOJU_ACTUAL_5D_SALE_AVG_QTY
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '20', ACTUAL_20D_SALE_AVG_QTY, 0)),0) SOJU_ACTUAL_20D_SALE_AVG_QTY
+		          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		                 WHERE MENU_CD = 'M00010') T1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , USAGE_CODE
+		                     , VESSEL_CODE
+		                     , VOLUME_VALUE
+		                     , ACTUAL_5D_SALE_AVG_QTY * UOM_CONVERSION_VALUE AS ACTUAL_5D_SALE_AVG_QTY
+		                     , ACTUAL_20D_SALE_AVG_QTY * UOM_CONVERSION_VALUE AS ACTUAL_20D_SALE_AVG_QTY
+		                  FROM SCMU.M_SOP_TB_ITEM_SALE_F
+		                 WHERE 1=1
+		                   AND PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-1, 'YYYYMMDD')
+		                   AND MARKET_TYPE = 'D') T2
+		            ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		           AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		           AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		           AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		           AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+		         GROUP BY GUBUN1_TXT, SEQ) T1
+		     , (SELECT ROUND(SUM(DECODE(T1.LIQUOR_CODE, '10', ACTUAL_5D_SALE_AVG_QTY, 0)),0) BEER_ACTUAL_5D_SALE_AVG_QTY
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '10', ACTUAL_20D_SALE_AVG_QTY, 0)),0) BEER_ACTUAL_20D_SALE_AVG_QTY
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '20', ACTUAL_5D_SALE_AVG_QTY, 0)),0) SOJU_ACTUAL_5D_SALE_AVG_QTY
+		             , ROUND(SUM(DECODE(T1.LIQUOR_CODE, '20', ACTUAL_20D_SALE_AVG_QTY, 0)),0) SOJU_ACTUAL_20D_SALE_AVG_QTY
+		          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		                 WHERE MENU_CD = 'M00010') T1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , USAGE_CODE
+		                     , VESSEL_CODE
+		                     , VOLUME_VALUE
+		                     , ACTUAL_5D_SALE_AVG_QTY * UOM_CONVERSION_VALUE AS ACTUAL_5D_SALE_AVG_QTY
+		                     , ACTUAL_20D_SALE_AVG_QTY * UOM_CONVERSION_VALUE AS ACTUAL_20D_SALE_AVG_QTY
+		                  FROM SCMU.M_SOP_TB_ITEM_SALE_F
+		                 WHERE 1=1
+		                   AND PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-1, 'YYYYMMDD')
+		                   AND MARKET_TYPE = 'D') T2
+		            ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		           AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		           AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		           AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		           AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE)) ) T2
+		 WHERE 1=1
+		 ORDER BY SEQ
+	</select>
+	
+	<!-- 재고구성비 파이차트(맥주/소주 공통사용) -->
+	<select id="searchStockPie" parameterType="map" resultType="map">
+		WITH TBL_STOCK AS ( /* com.hitejinro.snop.work.dao.M00010DaoMapper.searchStockPie */
+		SELECT LIQUOR_CODE
+		     , PERIOD_YYYYMMDD
+		     , BRAND_CODE
+		     , USAGE_CODE
+		     , VESSEL_CODE
+		     , VOLUME_VALUE
+		     , STOCK_QTY * UOM_CONVERSION_VALUE AS STOCK_QTY
+		  FROM SCMU.M_SOP_TB_ITEM_STOCK_PRDT_F
+		 WHERE PERIOD_YYYYMMDD IN (TO_CHAR(SYSDATE-1, 'YYYYMMDD'), TO_CHAR(LAST_DAY(ADD_MONTHS(SYSDATE-1,-1)), 'YYYYMMDD'))
+		   AND ITEM_TYPE = 'FG'
+		)
+		SELECT MT1.LIQUOR_CODE
+		     , MT1.GUBUN1_TXT
+		     , MT1.STOCK_QTY
+		     , MT2.TOTAL_STOCK_QTY
+		     , DECODE(NVL(MT2.TOTAL_STOCK_QTY,0), 0, 0, ROUND(MT1.STOCK_QTY / MT2.TOTAL_STOCK_QTY, 2)) AS STOCK_RATE_MM
+		     , MT3.STOCK_QTY AS BM_STOCK_QTY
+		     , MT4.TOTAL_STOCK_QTY AS BM_TOTAL_STOCK_QTY
+		     , DECODE(NVL(MT2.TOTAL_STOCK_QTY,0), 0, 0, ROUND(MT3.STOCK_QTY / MT4.TOTAL_STOCK_QTY, 2)) AS STOCK_RATE_BM
+		  FROM (SELECT T1.GUBUN1_TXT, T1.SEQ
+		             , T1.LIQUOR_CODE
+		             , ROUND(SUM(STOCK_QTY),2) AS STOCK_QTY
+		          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		                 WHERE MENU_CD = 'M00010') T1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , USAGE_CODE
+		                     , VESSEL_CODE
+		                     , VOLUME_VALUE
+		                     , STOCK_QTY
+		                  FROM TBL_STOCK
+		                 WHERE PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-1, 'YYYYMMDD')) T2
+		                ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		               AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		               AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		               AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		               AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+		         GROUP BY T1.GUBUN1_TXT, T1.LIQUOR_CODE, T1.SEQ) MT1
+		     , (SELECT T1.LIQUOR_CODE
+		             , ROUND(SUM(STOCK_QTY),2) AS TOTAL_STOCK_QTY
+		          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		                 WHERE MENU_CD = 'M00010') T1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , USAGE_CODE
+		                     , VESSEL_CODE
+		                     , VOLUME_VALUE
+		                     , STOCK_QTY
+		                  FROM TBL_STOCK
+		                 WHERE PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-1, 'YYYYMMDD')) T2
+		                ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		               AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		               AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		               AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		               AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+		         GROUP BY T1.LIQUOR_CODE) MT2
+		     , (SELECT T1.GUBUN1_TXT
+		             , T1.LIQUOR_CODE
+		             , ROUND(SUM(STOCK_QTY),2) AS STOCK_QTY
+		          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		                 WHERE MENU_CD = 'M00010') T1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , USAGE_CODE
+		                     , VESSEL_CODE
+		                     , VOLUME_VALUE
+		                     , STOCK_QTY
+		                  FROM TBL_STOCK
+		                 WHERE PERIOD_YYYYMMDD = TO_CHAR(LAST_DAY(ADD_MONTHS(SYSDATE-1,-1)), 'YYYYMMDD')) T2
+		                ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		               AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		               AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		               AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		               AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+		         GROUP BY T1.GUBUN1_TXT, T1.LIQUOR_CODE) MT3
+		     , (SELECT T1.LIQUOR_CODE
+		             , ROUND(SUM(STOCK_QTY),2) AS TOTAL_STOCK_QTY
+		          FROM (SELECT LIQUOR_CODE, GUBUN1_TXT, GUBUN2_TXT, GUBUN3_TXT, GUBUN4_TXT, SEQ, BRAND_CODE, USAGE_CODE, VESSEL_CODE, VOLUME_VALUE
+		                  FROM SCMU.W_SOP_TB_ITEM_GROUP_MNG_M
+		                 WHERE MENU_CD = 'M00010') T1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , USAGE_CODE
+		                     , VESSEL_CODE
+		                     , VOLUME_VALUE
+		                     , STOCK_QTY
+		                  FROM TBL_STOCK
+		                 WHERE PERIOD_YYYYMMDD = TO_CHAR(LAST_DAY(ADD_MONTHS(SYSDATE-1,-1)), 'YYYYMMDD')) T2
+		                ON T1.LIQUOR_CODE = T2.LIQUOR_CODE
+		               AND ((T1.BRAND_CODE = '!ALL' AND 1 = 1) OR (T1.BRAND_CODE = T2.BRAND_CODE))
+		               AND ((T1.USAGE_CODE = '!ALL' AND 1 = 1) OR (T1.USAGE_CODE = T2.USAGE_CODE))
+		               AND ((T1.VESSEL_CODE = '!ALL' AND 1 = 1) OR (T1.VESSEL_CODE = T2.VESSEL_CODE))
+		               AND ((T1.VOLUME_VALUE = '!ALL' AND 1 = 1) OR (T1.VOLUME_VALUE = T2.VOLUME_VALUE))
+		         GROUP BY T1.LIQUOR_CODE) MT4
+		 WHERE 1=1
+		   AND MT1.LIQUOR_CODE = MT2.LIQUOR_CODE
+		   AND MT1.LIQUOR_CODE = MT3.LIQUOR_CODE
+		   AND MT1.GUBUN1_TXT = MT3.GUBUN1_TXT
+		   AND MT1.LIQUOR_CODE = MT4.LIQUOR_CODE
+		 ORDER BY MT1.SEQ
+	</select>
+	
+	<!-- 용기수급 -->
+	<select id="searchVesselGrid" parameterType="map" resultType="map">
+		SELECT /* com.hitejinro.snop.work.dao.M00010DaoMapper.searchVesselGrid */
+		       A1.LIQUOR_CODE
+		     , A1.BRAND_CODE
+		     , A1.VESSEL_CODE
+		     , A1.VOLUME_VALUE
+             , ROUND(NVL(A1.QTY,0)/10000,1) AS QTY
+             , ROUND(NVL(A1.DAY_AVG_PRDT_PLAN_QTY,0)/10000,1) AS DAY_AVG_PRDT_PLAN_QTY
+             , NVL(A1.ACTUAL_QTY,0) ACTUAL_QTY
+             , NVL(ROUND(A1.STOCK_DAY_CNT, 1),0) STOCK_DAY_CNT
+             , A2.VESSEL_STOCK_STATS_NAME
+             , NVL(A1.INPUT_QTY,0) INPUT_QTY
+		     , ROUND(CASE WHEN NVL(A1.ACTUAL_QTY, 0) = 0 THEN 0
+		                   ELSE A1.INPUT_QTY / A1.ACTUAL_QTY * 100
+		              END, 1) AS INPUT_RATE
+		  FROM (SELECT MT1.LIQUOR_CODE
+		             , MT1.BRAND_CODE
+		             , MT1.VESSEL_CODE
+		             , MT1.VOLUME_VALUE
+		             , MT1.QTY
+		             , MT2.DAY_AVG_PRDT_PLAN_QTY
+		             , MT3.ACTUAL_QTY
+		             , MT1.QTY / MT3.ACTUAL_QTY AS STOCK_DAY_CNT
+		             , MT1.INPUT_QTY
+		          FROM (SELECT T1.LIQUOR_CODE
+		                     , T1.BRAND_CODE
+		                     , T1.VESSEL_CODE
+		                     , T1.VOLUME_VALUE
+		                     , SUM(CASE WHEN T2.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-2, 'YYYYMMDD') AND T2.TRANSACTION_TYPE_CODE = '공기말재고' AND T1.LIQUOR_CODE = '20' AND T1.VESSEL_CODE = 'PBOX'                                  THEN QTY           --소주 공P
+		                                WHEN T2.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-2, 'YYYYMMDD') AND T2.TRANSACTION_TYPE_CODE = '공기말재고' AND T1.VESSEL_CODE = 'PALLET'                                                          THEN QTY           --공파레트
+		                                WHEN T2.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-2, 'YYYYMMDD') AND T2.TRANSACTION_TYPE_CODE = '기말재고' AND T1.BRAND_CODE = 'B2010' AND T1.VESSEL_CODE = '1' AND T1.BOTL_TYPE IN ('NEW', 'OLD') THEN QTY           --참이슬 공병
+		                                WHEN T2.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-2, 'YYYYMMDD') AND T2.TRANSACTION_TYPE_CODE = '기말재고' AND T1.BRAND_CODE = 'B2020' AND T1.VESSEL_CODE = '1' AND T1.BOTL_TYPE IN ('NEW', 'OLD') THEN QTY           --진로 공병
+		                                WHEN T2.PERIOD_YYYYMMDD = TO_CHAR(SYSDATE-2, 'YYYYMMDD') AND T2.TRANSACTION_TYPE_CODE = '기말재고' AND T1.BRAND_CODE = 'B1030' AND T1.VESSEL_CODE = '5'                                    THEN QTY           --생공통
+		                                ELSE 0
+		                           END / NVL(T1.PBOX_PACKING_UNIT, 1)) AS QTY
+		                     , SUM(CASE WHEN T2.TRANSACTION_TYPE_CODE = '정상입고' <!-- AND T2.ORG_TYPE = 'MFG' --> THEN QTY  / NVL(T1.PBOX_PACKING_UNIT, 1)
+		                                ELSE 0
+		                            END) INPUT_QTY
+		                  FROM SCMU.W_SOP_TB_VESSEL_M T1 INNER JOIN
+		                       SCMU.M_SOP_TB_ITEM_VESSEL_F T2 ON T1.ITEM_CODE = T2.ITEM_CODE 
+		                 WHERE 1=1
+		                   AND T2.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(SYSDATE-2, 'YYYYMMDD'),1,6)||'01' AND TO_CHAR(SYSDATE-2, 'YYYYMMDD')
+		                   AND ( (T2.TRANSACTION_TYPE_CODE = '공기말재고' AND T1.LIQUOR_CODE = '20' AND T1.VESSEL_CODE = 'PBOX')
+		                      OR (T2.TRANSACTION_TYPE_CODE = '공기말재고' AND T1.VESSEL_CODE = 'PALLET')
+		                      OR (T2.TRANSACTION_TYPE_CODE = '기말재고' AND T1.BRAND_CODE IN ('B2010', 'B2020') AND T1.VESSEL_CODE = '1' AND T1.BOTL_TYPE IN ('NEW', 'OLD'))
+		                      OR (T2.TRANSACTION_TYPE_CODE = '기말재고' AND T1.BRAND_CODE = 'B1030' AND T1.VESSEL_CODE = '5')
+		                      <!-- OR (T2.TRANSACTION_TYPE_CODE = '정상입고' AND T2.ORG_TYPE = 'MFG') -->
+                              OR (T2.TRANSACTION_TYPE_CODE = '정상입고' AND T1.LIQUOR_CODE = '20' AND BRAND_CODE = '-' AND T1.VESSEL_CODE = 'PBOX' )
+                              OR (T2.TRANSACTION_TYPE_CODE = '정상입고' AND T1.VESSEL_CODE = 'PALLET' )
+                              OR (T2.TRANSACTION_TYPE_CODE = '정상입고' AND T1.BRAND_CODE IN ('B2010', 'B2020') AND T1.VESSEL_CODE = '1' AND T1.BOTL_TYPE IN ('NEW', 'OLD') )
+                              OR (T2.TRANSACTION_TYPE_CODE = '정상입고' AND T1.BRAND_CODE = 'B1030' AND T1.VESSEL_CODE = '5' ) )
+		                 GROUP BY T1.LIQUOR_CODE
+		                        , T1.BRAND_CODE
+		                        , T1.VESSEL_CODE
+		                        , T1.VOLUME_VALUE) MT1 LEFT JOIN
+		               (SELECT LIQUOR_CODE
+		                     , BRAND_CODE
+		                     , VOLUME_VALUE
+		                     , VESSEL_CODE
+		                     , SUM(DAY_AVG_PRDT_PLAN_QTY) DAY_AVG_PRDT_PLAN_QTY
+		                  FROM SCMU.W_SOP_TB_VESSEL_AVG_PRDT_MNG_F --일평균생산계획량
+		                 WHERE TO_CHAR(SYSDATE-2, 'YYYYMMDD') BETWEEN PERIOD_SCM_YYYYWW_FR_DT AND PERIOD_SCM_YYYYWW_TO_DT
+		                 GROUP BY LIQUOR_CODE
+		                        , BRAND_CODE
+		                        , VESSEL_CODE
+		                        , VOLUME_VALUE) MT2 ON MT1.LIQUOR_CODE = MT2.LIQUOR_CODE
+		                                           AND MT1.BRAND_CODE = MT2.BRAND_CODE
+		                                           AND MT1.VOLUME_VALUE = MT2.VOLUME_VALUE
+		                                           AND MT1.VESSEL_CODE = MT2.VESSEL_CODE LEFT JOIN
+		               (SELECT T1.LIQUOR_CODE
+		                     , T2.SEGMENT4 AS BRAND_CODE
+		                     , T1.VESSEL_CODE
+		                     , T1.VOLUME_VALUE
+		                     , SUM((T1.ACTUAL_SALE_QTY + T1.ACTUAL_DONATE_QTY) * T1.UOM_CONVERSION_VALUE) AS ACTUAL_QTY
+		                  FROM SCMU.M_SOP_TB_ITEM_SALE_F T1 INNER JOIN
+		                       SCMU.W_SOP_TB_COM_CODE_M T2 ON T2.GROUP_CODE = 'BOTL_BRAND_DTL_LIST'
+		                                                  AND T2.USE_YN = 'Y'
+		                                                  AND T2.CODE = T1.BRAND_CODE INNER JOIN
+		                       EDW.W_CM_TB_FG_ITEM_M T3 ON T1.ITEM_CODE = T3.ITEM_CODE
+		                 WHERE 1=1
+		                   AND T1.MARKET_TYPE = 'D'
+		                   AND T1.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(SYSDATE-2, 'YYYYMMDD'),1,6)||'01' AND TO_CHAR(SYSDATE-2, 'YYYYMMDD')
+		                 GROUP BY T1.LIQUOR_CODE
+		                        , T2.SEGMENT4
+		                        , T1.VESSEL_CODE
+		                        , T1.VOLUME_VALUE
+		                 UNION ALL
+		                SELECT T1.LIQUOR_CODE
+		                     , T1.BRAND_CODE
+		                     , T1.VESSEL_CODE
+		                     , T1.VOLUME_VALUE
+		                     , SUM(QTY / NVL(T1.PBOX_PACKING_UNIT, 1)) AS QTY --참이슬 공병
+		                  FROM SCMU.W_SOP_TB_VESSEL_M T1 INNER JOIN
+		                       SCMU.M_SOP_TB_ITEM_VESSEL_F T2 ON T1.ITEM_CODE = T2.ITEM_CODE
+		                 WHERE T2.PERIOD_YYYYMMDD BETWEEN SUBSTR(TO_CHAR(SYSDATE-2, 'YYYYMMDD'),1,6)||'01' AND TO_CHAR(SYSDATE-2, 'YYYYMMDD')
+		                   AND T2.TRANSACTION_TYPE_CODE IN ('유상출고', '판매출고')
+		                   AND T1.VESSEL_CODE IN ('PALLET', 'PBOX')
+		                   AND T1.LIQUOR_CODE IN ('00','20')
+		                 GROUP BY T1.LIQUOR_CODE
+		                        , T1.BRAND_CODE
+		                        , T1.VESSEL_CODE
+		                        , T1.VOLUME_VALUE ) MT3 ON MT1.LIQUOR_CODE = MT3.LIQUOR_CODE
+		                                               AND MT1.BRAND_CODE = MT3.BRAND_CODE
+		                                               AND MT1.VOLUME_VALUE = MT3.VOLUME_VALUE
+		                                               AND MT1.VESSEL_CODE = MT3.VESSEL_CODE ) A1 LEFT JOIN
+		       SCMU.W_SOP_TB_VESSEL_STOCK_STATS_MNG_M A2 ON 'Y' = (CASE WHEN A2.FR_STOCK_STATS_RNG_SN = 'LESS_THAN'                AND A2.FR_STOCK_STATS_VAL IS NULL                   THEN 'N' 
+		                                                                WHEN A2.FR_STOCK_STATS_RNG_SN = 'LESS_THAN'                AND A1.STOCK_DAY_CNT > A2.FR_STOCK_STATS_VAL        THEN 'Y'
+		                                                                WHEN A2.FR_STOCK_STATS_RNG_SN = 'LESS_THAN_OR_EQUAL_TO'    AND A2.FR_STOCK_STATS_VAL IS NULL                   THEN 'N'
+		                                                                WHEN A2.FR_STOCK_STATS_RNG_SN = 'LESS_THAN_OR_EQUAL_TO'    AND A1.STOCK_DAY_CNT >= A2.FR_STOCK_STATS_VAL       THEN 'Y'
+		                                                                WHEN A2.FR_STOCK_STATS_RNG_SN = 'NA'                       AND 1 = 1                                           THEN 'Y'
+		                                                                ELSE 'N'
+		                                                            END )
+		                                                AND 'Y' = (CASE WHEN A2.TO_STOCK_STATS_RNG_SN = 'LESS_THAN'                AND A2.TO_STOCK_STATS_VAL IS NULL                   THEN 'N' 
+		                                                                WHEN A2.TO_STOCK_STATS_RNG_SN = 'LESS_THAN'                AND A2.TO_STOCK_STATS_VAL > A1.STOCK_DAY_CNT        THEN 'Y'
+		                                                                WHEN A2.TO_STOCK_STATS_RNG_SN = 'LESS_THAN_OR_EQUAL_TO'    AND A2.TO_STOCK_STATS_VAL IS NULL                   THEN 'N'
+		                                                                WHEN A2.TO_STOCK_STATS_RNG_SN = 'LESS_THAN_OR_EQUAL_TO'    AND A2.TO_STOCK_STATS_VAL >= A1.STOCK_DAY_CNT       THEN 'Y'
+		                                                                WHEN A2.TO_STOCK_STATS_RNG_SN = 'NA'                       AND 1 = 1                                           THEN 'Y'
+		                                                                ELSE 'N'
+		                                                            END )
+		 WHERE 1=1
+	</select>
+</mapper>
