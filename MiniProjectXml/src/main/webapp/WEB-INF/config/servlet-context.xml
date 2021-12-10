@@ -29,8 +29,11 @@
 	
 	<!-- properties 파일의 내용을 사용할 수 있도록 Bean을 정의 -->
 	<beans:bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
-		<beans:property name="location">
-			<beans:value>/WEB-INF/properties/db.properties</beans:value>
+		<beans:property name="locations">
+			<beans:list>
+				<beans:value>/WEB-INF/properties/db.properties</beans:value>
+				<beans:value>/WEB-INF/properties/option.properties</beans:value>
+			</beans:list>
 		</beans:property>
 	</beans:bean>
 	
@@ -55,8 +58,39 @@
 			<mapping path="/**"/>
 			<beans:bean class="kr.co.softcampus.interceptor.TopMenuInterceptor"/>
 		</interceptor>
+		<interceptor>
+			<mapping path="/user/modify"/>
+			<mapping path="/user/logout"/>
+			<mapping path="/board/*"/>
+			<exclude-mapping path="/board/main"/>
+			<beans:bean class="kr.co.softcampus.interceptor.CheckLoginInterceptor"/>
+		</interceptor>
+		<interceptor>
+			<mapping path="/board/modify"/>
+			<mapping path="/board/delete"/>
+			<beans:bean class="kr.co.softcampus.interceptor.CheckWriterInterceptor"/>
+		</interceptor>
 	</interceptors>
 			 
+	<!-- MessageSource등록 -->
+	<beans:bean class="org.springframework.context.support.ReloadableResourceBundleMessageSource" id="messageSource">
+		<beans:property name="basenames">
+			<beans:list>
+				<beans:value>/WEB-INF/properties/error_message</beans:value>
+			</beans:list>
+		</beans:property>
+	</beans:bean>
+	
+	<!-- Message접근을 위한 접근자 등록 -->
+	<beans:bean class="org.springframework.context.support.MessageSourceAccessor">
+		<beans:constructor-arg ref="messageSource"/>
+	</beans:bean>
+	
+	<!-- 파일업로드 -->
+	<beans:bean class="org.springframework.web.multipart.support.StandardServletMultipartResolver" id='multipartResolver'/>
+	
+	
+	
 </beans:beans>
 
 

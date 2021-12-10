@@ -4,4 +4,90 @@
 						
 <mapper namespace="board">
 
+	<insert id="addContentInfo" parameterType="kr.co.softcampus.beans.ContentBean">
+		<selectKey keyProperty="content_idx" order="BEFORE" resultType="java.lang.Integer">
+			select content_seq.nextval from dual
+		</selectKey>
+		<![CDATA[
+		insert into content_table
+		( 
+			content_idx, content_subject, content_text, content_file,
+			content_writer_idx, content_board_idx, content_date 
+				
+		)
+		values
+		(
+			#{content_idx}, #{content_subject}, #{content_text}, #{content_file, jdbcType=VARCHAR}, 
+			#{content_writer_idx}, #{content_board_idx}, sysdate
+		)
+		]]>
+	</insert>
+	
+	<select id="getBoardInfoName" parameterType="java.lang.Integer" resultType="java.lang.String">
+		<![CDATA[
+		select board_info_name
+		from board_info_table
+		where board_info_idx = #{board_info_idx}
+		]]>
+	</select>
+	
+	<select id="getContentList" parameterType="java.lang.Integer" resultType="kr.co.softcampus.beans.ContentBean">
+		<![CDATA[
+		select 
+			  a1.content_idx
+			, a1.content_subject
+			, a2.user_name as content_writer_name
+			, to_char(a1.content_date, 'yyyy-mm-dd') as content_date
+		from content_table a1
+		join user_table    a2 on a2.user_idx = a1.content_writer_idx
+		where 1 = 1
+    		and a1.content_board_idx = #{content_board_idx}
+		order by a1.content_idx desc
+		]]>
+	</select>
+	
+	<select id="getContentInfo" parameterType="java.lang.Integer" resultType="kr.co.softcampus.beans.ContentBean">
+		<![CDATA[
+		select 
+		      a2.user_name 							 as content_writer_name
+		    , to_char(a1.content_date, 'yyyy-mm-dd') as content_date
+		    , a1.content_writer_idx
+		    , a1.content_subject
+		    , a1.content_text
+		    , a1.content_file
+		from content_table a1
+		join user_table    a2 on a2.user_idx = a1.content_writer_idx
+		where 1 = 1
+		    and a1.content_idx = #{content_idx}
+		]]>
+	</select>
+	
+	<update id="modifyContentInfo" parameterType="kr.co.softcampus.beans.ContentBean">
+		<![CDATA[
+		update content_table
+		set
+			  content_subject = #{content_subject}
+			, content_text	  = #{content_text}
+			, content_file	  = #{content_file, jdbcType=VARCHAR}
+		where 1 = 1
+			and content_idx = #{content_idx}
+		]]>
+	</update>
+	
+	<delete id="deleteContentInfo" parameterType="java.lang.Integer">
+		<![CDATA[
+		delete from content_table
+		where content_idx = #{content_idx}
+		]]>
+	</delete>
+	
+	<select id="getContentCnt" parameterType="java.lang.Integer" resultType="java.lang.Integer">
+		<![CDATA[
+		select count(*)
+		from content_table
+		where content_board_idx = #{content_board_idx}
+		]]>
+	</select>
+	
+	
 </mapper>

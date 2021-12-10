@@ -1,8 +1,0 @@
-package kr.co.softcampus.beans;
-
-import org.springframework.stereotype.Component;
-
-@Component(value="requestBean4")
-public class DataBean4 {
-
-}
